@@ -1,11 +1,14 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Avalonia.Media.Imaging;
 using Remote.Application;
 using Remote.Application.Connections;
 using Remote.Application.Sessions;
 using Remote.Infrastructure.Processes;
 using Remote.Infrastructure.Protocols.Rdp;
+using Remote.Infrastructure.Protocols.Vnc;
+using Remote.Desktop.Protocols.Vnc;
 using Remote.Protocols;
 
 namespace Remote.Desktop.ViewModels;
@@ -17,6 +20,9 @@ public sealed partial class MainViewModel : ViewModelBase
     private readonly SessionLaunchPolicy _launchPolicy;
     private readonly SessionWorkspace _sessionWorkspace = new();
     private readonly RdpExternalSessionLauncher _rdpLauncher;
+    private RfbClient? _vncClient;
+    private AvaloniaRfbFrameSink? _vncFrameSink;
+    private CancellationTokenSource? _vncCancellation;
 
     public MainViewModel()
         : this(
@@ -109,6 +115,17 @@ public sealed partial class MainViewModel : ViewModelBase
 
     [ObservableProperty]
     private string connectionEditorError = string.Empty;
+
+    [ObservableProperty]
+    private WriteableBitmap? remoteFrame;
+
+    public bool IsVncSessionActive => _vncClient?.IsConnected is true;
+
+    public Task<bool> SendVncKeyAsync(uint keySym, bool isDown) =>
+        _vncClient?.SendKeyAsync(keySym, isDown) ?? Task.FromResult(false);
+
+    public Task<bool> SendVncPointerAsync(byte buttonMask, ushort x, ushort y) =>
+        _vncClient?.SendPointerAsync(buttonMask, x, y) ?? Task.FromResult(false);
 
     public string RuntimeStatus => _sessionService.GetStatus().State;
 
@@ -255,6 +272,12 @@ public sealed partial class MainViewModel : ViewModelBase
         }
 
         var session = _sessionWorkspace.OpenNew(connection);
+        if (string.Equals(connection.ProtocolId, "vnc", StringComparison.OrdinalIgnoreCase))
+        {
+            await LaunchVncAsync(connection, session.Id);
+            return;
+        }
+
         if (!string.Equals(connection.ProtocolId, "rdp", StringComparison.OrdinalIgnoreCase))
         {
             SessionStatusLabel = $"{session.State} · 等待 {connection.ProtocolId.ToUpperInvariant()} Adapter Host";
@@ -279,6 +302,65 @@ public sealed partial class MainViewModel : ViewModelBase
             _sessionWorkspace.SetState(session.Id, SessionState.Faulted, exception.Message);
             SessionStatusLabel = exception.Message;
         }
+    }
+
+    private async Task LaunchVncAsync(ConnectionProfile connection, SessionId sessionId)
+    {
+        await StopVncAsync();
+        _vncCancellation = new CancellationTokenSource();
+        _vncFrameSink = new AvaloniaRfbFrameSink(frame => RemoteFrame = frame);
+        _vncClient = new RfbClient(new TcpRfbTransportFactory(), _vncFrameSink);
+        try
+        {
+            var server = await _vncClient.ConnectAsync(new RfbConnectionOptions
+            {
+                Endpoint = connection.Endpoint,
+                AccessMode = connection.DefaultAccessMode,
+            }, _vncCancellation.Token);
+            _sessionWorkspace.SetState(sessionId, SessionState.Connected);
+            OnPropertyChanged(nameof(IsVncSessionActive));
+            SessionStatusLabel = $"VNC 已連線 · {server.Name} · {server.Width} × {server.Height}";
+            _ = ObserveVncAsync(_vncClient, sessionId, _vncCancellation.Token);
+        }
+        catch (Exception exception) when (exception is IOException or InvalidOperationException or NotSupportedException)
+        {
+            _sessionWorkspace.SetState(sessionId, SessionState.Faulted, exception.Message);
+            SessionStatusLabel = $"VNC 連線失敗：{exception.Message}";
+            await StopVncAsync();
+        }
+    }
+
+    private async Task ObserveVncAsync(RfbClient client, SessionId sessionId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await client.RunAsync(cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception) when (exception is IOException or InvalidDataException or NotSupportedException)
+        {
+            _sessionWorkspace.SetState(sessionId, SessionState.Faulted, exception.Message);
+            SessionStatusLabel = $"VNC 工作階段中斷：{exception.Message}";
+        }
+    }
+
+    private async Task StopVncAsync()
+    {
+        _vncCancellation?.Cancel();
+        _vncCancellation?.Dispose();
+        _vncCancellation = null;
+        if (_vncClient is not null)
+        {
+            await _vncClient.DisposeAsync();
+            _vncClient = null;
+        }
+
+        _vncFrameSink?.Dispose();
+        _vncFrameSink = null;
+        RemoteFrame = null;
+        OnPropertyChanged(nameof(IsVncSessionActive));
     }
 
     private void UpdateAccessMode()

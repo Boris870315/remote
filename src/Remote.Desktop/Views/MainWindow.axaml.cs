@@ -9,6 +9,7 @@ namespace Remote.Desktop.Views;
 public partial class MainWindow : Window
 {
     private bool _isSessionFullScreen;
+    private byte _vncButtonMask;
     private MainViewModel? _viewModel;
 
     public MainWindow()
@@ -56,6 +57,113 @@ public partial class MainWindow : Window
             SetSessionFullScreen(false);
             e.Handled = true;
         }
+    }
+
+    private async void HandleRemotePointerPressed(object? sender, PointerPressedEventArgs e) =>
+        await SendRemotePointerAsync(e, focus: true);
+
+    private async void HandleRemotePointerMoved(object? sender, PointerEventArgs e) =>
+        await SendRemotePointerAsync(e, focus: false);
+
+    private async void HandleRemotePointerReleased(object? sender, PointerReleasedEventArgs e) =>
+        await SendRemotePointerAsync(e, focus: false);
+
+    private async Task SendRemotePointerAsync(PointerEventArgs e, bool focus)
+    {
+        if (_viewModel?.IsVncSessionActive is not true || _viewModel.RemoteFrame is null)
+        {
+            return;
+        }
+
+        if (focus)
+        {
+            RemoteSurface.Focus();
+        }
+
+        var point = e.GetCurrentPoint(RemoteSurface);
+        _vncButtonMask = point.Properties.IsLeftButtonPressed ? (byte)1
+            : point.Properties.IsMiddleButtonPressed ? (byte)2
+            : point.Properties.IsRightButtonPressed ? (byte)4
+            : (byte)0;
+        if (!TryMapRemotePoint(point.Position, out var x, out var y))
+        {
+            return;
+        }
+
+        e.Handled = await _viewModel.SendVncPointerAsync(_vncButtonMask, x, y);
+    }
+
+    private async void HandleRemoteKeyDown(object? sender, KeyEventArgs e) =>
+        await SendRemoteKeyAsync(e, true);
+
+    private async void HandleRemoteKeyUp(object? sender, KeyEventArgs e) =>
+        await SendRemoteKeyAsync(e, false);
+
+    private async Task SendRemoteKeyAsync(KeyEventArgs e, bool isDown)
+    {
+        var keySym = ToRfbKeySym(e.Key);
+        if (keySym is not null && _viewModel is not null)
+        {
+            e.Handled = await _viewModel.SendVncKeyAsync(keySym.Value, isDown);
+        }
+    }
+
+    private bool TryMapRemotePoint(Avalonia.Point point, out ushort x, out ushort y)
+    {
+        x = y = 0;
+        var frame = _viewModel?.RemoteFrame;
+        if (frame is null || RemoteSurface.Bounds.Width <= 0 || RemoteSurface.Bounds.Height <= 0)
+        {
+            return false;
+        }
+
+        var scale = Math.Min(
+            RemoteSurface.Bounds.Width / frame.PixelSize.Width,
+            RemoteSurface.Bounds.Height / frame.PixelSize.Height);
+        var displayedWidth = frame.PixelSize.Width * scale;
+        var displayedHeight = frame.PixelSize.Height * scale;
+        var remoteX = (point.X - ((RemoteSurface.Bounds.Width - displayedWidth) / 2)) / scale;
+        var remoteY = (point.Y - ((RemoteSurface.Bounds.Height - displayedHeight) / 2)) / scale;
+        if (remoteX < 0 || remoteY < 0 || remoteX >= frame.PixelSize.Width || remoteY >= frame.PixelSize.Height)
+        {
+            return false;
+        }
+
+        x = (ushort)remoteX;
+        y = (ushort)remoteY;
+        return true;
+    }
+
+    private static uint? ToRfbKeySym(Key key)
+    {
+        if (key is >= Key.A and <= Key.Z)
+        {
+            return (uint)('a' + (key - Key.A));
+        }
+
+        if (key is >= Key.D0 and <= Key.D9)
+        {
+            return (uint)('0' + (key - Key.D0));
+        }
+
+        return key switch
+        {
+            Key.Enter => 0xFF0D,
+            Key.Back => 0xFF08,
+            Key.Tab => 0xFF09,
+            Key.Escape => 0xFF1B,
+            Key.Delete => 0xFFFF,
+            Key.Left => 0xFF51,
+            Key.Up => 0xFF52,
+            Key.Right => 0xFF53,
+            Key.Down => 0xFF54,
+            Key.LeftShift or Key.RightShift => 0xFFE1,
+            Key.LeftCtrl or Key.RightCtrl => 0xFFE3,
+            Key.LWin or Key.RWin => 0xFFEB,
+            Key.LeftAlt or Key.RightAlt => 0xFFE9,
+            Key.Space => 0x20,
+            _ => null,
+        };
     }
 
     private void SetSessionFullScreen(bool value)
