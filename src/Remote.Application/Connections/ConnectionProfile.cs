@@ -22,6 +22,8 @@ public sealed record ConnectionProfile
         SessionAccessMode.Interactive;
 
     public DisplayPreferences Display { get; init; } = new();
+
+    public ProtocolSettings ProtocolSettings { get; init; } = new();
 }
 
 public readonly record struct ConnectionId(Guid Value)

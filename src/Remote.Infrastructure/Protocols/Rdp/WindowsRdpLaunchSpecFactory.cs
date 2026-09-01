@@ -10,6 +10,7 @@ public sealed class WindowsRdpLaunchSpecFactory
     {
         ArgumentNullException.ThrowIfNull(request);
         RdpExternalLaunchGuard.EnsureInteractive(request);
+        request.Settings.Validate();
 
         var arguments = new List<string>
         {
@@ -26,6 +27,21 @@ public sealed class WindowsRdpLaunchSpecFactory
         if (request.Display.MonitorSelection is MonitorSelection.All)
         {
             arguments.Add("/multimon");
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Settings.GatewayHost))
+        {
+            arguments.Add($"/g:{request.Settings.GatewayHost}");
+        }
+
+        if (request.Settings.ConnectAsAdministrator)
+        {
+            arguments.Add("/admin");
+        }
+
+        if (request.Settings.UseRemoteGuard)
+        {
+            arguments.Add("/remoteGuard");
         }
 
         return new("mstsc.exe", arguments, false);

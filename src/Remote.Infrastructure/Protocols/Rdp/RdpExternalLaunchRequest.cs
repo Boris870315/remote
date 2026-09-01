@@ -13,5 +13,7 @@ public sealed record RdpExternalLaunchRequest
 
     public DisplayPreferences Display { get; init; } = new();
 
+    public RdpConnectionSettings Settings { get; init; } = new();
+
     public bool StartFullScreen { get; init; }
 }

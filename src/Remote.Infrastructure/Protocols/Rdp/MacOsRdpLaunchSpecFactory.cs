@@ -10,6 +10,7 @@ public sealed class MacOsRdpLaunchSpecFactory
     {
         ArgumentNullException.ThrowIfNull(request);
         RdpExternalLaunchGuard.EnsureInteractive(request);
+        request.Settings.Validate();
 
         var attributes = new List<string>
         {
@@ -17,7 +18,20 @@ public sealed class MacOsRdpLaunchSpecFactory
             "prompt%20for%20credentials%20on%20client=i:1",
             $"use%20multimon=i:{(request.Display.MonitorSelection is MonitorSelection.All ? 1 : 0)}",
             $"screen%20mode%20id=i:{(request.StartFullScreen ? 2 : 1)}",
+            $"audiomode=i:{(int)request.Settings.AudioMode}",
+            $"redirectprinters=i:{(request.Settings.RedirectPrinters ? 1 : 0)}",
         };
+
+        if (request.Settings.RedirectDrives)
+        {
+            attributes.Add("drivestoredirect=s:*");
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Settings.GatewayHost))
+        {
+            attributes.Add($"gatewayhostname=s:{Uri.EscapeDataString(request.Settings.GatewayHost)}");
+            attributes.Add("gatewayusagemethod=i:1");
+        }
 
         if (!string.IsNullOrWhiteSpace(request.Username))
         {

@@ -14,6 +14,12 @@ public sealed class RdpExternalLaunchSpecTests
         {
             StartFullScreen = true,
             Display = new DisplayPreferences { MonitorSelection = MonitorSelection.All },
+            Settings = new RdpConnectionSettings
+            {
+                GatewayHost = "gateway.example",
+                ConnectAsAdministrator = true,
+                UseRemoteGuard = true,
+            },
         };
 
         var specification = new WindowsRdpLaunchSpecFactory().Create(request);
@@ -25,12 +31,25 @@ public sealed class RdpExternalLaunchSpecTests
         Assert.Contains("/prompt", specification.Arguments);
         Assert.Contains("/multimon", specification.Arguments);
         Assert.Contains("/f", specification.Arguments);
+        Assert.Contains("/g:gateway.example", specification.Arguments);
+        Assert.Contains("/admin", specification.Arguments);
+        Assert.Contains("/remoteGuard", specification.Arguments);
     }
 
     [Fact]
     public void MacOs_BuildsDocumentedRdpUriWithoutPassword()
     {
-        var request = CreateRequest() with { Username = "CORP\\operator" };
+        var request = CreateRequest() with
+        {
+            Username = "CORP\\operator",
+            Settings = new RdpConnectionSettings
+            {
+                GatewayHost = "gateway.example",
+                RedirectPrinters = true,
+                RedirectDrives = true,
+                AudioMode = RdpAudioMode.DoNotPlay,
+            },
+        };
 
         var specification = new MacOsRdpLaunchSpecFactory().Create(request);
 
@@ -39,6 +58,10 @@ public sealed class RdpExternalLaunchSpecTests
         Assert.Contains("full%20address=s:server.example%3A3390", specification.FileName, StringComparison.Ordinal);
         Assert.Contains("username=s:CORP%5Coperator", specification.FileName, StringComparison.Ordinal);
         Assert.DoesNotContain("password", specification.FileName, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("gatewayhostname=s:gateway.example", specification.FileName, StringComparison.Ordinal);
+        Assert.Contains("redirectprinters=i:1", specification.FileName, StringComparison.Ordinal);
+        Assert.Contains("drivestoredirect=s:*", specification.FileName, StringComparison.Ordinal);
+        Assert.Contains("audiomode=i:2", specification.FileName, StringComparison.Ordinal);
     }
 
     [Theory]

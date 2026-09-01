@@ -21,7 +21,7 @@
           <Grid ColumnDefinitions="*,Auto"><TextBox Margin="3,0,0,0" Padding="8,0" VerticalContentAlignment="Center" Background="Transparent" BorderThickness="0" PlaceholderText="快速連線：輸入主機名稱或 host:port" Text="{Binding QuickConnectText}"/><Button Grid.Column="1" Margin="3" Padding="12,3" Background="#293451" Foreground="#DCE4F3" CornerRadius="6" Content="連線" Command="{Binding QuickConnectCommand}"/></Grid>
         </Border>
         <StackPanel x:Name="HeaderActions" Grid.Column="4" Orientation="Horizontal" Spacing="8">
-          <Button Content="🔒 Vault 已解鎖" Classes="tool"/><Button Content="＋ 新增連線" Background="#5B5CE2" Foreground="White" CornerRadius="8" Padding="12,7"/>
+          <Button Content="🔒 Vault 已解鎖" Classes="tool"/><Button Content="＋ 新增連線" Background="#5B5CE2" Foreground="White" CornerRadius="8" Padding="12,7" Command="{Binding BeginNewConnectionCommand}"/>
         </StackPanel>
       </Grid>
     </Border>
@@ -47,13 +47,33 @@
         </Border>
       </Grid>
       <Border x:Name="Inspector" Grid.Column="3" Background="#171F2E" BorderBrush="#293248" BorderThickness="1,0,0,0" Padding="16">
-        <StackPanel Spacing="16">
+        <Grid>
+        <StackPanel Spacing="16" IsVisible="{Binding !IsEditingConnection}">
           <StackPanel><TextBlock Text="{Binding SelectedConnection.Name, FallbackValue=Windows Prod}" FontSize="16" FontWeight="SemiBold"/><TextBlock Text="{Binding SelectedConnection.Protocol, FallbackValue=RDP}" FontSize="11" Foreground="#8290A7"/></StackPanel>
           <StackPanel Spacing="5"><TextBlock Text="主機" FontSize="10" Foreground="#7F8DA5"/><TextBlock Text="{Binding SelectedConnection.Endpoint, FallbackValue=10.20.0.24:3389}" FontSize="12"/></StackPanel>
           <StackPanel Spacing="6"><TextBlock Text="身份卡" FontSize="10" Foreground="#7F8DA5"/><Border Background="#20293B" BorderBrush="#414C68" BorderThickness="1" CornerRadius="8" Padding="10"><StackPanel Spacing="5"><TextBlock Text="Windows Admin" FontSize="12"/><TextBlock Text="CORP\operator" FontSize="10" Foreground="#8290A7"/><Border HorizontalAlignment="Left" Background="#493F78" CornerRadius="5" Padding="6,3"><TextBlock Text="{Binding SelectedConnection.IdentityScope, FallbackValue=RDP only}" Foreground="#C9C6FF" FontSize="9"/></Border></StackPanel></Border></StackPanel>
           <StackPanel Spacing="5"><TextBlock Text="工作階段權限" FontSize="10" Foreground="#7F8DA5"/><ToggleSwitch IsChecked="{Binding IsViewOnly}" Content="View Only"/><TextBlock Text="{Binding StatusDetail}" FontSize="10" Foreground="#A9B8CE" TextWrapping="Wrap"/></StackPanel>
           <StackPanel Spacing="5"><TextBlock Text="顯示" FontSize="10" Foreground="#7F8DA5"/><TextBlock Text="適應視窗 · 指定螢幕 1" FontSize="12"/></StackPanel>
         </StackPanel>
+        <ScrollViewer IsVisible="{Binding IsEditingConnection}">
+          <StackPanel Spacing="12">
+            <TextBlock Text="新增 RDP 連線" FontSize="16" FontWeight="SemiBold"/>
+            <StackPanel Spacing="4"><TextBlock Text="名稱" FontSize="10" Foreground="#7F8DA5"/><TextBox Text="{Binding EditName}" PlaceholderText="例如：Windows Prod"/></StackPanel>
+            <StackPanel Spacing="4"><TextBlock Text="主機或 IP" FontSize="10" Foreground="#7F8DA5"/><TextBox Text="{Binding EditHost}" PlaceholderText="server.example 或 10.20.0.24"/></StackPanel>
+            <StackPanel Spacing="4"><TextBlock Text="連接埠" FontSize="10" Foreground="#7F8DA5"/><TextBox Text="{Binding EditPort}"/></StackPanel>
+            <StackPanel Spacing="4"><TextBlock Text="RD Gateway（選填）" FontSize="10" Foreground="#7F8DA5"/><TextBox Text="{Binding EditGateway}" PlaceholderText="gateway.example"/></StackPanel>
+            <ToggleSwitch IsChecked="{Binding EditUseAllMonitors}" Content="跨全部螢幕"/>
+            <ToggleSwitch IsChecked="{Binding EditViewOnly}" Content="View Only"/>
+            <TextBlock Text="外部 RDP 用戶端無法可靠執行 View Only；啟用時必須使用後續內嵌 Host。" FontSize="10" Foreground="#E5B96F" TextWrapping="Wrap" IsVisible="{Binding EditViewOnly}"/>
+            <TextBlock Text="裝置重新導向" FontSize="10" Foreground="#7F8DA5"/>
+            <CheckBox IsChecked="{Binding EditRedirectClipboard}" Content="文字剪貼簿"/>
+            <CheckBox IsChecked="{Binding EditRedirectPrinters}" Content="印表機"/>
+            <CheckBox IsChecked="{Binding EditRedirectDrives}" Content="磁碟機"/>
+            <TextBlock Text="{Binding ConnectionEditorError}" Foreground="#FF8A8A" FontSize="11" TextWrapping="Wrap"/>
+            <Grid ColumnDefinitions="*,*" ColumnSpacing="8"><Button Content="取消" Command="{Binding CancelConnectionEditCommand}"/><Button Grid.Column="1" Content="儲存" Command="{Binding SaveConnectionCommand}" Background="#5B5CE2" Foreground="White"/></Grid>
+          </StackPanel>
+        </ScrollViewer>
+        </Grid>
       </Border>
     </Grid>
   </Grid>

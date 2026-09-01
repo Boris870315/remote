@@ -77,11 +77,130 @@ public sealed partial class MainViewModel : ViewModelBase
     [ObservableProperty]
     private string quickConnectText = string.Empty;
 
+    [ObservableProperty]
+    private bool isEditingConnection;
+
+    [ObservableProperty]
+    private string editName = string.Empty;
+
+    [ObservableProperty]
+    private string editHost = string.Empty;
+
+    [ObservableProperty]
+    private string editPort = "3389";
+
+    [ObservableProperty]
+    private string editGateway = string.Empty;
+
+    [ObservableProperty]
+    private bool editUseAllMonitors;
+
+    [ObservableProperty]
+    private bool editViewOnly;
+
+    [ObservableProperty]
+    private bool editRedirectClipboard = true;
+
+    [ObservableProperty]
+    private bool editRedirectPrinters;
+
+    [ObservableProperty]
+    private bool editRedirectDrives;
+
+    [ObservableProperty]
+    private string connectionEditorError = string.Empty;
+
     public string RuntimeStatus => _sessionService.GetStatus().State;
 
     public string ProtocolName => _protocol.Descriptor.DisplayName;
 
     partial void OnIsViewOnlyChanged(bool value) => UpdateAccessMode();
+
+    [RelayCommand]
+    private void BeginNewConnection()
+    {
+        EditName = string.Empty;
+        EditHost = string.Empty;
+        EditPort = "3389";
+        EditGateway = string.Empty;
+        EditUseAllMonitors = false;
+        EditViewOnly = false;
+        EditRedirectClipboard = true;
+        EditRedirectPrinters = false;
+        EditRedirectDrives = false;
+        ConnectionEditorError = string.Empty;
+        IsEditingConnection = true;
+    }
+
+    [RelayCommand]
+    private void CancelConnectionEdit()
+    {
+        ConnectionEditorError = string.Empty;
+        IsEditingConnection = false;
+    }
+
+    [RelayCommand]
+    private void SaveConnection()
+    {
+        var name = EditName.Trim();
+        var host = EditHost.Trim();
+        if (name.Length == 0 || host.Length == 0)
+        {
+            ConnectionEditorError = "名稱與主機為必填欄位";
+            return;
+        }
+
+        if (!int.TryParse(EditPort, out var port) || port is < 1 or > 65535)
+        {
+            ConnectionEditorError = "連接埠必須介於 1 到 65535";
+            return;
+        }
+
+        if (Uri.CheckHostName(host) is UriHostNameType.Unknown)
+        {
+            ConnectionEditorError = "主機名稱或 IP 位址格式無效";
+            return;
+        }
+
+        var settings = new RdpConnectionSettings
+        {
+            GatewayHost = string.IsNullOrWhiteSpace(EditGateway) ? null : EditGateway.Trim(),
+            RedirectClipboard = EditRedirectClipboard,
+            RedirectPrinters = EditRedirectPrinters,
+            RedirectDrives = EditRedirectDrives,
+        };
+        try
+        {
+            settings.Validate();
+        }
+        catch (ArgumentException exception)
+        {
+            ConnectionEditorError = exception.Message;
+            return;
+        }
+
+        var endpoint = new UriBuilder("rdp", host, port).Uri;
+        var profile = new ConnectionProfile
+        {
+            Id = ConnectionId.New(),
+            Name = name,
+            Endpoint = endpoint,
+            ProtocolId = "rdp",
+            DefaultAccessMode = EditViewOnly ? SessionAccessMode.ViewOnly : SessionAccessMode.Interactive,
+            Display = new DisplayPreferences
+            {
+                MonitorSelection = EditUseAllMonitors ? MonitorSelection.All : MonitorSelection.Single,
+            },
+            ProtocolSettings = settings.ToProtocolSettings(),
+        };
+        var item = new ConnectionListItem(profile, "RDP only", false);
+        Connections.Add(item);
+        SelectedConnection = item;
+        IsViewOnly = EditViewOnly;
+        ConnectionEditorError = string.Empty;
+        IsEditingConnection = false;
+        SessionStatusLabel = $"已儲存 {name}；目前保存在未加密的執行階段記憶體，尚未寫入磁碟";
+    }
 
     [RelayCommand]
     private async Task OpenSelectedSessionAsync()
@@ -149,6 +268,7 @@ public sealed partial class MainViewModel : ViewModelBase
                 Endpoint = connection.Endpoint,
                 AccessMode = connection.DefaultAccessMode,
                 Display = connection.Display,
+                Settings = RdpConnectionSettings.FromProtocolSettings(connection.ProtocolSettings),
             });
             _sessionWorkspace.SetState(session.Id, SessionState.ExternalClientLaunched);
             SessionStatusLabel = "已啟動平台 RDP 用戶端 · 密碼由用戶端安全提示";
