@@ -11,6 +11,11 @@ using Remote.Infrastructure.Processes;
 using Remote.Infrastructure.Protocols.Rdp;
 using Remote.Infrastructure.Protocols.Vnc;
 using Remote.Infrastructure.Protocols.Ssh;
+using Remote.Infrastructure.Security;
+using Remote.Infrastructure.Storage;
+using Remote.Infrastructure.Vaults;
+using Remote.Application.Vaults;
+using Remote.Application.Credentials;
 using Remote.Desktop.Protocols.Vnc;
 using Remote.Protocols;
 
@@ -28,6 +33,13 @@ public sealed partial class MainViewModel : ViewModelBase
     private CancellationTokenSource? _vncCancellation;
     private SshTerminalSession? _sshSession;
     private CancellationTokenSource? _sshCancellation;
+    private readonly EncryptedWorkspaceRepository _workspaceRepository;
+    private readonly EncryptedVaultArchiveService _vaultArchiveService;
+    private readonly string _workspacePath;
+    private readonly List<ConnectionFolder> _folders = [];
+    private CredentialVault? _vault;
+    private string _activeMasterPassword = string.Empty;
+    private VaultId _primaryVaultId = new(Guid.NewGuid());
 
     public MainViewModel()
         : this(
@@ -51,8 +63,16 @@ public sealed partial class MainViewModel : ViewModelBase
         _protocol = protocol;
         _launchPolicy = launchPolicy;
         _rdpLauncher = rdpLauncher;
+        _workspaceRepository = new EncryptedWorkspaceRepository(
+            new EncryptedWorkspaceFile(new WorkspaceCryptography()));
+        _vaultArchiveService = new EncryptedVaultArchiveService(new WorkspaceCryptography());
+        _workspacePath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "Remote",
+            "workspace.rmtw");
         var productionFolder = new ConnectionFolder { Id = FolderId.New(), Name = "Production" };
         var labFolder = new ConnectionFolder { Id = FolderId.New(), Name = "Lab" };
+        _folders.AddRange([productionFolder, labFolder]);
         var windowsProd = CreateConnection("Windows Prod", "rdp", "rdp://10.20.0.24:3389") with { FolderId = productionFolder.Id };
         var designMac = CreateConnection("Design Mac", "vnc", "vnc://10.20.0.31:5900") with { FolderId = productionFolder.Id };
         var labSsh = CreateConnection("Lab SSH", "ssh2", "ssh://10.20.1.18:22") with { FolderId = labFolder.Id };
@@ -73,6 +93,10 @@ public sealed partial class MainViewModel : ViewModelBase
     public string Title => "Remote";
 
     public ObservableCollection<ConnectionListItem> Connections { get; }
+
+    public ObservableCollection<CredentialDefinition> VaultCredentials { get; } = [];
+
+    public IReadOnlyList<string> IdentityProtocols { get; } = ["rdp", "vnc", "ssh2", "http", "https", "terminal"];
 
     public ObservableCollection<ConnectionTreeDisplayItem> ConnectionTree { get; }
 
@@ -154,6 +178,40 @@ public sealed partial class MainViewModel : ViewModelBase
     [ObservableProperty]
     private bool isTerminalActive;
 
+    [ObservableProperty]
+    private bool isVaultPanelOpen;
+
+    [ObservableProperty]
+    private bool isVaultLocked = true;
+
+    [ObservableProperty]
+    private string vaultMasterPassword = string.Empty;
+
+    [ObservableProperty]
+    private string vaultMessage = "Vault 已鎖定";
+
+    [ObservableProperty]
+    private string newIdentityName = string.Empty;
+
+    [ObservableProperty]
+    private string newIdentityProtocol = "ssh2";
+
+    [ObservableProperty]
+    private string newIdentityUsername = string.Empty;
+
+    [ObservableProperty]
+    private string newIdentityDomain = string.Empty;
+
+    [ObservableProperty]
+    private string newIdentitySecret = string.Empty;
+
+    [ObservableProperty]
+    private CredentialDefinition? selectedVaultCredential;
+
+    public string VaultStatusLabel => IsVaultLocked ? "🔒 Vault 已鎖定" : "🔓 Vault 已解鎖";
+
+    public bool WorkspaceExists => File.Exists(_workspacePath);
+
     public bool IsSshSelected => string.Equals(SelectedConnection?.Profile.ProtocolId, "ssh2", StringComparison.OrdinalIgnoreCase);
 
     public bool IsVncSelected => string.Equals(SelectedConnection?.Profile.ProtocolId, "vnc", StringComparison.OrdinalIgnoreCase);
@@ -172,6 +230,172 @@ public sealed partial class MainViewModel : ViewModelBase
     {
         await StopVncAsync();
         await StopSshAsync();
+        LockVault();
+    }
+
+    partial void OnIsVaultLockedChanged(bool value) => OnPropertyChanged(nameof(VaultStatusLabel));
+
+    [RelayCommand]
+    private void OpenVaultPanel() => IsVaultPanelOpen = true;
+
+    [RelayCommand]
+    private void CloseVaultPanel()
+    {
+        VaultMasterPassword = string.Empty;
+        NewIdentitySecret = string.Empty;
+        IsVaultPanelOpen = false;
+    }
+
+    [RelayCommand]
+    private async Task UnlockVaultAsync()
+    {
+        if (VaultMasterPassword.Length < 8)
+        {
+            VaultMessage = "主密碼至少需要 8 個字元";
+            return;
+        }
+
+        try
+        {
+            CredentialVault vault;
+            if (File.Exists(_workspacePath))
+            {
+                var document = await _workspaceRepository.LoadAsync(_workspacePath, VaultMasterPassword);
+                if (document.EncryptedPrimaryVault is { Length: > 0 } archive)
+                {
+                    try
+                    {
+                        vault = _vaultArchiveService.Import(archive, VaultMasterPassword);
+                    }
+                    finally
+                    {
+                        System.Security.Cryptography.CryptographicOperations.ZeroMemory(archive);
+                    }
+                }
+                else
+                {
+                    vault = new CredentialVault();
+                }
+                LoadWorkspaceDocument(document);
+            }
+            else
+            {
+                vault = new CredentialVault();
+            }
+
+            _vault?.Dispose();
+            _vault = vault;
+            _activeMasterPassword = VaultMasterPassword;
+            VaultMasterPassword = string.Empty;
+            IsVaultLocked = false;
+            RefreshVaultCredentials();
+            VaultMessage = File.Exists(_workspacePath) ? "Vault 已安全解鎖" : "已建立新的本機主 Vault";
+            if (!File.Exists(_workspacePath))
+            {
+                await SaveWorkspaceAsync();
+            }
+        }
+        catch (Exception exception) when (exception is WorkspaceUnlockException or InvalidDataException or NotSupportedException)
+        {
+            VaultMasterPassword = string.Empty;
+            VaultMessage = exception.Message;
+        }
+    }
+
+    [RelayCommand]
+    private void LockVault()
+    {
+        _vault?.Dispose();
+        _vault = null;
+        _activeMasterPassword = string.Empty;
+        VaultMasterPassword = string.Empty;
+        SessionPassword = string.Empty;
+        NewIdentitySecret = string.Empty;
+        VaultCredentials.Clear();
+        IsVaultLocked = true;
+        VaultMessage = "Vault 已鎖定；敏感內容已從執行階段清除";
+    }
+
+    [RelayCommand]
+    private async Task AddIdentityCardAsync()
+    {
+        if (_vault is null || IsVaultLocked)
+        {
+            VaultMessage = "請先解鎖 Vault";
+            return;
+        }
+
+        var name = NewIdentityName.Trim();
+        var protocol = NewIdentityProtocol.Trim().ToLowerInvariant();
+        var username = NewIdentityUsername.Trim();
+        if (name.Length == 0 || username.Length == 0 || NewIdentitySecret.Length == 0 ||
+            protocol is not ("rdp" or "vnc" or "ssh2" or "http" or "https" or "terminal"))
+        {
+            VaultMessage = "名稱、支援的協定、使用者名稱與密碼皆為必填";
+            return;
+        }
+
+        var definition = new CredentialDefinition
+        {
+            Id = new CredentialId(Guid.NewGuid()),
+            VaultId = _primaryVaultId,
+            Name = name,
+            Kind = CredentialKind.UsernamePassword,
+            ProtocolScope = protocol,
+            Username = username,
+            Domain = string.IsNullOrWhiteSpace(NewIdentityDomain) ? null : NewIdentityDomain.Trim(),
+        };
+        var secret = Encoding.UTF8.GetBytes(NewIdentitySecret);
+        try
+        {
+            _vault.Add(definition, secret);
+            NewIdentitySecret = string.Empty;
+            NewIdentityName = string.Empty;
+            NewIdentityUsername = string.Empty;
+            NewIdentityDomain = string.Empty;
+            RefreshVaultCredentials();
+            await SaveWorkspaceAsync();
+            VaultMessage = $"身份卡「{definition.Name}」已加密儲存";
+        }
+        finally
+        {
+            System.Security.Cryptography.CryptographicOperations.ZeroMemory(secret);
+        }
+    }
+
+    [RelayCommand]
+    private async Task AssignIdentityCardAsync()
+    {
+        if (SelectedConnection is null || SelectedVaultCredential is null || _vault is null || IsVaultLocked)
+        {
+            VaultMessage = "請選取身份卡與目標連線";
+            return;
+        }
+
+        if (!string.Equals(
+                SelectedVaultCredential.ProtocolScope,
+                SelectedConnection.Profile.ProtocolId,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            VaultMessage = $"此身份卡僅供 {SelectedVaultCredential.ProtocolScope.ToUpperInvariant()} 使用";
+            return;
+        }
+
+        var index = Connections.IndexOf(SelectedConnection);
+        var updated = SelectedConnection with
+        {
+            Profile = SelectedConnection.Profile with
+            {
+                Credential = ConnectionCredentialReference.IdentityCard(
+                    SelectedVaultCredential.VaultId,
+                    SelectedVaultCredential.Id),
+            },
+            IdentityScope = $"{SelectedVaultCredential.ProtocolScope.ToUpperInvariant()} only",
+        };
+        Connections[index] = updated;
+        RebuildConnectionTree(updated.Profile.Id);
+        await SaveWorkspaceAsync();
+        VaultMessage = $"已將「{SelectedVaultCredential.Name}」指派給 {updated.Name}";
     }
 
     partial void OnSelectedConnectionChanged(ConnectionListItem? value)
@@ -225,7 +449,7 @@ public sealed partial class MainViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    private void SaveConnection()
+    private async Task SaveConnectionAsync()
     {
         var name = EditName.Trim();
         var host = EditHost.Trim();
@@ -286,7 +510,15 @@ public sealed partial class MainViewModel : ViewModelBase
         IsViewOnly = EditViewOnly;
         ConnectionEditorError = string.Empty;
         IsEditingConnection = false;
-        SessionStatusLabel = $"已儲存 {name}；目前保存在未加密的執行階段記憶體，尚未寫入磁碟";
+        if (!IsVaultLocked)
+        {
+            await SaveWorkspaceAsync();
+            SessionStatusLabel = $"已加密儲存 {name}";
+        }
+        else
+        {
+            SessionStatusLabel = $"已加入 {name}；解鎖 Vault 後才能加密寫入磁碟";
+        }
     }
 
     [RelayCommand]
@@ -382,9 +614,29 @@ public sealed partial class MainViewModel : ViewModelBase
 
     private async Task LaunchSshAsync(ConnectionProfile connection, SessionId sessionId)
     {
-        if (string.IsNullOrWhiteSpace(SessionUsername) || string.IsNullOrEmpty(SessionPassword))
+        byte[]? vaultSecret = null;
+        var username = SessionUsername.Trim();
+        var password = SessionPassword;
+        if (connection.Credential.Kind is CredentialReferenceKind.IdentityCard &&
+            connection.Credential.CredentialId is { } credentialId &&
+            _vault is not null && !IsVaultLocked)
         {
-            SessionStatusLabel = "SSH2 需要使用者名稱與密碼；請在右側登入區輸入";
+            var definition = _vault.Credentials.FirstOrDefault(item => item.Id == credentialId);
+            if (definition is not null)
+            {
+                username = definition.Username ?? string.Empty;
+                vaultSecret = _vault.Reveal(credentialId);
+                password = Encoding.UTF8.GetString(vaultSecret);
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(username) || string.IsNullOrEmpty(password))
+        {
+            SessionStatusLabel = "SSH2 需要已解鎖的身份卡，或右側暫時登入資料";
+            if (vaultSecret is not null)
+            {
+                System.Security.Cryptography.CryptographicOperations.ZeroMemory(vaultSecret);
+            }
             return;
         }
 
@@ -397,8 +649,8 @@ public sealed partial class MainViewModel : ViewModelBase
             await _sshSession.ConnectAsync(new SshSessionOptions
             {
                 Endpoint = connection.Endpoint,
-                Username = SessionUsername.Trim(),
-                Password = SessionPassword,
+                Username = username,
+                Password = password,
                 ExpectedHostKeySha256 = string.IsNullOrWhiteSpace(ExpectedHostKey) ? null : ExpectedHostKey.Trim(),
                 ConfirmUnknownHostKey = TrustUnknownHostKey
                     ? key => { acceptedHostKey = key; return true; }
@@ -424,6 +676,13 @@ public sealed partial class MainViewModel : ViewModelBase
             SessionStatusLabel = $"SSH2 連線失敗：{exception.Message}";
             SessionPassword = string.Empty;
             await StopSshAsync();
+        }
+        finally
+        {
+            if (vaultSecret is not null)
+            {
+                System.Security.Cryptography.CryptographicOperations.ZeroMemory(vaultSecret);
+            }
         }
     }
 
@@ -507,6 +766,95 @@ public sealed partial class MainViewModel : ViewModelBase
         }
 
         IsTerminalActive = false;
+    }
+
+    private void RefreshVaultCredentials()
+    {
+        VaultCredentials.Clear();
+        if (_vault is null || _vault.IsLocked)
+        {
+            return;
+        }
+
+        foreach (var credential in _vault.Credentials.OrderBy(item => item.Name, StringComparer.CurrentCultureIgnoreCase))
+        {
+            VaultCredentials.Add(credential);
+        }
+
+        if (VaultCredentials.FirstOrDefault() is { } first)
+        {
+            _primaryVaultId = first.VaultId;
+        }
+    }
+
+    private async Task SaveWorkspaceAsync()
+    {
+        if (_vault is null || IsVaultLocked || _activeMasterPassword.Length == 0)
+        {
+            throw new InvalidOperationException("The Vault must be unlocked before saving the Workspace.");
+        }
+
+        var encryptedVault = _vaultArchiveService.Export(_vault, _activeMasterPassword);
+        try
+        {
+            var identityCards = _vault.Credentials
+                .Where(credential => credential.Kind is CredentialKind.UsernamePassword)
+                .Select(credential => new IdentityCard
+                {
+                    VaultId = credential.VaultId,
+                    CredentialId = credential.Id,
+                    Name = credential.Name,
+                    ProtocolId = credential.ProtocolScope,
+                    Username = credential.Username ?? string.Empty,
+                    Domain = credential.Domain,
+                })
+                .ToArray();
+            await _workspaceRepository.SaveAsync(_workspacePath, new WorkspaceDocument
+            {
+                Folders = _folders.ToArray(),
+                Connections = Connections.Select(item => item.Profile).ToArray(),
+                IdentityCards = identityCards,
+                EncryptedPrimaryVault = encryptedVault,
+            }, _activeMasterPassword);
+        }
+        finally
+        {
+            System.Security.Cryptography.CryptographicOperations.ZeroMemory(encryptedVault);
+        }
+    }
+
+    private void LoadWorkspaceDocument(WorkspaceDocument document)
+    {
+        _folders.Clear();
+        _folders.AddRange(document.Folders);
+        Connections.Clear();
+        foreach (var connection in document.Connections)
+        {
+            Connections.Add(new ConnectionListItem(connection, $"{connection.ProtocolId.ToUpperInvariant()} only", false));
+        }
+
+        ConnectionTree.Clear();
+        foreach (var item in BuildConnectionTree(_folders, Connections))
+        {
+            ConnectionTree.Add(item);
+        }
+
+        SelectedConnection = Connections.FirstOrDefault();
+        SelectedTreeItem = SelectedConnection is null
+            ? null
+            : FindConnectionTreeItem(ConnectionTree, SelectedConnection.Profile.Id);
+    }
+
+    private void RebuildConnectionTree(ConnectionId selectedId)
+    {
+        ConnectionTree.Clear();
+        foreach (var item in BuildConnectionTree(_folders, Connections))
+        {
+            ConnectionTree.Add(item);
+        }
+
+        SelectedConnection = Connections.FirstOrDefault(item => item.Profile.Id == selectedId);
+        SelectedTreeItem = FindConnectionTreeItem(ConnectionTree, selectedId);
     }
 
     private async Task LaunchVncAsync(ConnectionProfile connection, SessionId sessionId)

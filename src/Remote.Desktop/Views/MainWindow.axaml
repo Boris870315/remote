@@ -21,7 +21,7 @@
           <Grid ColumnDefinitions="*,Auto"><TextBox Margin="3,0,0,0" Padding="8,0" VerticalContentAlignment="Center" Background="Transparent" BorderThickness="0" PlaceholderText="快速連線：輸入主機名稱或 host:port" Text="{Binding QuickConnectText}"/><Button Grid.Column="1" Margin="3" Padding="12,3" Background="#293451" Foreground="#DCE4F3" CornerRadius="6" Content="連線" Command="{Binding QuickConnectCommand}"/></Grid>
         </Border>
         <StackPanel x:Name="HeaderActions" Grid.Column="4" Orientation="Horizontal" Spacing="8">
-          <Button Content="🔒 Vault 已解鎖" Classes="tool"/><Button Content="＋ 新增連線" Background="#5B5CE2" Foreground="White" CornerRadius="8" Padding="12,7" Command="{Binding BeginNewConnectionCommand}"/>
+          <Button Content="{Binding VaultStatusLabel}" Classes="tool" Command="{Binding OpenVaultPanelCommand}"/><Button Content="＋ 新增連線" Background="#5B5CE2" Foreground="White" CornerRadius="8" Padding="12,7" Command="{Binding BeginNewConnectionCommand}"/>
         </StackPanel>
       </Grid>
     </Border>
@@ -104,5 +104,36 @@
         </Grid>
       </Border>
     </Grid>
+    <Border Grid.RowSpan="2" Background="#B3090D16" IsVisible="{Binding IsVaultPanelOpen}" ZIndex="20">
+      <Border Width="520" MaxHeight="720" HorizontalAlignment="Center" VerticalAlignment="Center" Background="#171F2E" BorderBrush="#4A5874" BorderThickness="1" CornerRadius="14" Padding="22">
+        <Grid RowDefinitions="Auto,*,Auto">
+          <Grid ColumnDefinitions="*,Auto"><StackPanel><TextBlock Text="主 Vault" FontSize="20" FontWeight="SemiBold"/><TextBlock Text="本機雙層加密 · 不使用雲端" FontSize="10" Foreground="#8290A7"/></StackPanel><Button Grid.Column="1" Content="✕" Classes="tool" Command="{Binding CloseVaultPanelCommand}"/></Grid>
+          <ScrollViewer Grid.Row="1" Margin="0,18,0,12">
+            <StackPanel Spacing="12">
+              <StackPanel Spacing="8" IsVisible="{Binding IsVaultLocked}">
+                <TextBlock Text="輸入主密碼以建立或解鎖 Workspace" TextWrapping="Wrap"/>
+                <TextBox Text="{Binding VaultMasterPassword}" PasswordChar="●" PlaceholderText="主密碼（至少 8 個字元）"/>
+                <Button Content="解鎖 Vault" Command="{Binding UnlockVaultCommand}" Background="#5B5CE2" Foreground="White" Padding="14,9"/>
+              </StackPanel>
+              <StackPanel Spacing="10" IsVisible="{Binding !IsVaultLocked}">
+                <Grid ColumnDefinitions="*,Auto"><TextBlock Text="身份卡" FontSize="15" FontWeight="SemiBold"/><Button Grid.Column="1" Content="立即鎖定" Command="{Binding LockVaultCommand}" Classes="tool"/></Grid>
+                <ListBox ItemsSource="{Binding VaultCredentials}" SelectedItem="{Binding SelectedVaultCredential}" Background="Transparent" BorderThickness="0" MaxHeight="180">
+                  <ListBox.ItemTemplate><DataTemplate><Border Margin="0,3" Padding="10" Background="#20293B" CornerRadius="8"><Grid ColumnDefinitions="*,Auto"><StackPanel><TextBlock Text="{Binding Name}"/><TextBlock Text="{Binding Username}" FontSize="10" Foreground="#8290A7"/></StackPanel><TextBlock Grid.Column="1" Text="{Binding ProtocolScope}" Foreground="#9FA5FF"/></Grid></Border></DataTemplate></ListBox.ItemTemplate>
+                </ListBox>
+                <Button Content="指派給目前連線" Command="{Binding AssignIdentityCardCommand}" Classes="tool"/>
+                <TextBlock Text="新增身份卡" FontSize="13" FontWeight="SemiBold" Margin="0,8,0,0"/>
+                <TextBox Text="{Binding NewIdentityName}" PlaceholderText="名稱"/>
+                <ComboBox ItemsSource="{Binding IdentityProtocols}" SelectedItem="{Binding NewIdentityProtocol}"/>
+                <TextBox Text="{Binding NewIdentityUsername}" PlaceholderText="使用者名稱"/>
+                <TextBox Text="{Binding NewIdentityDomain}" PlaceholderText="網域（選填）"/>
+                <TextBox Text="{Binding NewIdentitySecret}" PasswordChar="●" PlaceholderText="密碼"/>
+                <Button Content="加密儲存身份卡" Command="{Binding AddIdentityCardCommand}" Background="#5B5CE2" Foreground="White" Padding="14,9"/>
+              </StackPanel>
+            </StackPanel>
+          </ScrollViewer>
+          <TextBlock Grid.Row="2" Text="{Binding VaultMessage}" Foreground="#A9B8CE" TextWrapping="Wrap" FontSize="11"/>
+        </Grid>
+      </Border>
+    </Border>
   </Grid>
 </Window>
