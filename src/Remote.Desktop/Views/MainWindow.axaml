@@ -1,44 +1,60 @@
-<Window xmlns="https://github.com/avaloniaui"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:vm="using:Remote.Desktop.ViewModels"
-        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        mc:Ignorable="d"
-        d:DesignWidth="960"
-        d:DesignHeight="600"
-        x:Class="Remote.Desktop.Views.MainWindow"
-        x:DataType="vm:MainViewModel"
-        Width="960"
-        Height="600"
-        MinWidth="720"
-        MinHeight="480"
-        Icon="/Assets/avalonia-logo.ico"
-        Title="Remote">
-
-    <Design.DataContext>
-        <vm:MainViewModel />
-    </Design.DataContext>
-
-    <Grid Margin="48" RowDefinitions="Auto,*,Auto">
-        <StackPanel Spacing="10">
-            <TextBlock Text="{Binding Title}" FontSize="40" FontWeight="SemiBold" />
-            <TextBlock Text="{Binding Runtime}" FontSize="16" Opacity="0.7" />
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Remote.Desktop.ViewModels" xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="d"
+        d:DesignWidth="1440" d:DesignHeight="900" x:Class="Remote.Desktop.Views.MainWindow"
+        x:DataType="vm:MainViewModel" Width="1280" Height="800" MinWidth="680" MinHeight="520"
+        Background="#0D1220" Icon="/Assets/avalonia-logo.ico" Title="Remote">
+  <Design.DataContext><vm:MainViewModel /></Design.DataContext>
+  <Window.Styles>
+    <Style Selector="Button.nav"><Setter Property="Width" Value="40"/><Setter Property="Height" Value="40"/><Setter Property="CornerRadius" Value="9"/><Setter Property="Background" Value="Transparent"/><Setter Property="Foreground" Value="#93A1B8"/><Setter Property="FontSize" Value="17"/></Style>
+    <Style Selector="Button.nav.selected"><Setter Property="Background" Value="#293451"/><Setter Property="Foreground" Value="#A8AAFF"/></Style>
+    <Style Selector="Button.tool"><Setter Property="Padding" Value="10,6"/><Setter Property="CornerRadius" Value="6"/><Setter Property="Background" Value="#192131"/><Setter Property="Foreground" Value="#DCE4F3"/><Setter Property="FontSize" Value="12"/></Style>
+  </Window.Styles>
+  <Grid RowDefinitions="56,*">
+    <Border x:Name="ApplicationHeader" Background="#151C2B" BorderBrush="#293248" BorderThickness="0,0,0,1">
+      <Grid Margin="14,0" ColumnDefinitions="Auto,24,*,16,Auto" VerticalAlignment="Center">
+        <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+          <Border Width="30" Height="30" CornerRadius="9" Background="#5B5CE2"><TextBlock Text="R" HorizontalAlignment="Center" VerticalAlignment="Center" FontWeight="Bold"/></Border>
+          <TextBlock Text="Remote" FontSize="17" FontWeight="SemiBold" VerticalAlignment="Center"/>
         </StackPanel>
-
-        <Border Grid.Row="1"
-                Margin="0,36,0,36"
-                Padding="28"
-                CornerRadius="16"
-                Background="{DynamicResource CardBackgroundFillColorDefaultBrush}">
-            <StackPanel Spacing="14" VerticalAlignment="Center">
-                <TextBlock Text="{Binding Status}" FontSize="28" FontWeight="SemiBold" />
-                <TextBlock Text="{Binding Detail}" FontSize="16" TextWrapping="Wrap" />
-                <TextBlock Text="{Binding Protocol}" FontSize="14" Opacity="0.65" />
-            </StackPanel>
+        <Border x:Name="QuickConnect" Grid.Column="2" MaxWidth="540" Height="34" Background="#101624" BorderBrush="#35405A" BorderThickness="1" CornerRadius="8">
+          <TextBlock Margin="12,0" VerticalAlignment="Center" Foreground="#AEBAD1" Text="⌘ K　快速連線：輸入主機名稱或位址" FontSize="12"/>
         </Border>
-
-        <TextBlock Grid.Row="2"
-                   Text="MVVM foundation ready for business logic and protocol management."
-                   Opacity="0.6" />
+        <StackPanel x:Name="HeaderActions" Grid.Column="4" Orientation="Horizontal" Spacing="8">
+          <Button Content="🔒 Vault 已解鎖" Classes="tool"/><Button Content="＋ 新增連線" Background="#5B5CE2" Foreground="White" CornerRadius="8" Padding="12,7"/>
+        </StackPanel>
+      </Grid>
+    </Border>
+    <Grid x:Name="ShellGrid" Grid.Row="1" ColumnDefinitions="56,240,*,260">
+      <Border x:Name="NavigationRail" Grid.Column="0" Background="#121927" BorderBrush="#293248" BorderThickness="0,0,1,0">
+        <StackPanel Margin="8,12" Spacing="8"><Button Content="⌁" Classes="nav selected" ToolTip.Tip="連線"/><Button Content="▣" Classes="nav" ToolTip.Tip="Vault"/><Button Content="♙" Classes="nav" ToolTip.Tip="身份卡"/><Button Content="≡" Classes="nav" ToolTip.Tip="稽核"/></StackPanel>
+      </Border>
+      <Border x:Name="ConnectionTree" Grid.Column="1" Background="#171F2E" BorderBrush="#293248" BorderThickness="0,0,1,0" Padding="12,14">
+        <Grid RowDefinitions="Auto,Auto,Auto,*">
+          <Grid ColumnDefinitions="*,Auto"><TextBlock Text="連線" FontWeight="SemiBold"/><Button Grid.Column="1" Content="•••" Background="Transparent" Padding="4"/></Grid>
+          <Border Grid.Row="1" Height="32" Margin="0,12,0,8" Background="#111827" BorderBrush="#35405A" BorderThickness="1" CornerRadius="7"><TextBlock Text="⌕ 搜尋連線與標籤" Margin="9,0" VerticalAlignment="Center" Foreground="#8795AD" FontSize="11"/></Border>
+          <TextBlock Grid.Row="2" Text="我的連線" Margin="6,8,0,5" Foreground="#74829A" FontSize="10" FontWeight="SemiBold"/>
+          <ListBox Grid.Row="3" ItemsSource="{Binding Connections}" SelectedItem="{Binding SelectedConnection}" Background="Transparent" BorderThickness="0">
+            <ListBox.ItemTemplate><DataTemplate x:DataType="vm:ConnectionListItem"><Grid ColumnDefinitions="Auto,*,Auto" Margin="2,7"><Ellipse Width="8" Height="8" Fill="#47C28A" VerticalAlignment="Center"/><StackPanel Grid.Column="1" Margin="9,0"><TextBlock Text="{Binding Name}" FontSize="12"/><TextBlock Text="{Binding Endpoint}" FontSize="10" Foreground="#8290A7"/></StackPanel><TextBlock Grid.Column="2" Text="{Binding Protocol}" FontSize="10" Foreground="#9FA5FF"/></Grid></DataTemplate></ListBox.ItemTemplate>
+          </ListBox>
+        </Grid>
+      </Border>
+      <Grid x:Name="SessionWorkspace" Grid.Column="2" RowDefinitions="40,44,*" Background="#0D1220">
+        <Border x:Name="SessionTabs" Background="#141B29" BorderBrush="#293248" BorderThickness="0,0,0,1"><Button HorizontalAlignment="Left" Height="39" Padding="14,0" Background="Transparent" BorderBrush="#7778EF" BorderThickness="0,0,0,2" Content="{Binding SelectedConnection.Name, FallbackValue=Windows Prod}"/></Border>
+        <Border x:Name="SessionToolbar" Grid.Row="1" Background="#111827" BorderBrush="#293248" BorderThickness="0,0,0,1"><Grid Margin="10,0" ColumnDefinitions="Auto,Auto,Auto,*,Auto" ColumnSpacing="8"><Button Content="重新整理" Classes="tool"/><Button x:Name="FullScreenButton" Grid.Column="1" Content="全螢幕" Classes="tool" Click="ToggleFullScreen"/><Button Grid.Column="2" Content="適應視窗" Classes="tool"/><Border Grid.Column="4" Background="#493F78" CornerRadius="6" Padding="8,4" IsVisible="{Binding IsViewOnly}"><TextBlock Text="VIEW ONLY" Foreground="#D5D2FF" FontWeight="Bold" FontSize="11"/></Border></Grid></Border>
+        <Border Grid.Row="2" Margin="10" CornerRadius="9" BorderBrush="#334762" BorderThickness="1" Background="#172941" ClipToBounds="True">
+          <Grid><Border Background="#1D3653" Margin="1" CornerRadius="8"/><StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="10"><TextBlock Text="{Binding SelectedConnection.Name, FallbackValue=Windows Prod}" FontSize="24" FontWeight="SemiBold" HorizontalAlignment="Center"/><TextBlock Text="遠端畫面預留區 · RDP 1920 × 1080" Foreground="#A9B8CE"/><TextBlock Text="{Binding AccessModeLabel}" Foreground="#9FA5FF" FontWeight="Bold"/><Button Margin="0,8,0,0" Padding="14,8" Background="#5B5CE2" Foreground="White" CornerRadius="8" Content="準備工作階段" Command="{Binding OpenSelectedSessionCommand}"/><TextBlock MaxWidth="440" Text="{Binding SessionStatusLabel}" TextAlignment="Center" TextWrapping="Wrap" Foreground="#A9B8CE" FontSize="11"/></StackPanel><Border VerticalAlignment="Bottom" HorizontalAlignment="Center" Margin="0,0,0,24" Background="#111827" CornerRadius="10" Padding="14,8"><TextBlock Text="●　●　●" Foreground="#78A7E6"/></Border><Button x:Name="ExitSessionFullScreenButton" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="12" Padding="11,7" Content="離開全螢幕　Esc" Classes="tool" IsVisible="False" Click="ToggleFullScreen"/></Grid>
+        </Border>
+      </Grid>
+      <Border x:Name="Inspector" Grid.Column="3" Background="#171F2E" BorderBrush="#293248" BorderThickness="1,0,0,0" Padding="16">
+        <StackPanel Spacing="16">
+          <StackPanel><TextBlock Text="{Binding SelectedConnection.Name, FallbackValue=Windows Prod}" FontSize="16" FontWeight="SemiBold"/><TextBlock Text="{Binding SelectedConnection.Protocol, FallbackValue=RDP}" FontSize="11" Foreground="#8290A7"/></StackPanel>
+          <StackPanel Spacing="5"><TextBlock Text="主機" FontSize="10" Foreground="#7F8DA5"/><TextBlock Text="{Binding SelectedConnection.Endpoint, FallbackValue=10.20.0.24:3389}" FontSize="12"/></StackPanel>
+          <StackPanel Spacing="6"><TextBlock Text="身份卡" FontSize="10" Foreground="#7F8DA5"/><Border Background="#20293B" BorderBrush="#414C68" BorderThickness="1" CornerRadius="8" Padding="10"><StackPanel Spacing="5"><TextBlock Text="Windows Admin" FontSize="12"/><TextBlock Text="CORP\operator" FontSize="10" Foreground="#8290A7"/><Border HorizontalAlignment="Left" Background="#493F78" CornerRadius="5" Padding="6,3"><TextBlock Text="{Binding SelectedConnection.IdentityScope, FallbackValue=RDP only}" Foreground="#C9C6FF" FontSize="9"/></Border></StackPanel></Border></StackPanel>
+          <StackPanel Spacing="5"><TextBlock Text="工作階段權限" FontSize="10" Foreground="#7F8DA5"/><ToggleSwitch IsChecked="{Binding IsViewOnly}" Content="View Only"/><TextBlock Text="{Binding StatusDetail}" FontSize="10" Foreground="#A9B8CE" TextWrapping="Wrap"/></StackPanel>
+          <StackPanel Spacing="5"><TextBlock Text="顯示" FontSize="10" Foreground="#7F8DA5"/><TextBlock Text="適應視窗 · 指定螢幕 1" FontSize="12"/></StackPanel>
+        </StackPanel>
+      </Border>
     </Grid>
+  </Grid>
 </Window>
