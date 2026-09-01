@@ -11,6 +11,7 @@ using Remote.Infrastructure.Processes;
 using Remote.Infrastructure.Protocols.Rdp;
 using Remote.Infrastructure.Protocols.Vnc;
 using Remote.Infrastructure.Protocols.Ssh;
+using Remote.Infrastructure.Protocols.Terminal;
 using Remote.Infrastructure.Security;
 using Remote.Infrastructure.Storage;
 using Remote.Infrastructure.Vaults;
@@ -33,6 +34,9 @@ public sealed partial class MainViewModel : ViewModelBase
     private CancellationTokenSource? _vncCancellation;
     private SshTerminalSession? _sshSession;
     private CancellationTokenSource? _sshCancellation;
+    private LocalTerminalSession? _localTerminal;
+    private CancellationTokenSource? _localTerminalCancellation;
+    private readonly TerminalOutputDecoder _terminalOutputDecoder = new();
     private readonly EncryptedWorkspaceRepository _workspaceRepository;
     private readonly EncryptedVaultArchiveService _vaultArchiveService;
     private readonly string _workspacePath;
@@ -79,6 +83,7 @@ public sealed partial class MainViewModel : ViewModelBase
         var labSsh = CreateConnection("Lab SSH", "ssh2", "ssh://10.20.1.18:22") with { FolderId = labFolder.Id };
         var financeVm = CreateConnection("Finance VM", "rdp", "rdp://10.20.2.12:3389") with { FolderId = productionFolder.Id };
         var routerConsole = CreateConnection("Router Console", "https", "https://example.com") with { FolderId = labFolder.Id };
+        var localShell = CreateConnection("Local Shell", "terminal", "terminal://localhost") with { FolderId = labFolder.Id };
         Connections =
         [
             new(windowsProd, "RDP only", true),
@@ -86,6 +91,7 @@ public sealed partial class MainViewModel : ViewModelBase
             new(labSsh, "SSH2 only", false),
             new(financeVm, "RDP only", false),
             new(routerConsole, "HTTPS only", false),
+            new(localShell, "TERMINAL only", false),
         ];
         ConnectionTree = BuildConnectionTree([productionFolder, labFolder], Connections);
         selectedConnection = Connections[0];
@@ -133,9 +139,11 @@ public sealed partial class MainViewModel : ViewModelBase
     [ObservableProperty]
     private string editProtocol = "rdp";
 
-    public IReadOnlyList<string> ConnectionProtocols { get; } = ["rdp", "vnc", "ssh2", "https", "http"];
+    public IReadOnlyList<string> ConnectionProtocols { get; } = ["rdp", "vnc", "ssh2", "https", "http", "terminal"];
 
     public bool IsEditingRdp => string.Equals(EditProtocol, "rdp", StringComparison.OrdinalIgnoreCase);
+
+    public bool IsEditingNetwork => !string.Equals(EditProtocol, "terminal", StringComparison.OrdinalIgnoreCase);
 
     [ObservableProperty]
     private string editHost = string.Empty;
@@ -269,6 +277,7 @@ public sealed partial class MainViewModel : ViewModelBase
     {
         await StopVncAsync();
         await StopSshAsync();
+        await StopLocalTerminalAsync();
         LockVault();
     }
 
@@ -283,9 +292,11 @@ public sealed partial class MainViewModel : ViewModelBase
             "ssh2" => "22",
             "https" => "443",
             "http" => "80",
+            "terminal" => "0",
             _ => EditPort,
         };
         OnPropertyChanged(nameof(IsEditingRdp));
+        OnPropertyChanged(nameof(IsEditingNetwork));
     }
 
     partial void OnSelectedLockIntervalChanged(InactivityLockInterval value) => RefreshAutoLockPolicy();
@@ -528,19 +539,21 @@ public sealed partial class MainViewModel : ViewModelBase
     {
         var name = EditName.Trim();
         var host = EditHost.Trim();
-        if (name.Length == 0 || host.Length == 0)
+        if (name.Length == 0 || (EditProtocol != "terminal" && host.Length == 0))
         {
             ConnectionEditorError = "名稱與主機為必填欄位";
             return;
         }
 
-        if (!int.TryParse(EditPort, out var port) || port is < 1 or > 65535)
+        if (EditProtocol != "terminal" &&
+            (!int.TryParse(EditPort, out var parsedPort) || parsedPort is < 1 or > 65535))
         {
             ConnectionEditorError = "連接埠必須介於 1 到 65535";
             return;
         }
 
-        if (Uri.CheckHostName(host) is UriHostNameType.Unknown)
+        var port = EditProtocol == "terminal" ? -1 : int.Parse(EditPort, System.Globalization.CultureInfo.InvariantCulture);
+        if (EditProtocol != "terminal" && Uri.CheckHostName(host) is UriHostNameType.Unknown)
         {
             ConnectionEditorError = "主機名稱或 IP 位址格式無效";
             return;
@@ -567,7 +580,9 @@ public sealed partial class MainViewModel : ViewModelBase
         }
 
         var scheme = EditProtocol == "ssh2" ? "ssh" : EditProtocol;
-        var endpoint = new UriBuilder(scheme, host, port).Uri;
+        var endpoint = EditProtocol == "terminal"
+            ? new Uri("terminal://localhost")
+            : new UriBuilder(scheme, host, port).Uri;
         var profile = new ConnectionProfile
         {
             Id = ConnectionId.New(),
@@ -672,6 +687,7 @@ public sealed partial class MainViewModel : ViewModelBase
         if (string.Equals(connection.ProtocolId, "vnc", StringComparison.OrdinalIgnoreCase))
         {
             await StopSshAsync();
+            await StopLocalTerminalAsync();
             CloseWebSession();
             await LaunchVncAsync(connection, session.Id);
             return;
@@ -680,6 +696,7 @@ public sealed partial class MainViewModel : ViewModelBase
         if (string.Equals(connection.ProtocolId, "ssh2", StringComparison.OrdinalIgnoreCase))
         {
             await StopVncAsync();
+            await StopLocalTerminalAsync();
             CloseWebSession();
             await LaunchSshAsync(connection, session.Id);
             return;
@@ -689,11 +706,21 @@ public sealed partial class MainViewModel : ViewModelBase
         {
             await StopVncAsync();
             await StopSshAsync();
+            await StopLocalTerminalAsync();
             WebSource = WebNavigationPolicy.ParseHttpEndpoint(connection.Endpoint.ToString());
             WebAddress = WebSource.ToString();
             IsWebSessionActive = true;
             _sessionWorkspace.SetState(session.Id, SessionState.Connected);
             SessionStatusLabel = $"{connection.ProtocolId.ToUpperInvariant()} 已載入 · {connection.Endpoint.Host}";
+            return;
+        }
+
+        if (string.Equals(connection.ProtocolId, "terminal", StringComparison.OrdinalIgnoreCase))
+        {
+            await StopVncAsync();
+            await StopSshAsync();
+            CloseWebSession();
+            await LaunchLocalTerminalAsync(connection, session.Id);
             return;
         }
 
@@ -705,6 +732,7 @@ public sealed partial class MainViewModel : ViewModelBase
 
         await StopVncAsync();
         await StopSshAsync();
+        await StopLocalTerminalAsync();
         CloseWebSession();
 
         try
@@ -808,6 +836,7 @@ public sealed partial class MainViewModel : ViewModelBase
             }
 
             TerminalText = string.Empty;
+            _terminalOutputDecoder.Reset();
             IsTerminalActive = true;
             _sessionWorkspace.SetState(sessionId, SessionState.Connected);
             SessionStatusLabel = $"SSH2 已連線 · {connection.Endpoint.Host} · {AccessModeLabel}";
@@ -833,21 +862,24 @@ public sealed partial class MainViewModel : ViewModelBase
     private async Task SendTerminalInputAsync()
     {
         var input = TerminalInput;
-        if (_sshSession is null || input.Length == 0)
+        if ((_sshSession is null && _localTerminal is null) || input.Length == 0)
         {
             return;
         }
 
-        var bytes = Encoding.UTF8.GetBytes(input + "\n");
+        var bytes = Encoding.UTF8.GetBytes(input + "\r");
         try
         {
-            if (await _sshSession.WriteAsync(bytes))
+            var written = _sshSession is not null
+                ? await _sshSession.WriteAsync(bytes)
+                : await _localTerminal!.WriteAsync(bytes);
+            if (written)
             {
                 TerminalInput = string.Empty;
             }
             else
             {
-                SessionStatusLabel = "VIEW ONLY：SSH2 輸入已在協定層阻擋";
+                SessionStatusLabel = "VIEW ONLY：終端輸入已在協定層阻擋";
             }
         }
         finally
@@ -872,15 +904,8 @@ public sealed partial class MainViewModel : ViewModelBase
                     break;
                 }
 
-                var text = Encoding.UTF8.GetString(buffer, 0, read);
-                await Dispatcher.UIThread.InvokeAsync(() =>
-                {
-                    TerminalText += text;
-                    if (TerminalText.Length > 1_000_000)
-                    {
-                        TerminalText = TerminalText[^750_000..];
-                    }
-                });
+                var text = _terminalOutputDecoder.Decode(buffer.AsSpan(0, read));
+                await Dispatcher.UIThread.InvokeAsync(() => AppendTerminalText(text));
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -909,6 +934,93 @@ public sealed partial class MainViewModel : ViewModelBase
         }
 
         IsTerminalActive = false;
+    }
+
+    private async Task LaunchLocalTerminalAsync(ConnectionProfile connection, SessionId sessionId)
+    {
+        await StopLocalTerminalAsync();
+        _localTerminalCancellation = new CancellationTokenSource();
+        _localTerminal = new LocalTerminalSession();
+        try
+        {
+            await _localTerminal.StartAsync(new LocalTerminalOptions
+            {
+                ShellPath = connection.ProtocolSettings.Get("shellPath"),
+                WorkingDirectory = connection.ProtocolSettings.Get("workingDirectory")
+                    ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                AccessMode = connection.DefaultAccessMode,
+            }, _localTerminalCancellation.Token);
+            TerminalText = string.Empty;
+            _terminalOutputDecoder.Reset();
+            IsTerminalActive = true;
+            _sessionWorkspace.SetState(sessionId, SessionState.Connected);
+            SessionStatusLabel = $"本機 Terminal 已啟動 · PID {_localTerminal.ProcessId} · {AccessModeLabel}";
+            _ = ObserveLocalTerminalAsync(_localTerminal, sessionId, _localTerminalCancellation.Token);
+        }
+        catch (Exception exception) when (exception is IOException or InvalidOperationException or PlatformNotSupportedException)
+        {
+            _sessionWorkspace.SetState(sessionId, SessionState.Faulted, exception.Message);
+            SessionStatusLabel = $"Terminal 啟動失敗：{exception.Message}";
+            await StopLocalTerminalAsync();
+        }
+    }
+
+    private async Task ObserveLocalTerminalAsync(
+        LocalTerminalSession terminal,
+        SessionId sessionId,
+        CancellationToken cancellationToken)
+    {
+        var buffer = new byte[16 * 1024];
+        try
+        {
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                var read = await terminal.ReadAsync(buffer, cancellationToken);
+                if (read == 0)
+                {
+                    await Dispatcher.UIThread.InvokeAsync(() => SessionStatusLabel = "本機 Terminal 已結束");
+                    break;
+                }
+
+                var text = _terminalOutputDecoder.Decode(buffer.AsSpan(0, read));
+                await Dispatcher.UIThread.InvokeAsync(() => AppendTerminalText(text));
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception) when (exception is IOException or InvalidOperationException)
+        {
+            _sessionWorkspace.SetState(sessionId, SessionState.Faulted, exception.Message);
+            await Dispatcher.UIThread.InvokeAsync(() => SessionStatusLabel = $"Terminal 中斷：{exception.Message}");
+        }
+        finally
+        {
+            System.Security.Cryptography.CryptographicOperations.ZeroMemory(buffer);
+        }
+    }
+
+    private async Task StopLocalTerminalAsync()
+    {
+        _localTerminalCancellation?.Cancel();
+        _localTerminalCancellation?.Dispose();
+        _localTerminalCancellation = null;
+        if (_localTerminal is not null)
+        {
+            await _localTerminal.DisposeAsync();
+            _localTerminal = null;
+        }
+
+        IsTerminalActive = false;
+    }
+
+    private void AppendTerminalText(string text)
+    {
+        TerminalText += text;
+        if (TerminalText.Length > 1_000_000)
+        {
+            TerminalText = TerminalText[^750_000..];
+        }
     }
 
     private void RefreshVaultCredentials()
@@ -1168,5 +1280,7 @@ public sealed record ConnectionListItem(
 
     public string Protocol => Profile.ProtocolId.ToUpperInvariant();
 
-    public string Endpoint => $"{Profile.Endpoint.Host}:{Profile.Endpoint.Port}";
+    public string Endpoint => Profile.Endpoint.Port < 0
+        ? Profile.Endpoint.Host
+        : $"{Profile.Endpoint.Host}:{Profile.Endpoint.Port}";
 }
