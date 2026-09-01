@@ -127,6 +127,8 @@ public sealed partial class MainViewModel : ViewModelBase
     public Task<bool> SendVncPointerAsync(byte buttonMask, ushort x, ushort y) =>
         _vncClient?.SendPointerAsync(buttonMask, x, y) ?? Task.FromResult(false);
 
+    public Task ShutdownAsync() => StopVncAsync();
+
     public string RuntimeStatus => _sessionService.GetStatus().State;
 
     public string ProtocolName => _protocol.Descriptor.DisplayName;

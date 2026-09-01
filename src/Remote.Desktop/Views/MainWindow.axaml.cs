@@ -17,7 +17,16 @@ public partial class MainWindow : Window
         InitializeComponent();
         SizeChanged += (_, _) => ApplyAdaptiveLayout();
         Opened += (_, _) => ApplyAdaptiveLayout();
+        Closed += HandleClosed;
         KeyDown += HandleWindowKeyDown;
+    }
+
+    private async void HandleClosed(object? sender, EventArgs e)
+    {
+        if (_viewModel is not null)
+        {
+            await _viewModel.ShutdownAsync();
+        }
     }
 
     protected override void OnDataContextChanged(EventArgs e)
