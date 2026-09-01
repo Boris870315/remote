@@ -66,6 +66,16 @@ public partial class MainWindow : Window
         SetSessionFullScreen(!_isSessionFullScreen);
     }
 
+    private void GoWebBack(object? sender, RoutedEventArgs e)
+    {
+        if (WebSessionView.CanGoBack)
+        {
+            WebSessionView.GoBack();
+        }
+    }
+
+    private void RefreshWeb(object? sender, RoutedEventArgs e) => WebSessionView.Refresh();
+
     private void HandleWindowKeyDown(object? sender, KeyEventArgs e)
     {
         _viewModel?.RecordUserActivity();
