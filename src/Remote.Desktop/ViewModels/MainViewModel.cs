@@ -74,6 +74,9 @@ public sealed partial class MainViewModel : ViewModelBase
     [ObservableProperty]
     private string sessionStatusLabel = "尚未開啟工作階段";
 
+    [ObservableProperty]
+    private string quickConnectText = string.Empty;
+
     public string RuntimeStatus => _sessionService.GetStatus().State;
 
     public string ProtocolName => _protocol.Descriptor.DisplayName;
@@ -92,6 +95,39 @@ public sealed partial class MainViewModel : ViewModelBase
         {
             DefaultAccessMode = IsViewOnly ? SessionAccessMode.ViewOnly : SessionAccessMode.Interactive,
         };
+        await LaunchConnectionAsync(connection);
+    }
+
+    [RelayCommand]
+    private async Task QuickConnectAsync()
+    {
+        var value = QuickConnectText.Trim();
+        if (value.Length == 0)
+        {
+            SessionStatusLabel = "請輸入 RDP 主機名稱或 IP 位址";
+            return;
+        }
+
+        var candidate = value.Contains("://", StringComparison.Ordinal)
+            ? value
+            : $"rdp://{value}";
+        if (!Uri.TryCreate(candidate, UriKind.Absolute, out var endpoint) ||
+            !string.Equals(endpoint.Scheme, "rdp", StringComparison.OrdinalIgnoreCase) ||
+            string.IsNullOrWhiteSpace(endpoint.Host))
+        {
+            SessionStatusLabel = "RDP 位址格式無效，請使用主機名稱、IP 或 host:port";
+            return;
+        }
+
+        var connection = CreateConnection(value, "rdp", endpoint.ToString()) with
+        {
+            DefaultAccessMode = IsViewOnly ? SessionAccessMode.ViewOnly : SessionAccessMode.Interactive,
+        };
+        await LaunchConnectionAsync(connection);
+    }
+
+    private async Task LaunchConnectionAsync(ConnectionProfile connection)
+    {
         var request = _sessionWorkspace.RequestOpen(connection);
         if (request.RequiresChoice)
         {
@@ -102,7 +138,7 @@ public sealed partial class MainViewModel : ViewModelBase
         var session = _sessionWorkspace.OpenNew(connection);
         if (!string.Equals(connection.ProtocolId, "rdp", StringComparison.OrdinalIgnoreCase))
         {
-            SessionStatusLabel = $"{session.State} · 等待 {SelectedConnection.Protocol} Adapter Host";
+            SessionStatusLabel = $"{session.State} · 等待 {connection.ProtocolId.ToUpperInvariant()} Adapter Host";
             return;
         }
 

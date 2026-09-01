@@ -17,8 +17,8 @@
           <Border Width="30" Height="30" CornerRadius="9" Background="#5B5CE2"><TextBlock Text="R" HorizontalAlignment="Center" VerticalAlignment="Center" FontWeight="Bold"/></Border>
           <TextBlock Text="Remote" FontSize="17" FontWeight="SemiBold" VerticalAlignment="Center"/>
         </StackPanel>
-        <Border x:Name="QuickConnect" Grid.Column="2" MaxWidth="540" Height="34" Background="#101624" BorderBrush="#35405A" BorderThickness="1" CornerRadius="8">
-          <TextBlock Margin="12,0" VerticalAlignment="Center" Foreground="#AEBAD1" Text="⌘ K　快速連線：輸入主機名稱或位址" FontSize="12"/>
+        <Border x:Name="QuickConnect" Grid.Column="2" MaxWidth="540" Height="36" Background="#101624" BorderBrush="#35405A" BorderThickness="1" CornerRadius="8">
+          <Grid ColumnDefinitions="*,Auto"><TextBox Margin="3,0,0,0" Padding="8,0" VerticalContentAlignment="Center" Background="Transparent" BorderThickness="0" PlaceholderText="快速連線：輸入主機名稱或 host:port" Text="{Binding QuickConnectText}"/><Button Grid.Column="1" Margin="3" Padding="12,3" Background="#293451" Foreground="#DCE4F3" CornerRadius="6" Content="連線" Command="{Binding QuickConnectCommand}"/></Grid>
         </Border>
         <StackPanel x:Name="HeaderActions" Grid.Column="4" Orientation="Horizontal" Spacing="8">
           <Button Content="🔒 Vault 已解鎖" Classes="tool"/><Button Content="＋ 新增連線" Background="#5B5CE2" Foreground="White" CornerRadius="8" Padding="12,7"/>
