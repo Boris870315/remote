@@ -65,7 +65,7 @@
             <Grid IsVisible="{Binding IsTerminalActive}" RowDefinitions="*,Auto" Margin="8">
               <TextBox Text="{Binding TerminalText}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap" FontFamily="Menlo,Consolas,monospace" FontSize="12" Background="#090D14" Foreground="#D6E2F0" BorderThickness="0" Padding="12" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Auto"/>
               <Grid Grid.Row="1" ColumnDefinitions="*,Auto" Margin="0,8,0,0" IsEnabled="{Binding !IsViewOnly}">
-                <TextBox Text="{Binding TerminalInput}" PlaceholderText="輸入 SSH 指令" FontFamily="Menlo,Consolas,monospace"/>
+                <TextBox Text="{Binding TerminalInput}" PlaceholderText="輸入終端指令" FontFamily="Menlo,Consolas,monospace"/>
                 <Button Grid.Column="1" Margin="8,0,0,0" Content="傳送" Command="{Binding SendTerminalInputCommand}" Background="#5B5CE2" Foreground="White"/>
               </Grid>
             </Grid>
@@ -97,8 +97,8 @@
             <TextBlock Text="新增連線" FontSize="16" FontWeight="SemiBold"/>
             <StackPanel Spacing="4"><TextBlock Text="協定" FontSize="10" Foreground="#7F8DA5"/><ComboBox ItemsSource="{Binding ConnectionProtocols}" SelectedItem="{Binding EditProtocol}"/></StackPanel>
             <StackPanel Spacing="4"><TextBlock Text="名稱" FontSize="10" Foreground="#7F8DA5"/><TextBox Text="{Binding EditName}" PlaceholderText="例如：Windows Prod"/></StackPanel>
-            <StackPanel Spacing="4"><TextBlock Text="主機或 IP" FontSize="10" Foreground="#7F8DA5"/><TextBox Text="{Binding EditHost}" PlaceholderText="server.example 或 10.20.0.24"/></StackPanel>
-            <StackPanel Spacing="4"><TextBlock Text="連接埠" FontSize="10" Foreground="#7F8DA5"/><TextBox Text="{Binding EditPort}"/></StackPanel>
+            <StackPanel Spacing="4" IsVisible="{Binding IsEditingNetwork}"><TextBlock Text="主機或 IP" FontSize="10" Foreground="#7F8DA5"/><TextBox Text="{Binding EditHost}" PlaceholderText="server.example 或 10.20.0.24"/></StackPanel>
+            <StackPanel Spacing="4" IsVisible="{Binding IsEditingNetwork}"><TextBlock Text="連接埠" FontSize="10" Foreground="#7F8DA5"/><TextBox Text="{Binding EditPort}"/></StackPanel>
             <StackPanel Spacing="4" IsVisible="{Binding IsEditingRdp}"><TextBlock Text="RD Gateway（選填）" FontSize="10" Foreground="#7F8DA5"/><TextBox Text="{Binding EditGateway}" PlaceholderText="gateway.example"/></StackPanel>
             <ToggleSwitch IsChecked="{Binding EditUseAllMonitors}" Content="跨全部螢幕"/>
             <ToggleSwitch IsChecked="{Binding EditViewOnly}" Content="View Only"/>
