@@ -2,12 +2,15 @@ using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Avalonia.Media.Imaging;
+using Avalonia.Threading;
+using System.Text;
 using Remote.Application;
 using Remote.Application.Connections;
 using Remote.Application.Sessions;
 using Remote.Infrastructure.Processes;
 using Remote.Infrastructure.Protocols.Rdp;
 using Remote.Infrastructure.Protocols.Vnc;
+using Remote.Infrastructure.Protocols.Ssh;
 using Remote.Desktop.Protocols.Vnc;
 using Remote.Protocols;
 
@@ -23,6 +26,8 @@ public sealed partial class MainViewModel : ViewModelBase
     private RfbClient? _vncClient;
     private AvaloniaRfbFrameSink? _vncFrameSink;
     private CancellationTokenSource? _vncCancellation;
+    private SshTerminalSession? _sshSession;
+    private CancellationTokenSource? _sshCancellation;
 
     public MainViewModel()
         : this(
@@ -46,10 +51,12 @@ public sealed partial class MainViewModel : ViewModelBase
         _protocol = protocol;
         _launchPolicy = launchPolicy;
         _rdpLauncher = rdpLauncher;
-        var windowsProd = CreateConnection("Windows Prod", "rdp", "rdp://10.20.0.24:3389");
-        var designMac = CreateConnection("Design Mac", "vnc", "vnc://10.20.0.31:5900");
-        var labSsh = CreateConnection("Lab SSH", "ssh2", "ssh://10.20.1.18:22");
-        var financeVm = CreateConnection("Finance VM", "rdp", "rdp://10.20.2.12:3389");
+        var productionFolder = new ConnectionFolder { Id = FolderId.New(), Name = "Production" };
+        var labFolder = new ConnectionFolder { Id = FolderId.New(), Name = "Lab" };
+        var windowsProd = CreateConnection("Windows Prod", "rdp", "rdp://10.20.0.24:3389") with { FolderId = productionFolder.Id };
+        var designMac = CreateConnection("Design Mac", "vnc", "vnc://10.20.0.31:5900") with { FolderId = productionFolder.Id };
+        var labSsh = CreateConnection("Lab SSH", "ssh2", "ssh://10.20.1.18:22") with { FolderId = labFolder.Id };
+        var financeVm = CreateConnection("Finance VM", "rdp", "rdp://10.20.2.12:3389") with { FolderId = productionFolder.Id };
         Connections =
         [
             new(windowsProd, "RDP only", true),
@@ -57,13 +64,20 @@ public sealed partial class MainViewModel : ViewModelBase
             new(labSsh, "SSH2 only", false),
             new(financeVm, "RDP only", false),
         ];
+        ConnectionTree = BuildConnectionTree([productionFolder, labFolder], Connections);
         selectedConnection = Connections[0];
+        selectedTreeItem = FindConnectionTreeItem(ConnectionTree, windowsProd.Id);
         UpdateAccessMode();
     }
 
     public string Title => "Remote";
 
     public ObservableCollection<ConnectionListItem> Connections { get; }
+
+    public ObservableCollection<ConnectionTreeDisplayItem> ConnectionTree { get; }
+
+    [ObservableProperty]
+    private ConnectionTreeDisplayItem? selectedTreeItem;
 
     [ObservableProperty]
     private ConnectionListItem? selectedConnection;
@@ -119,6 +133,33 @@ public sealed partial class MainViewModel : ViewModelBase
     [ObservableProperty]
     private WriteableBitmap? remoteFrame;
 
+    [ObservableProperty]
+    private string sessionUsername = string.Empty;
+
+    [ObservableProperty]
+    private string sessionPassword = string.Empty;
+
+    [ObservableProperty]
+    private string expectedHostKey = string.Empty;
+
+    [ObservableProperty]
+    private bool trustUnknownHostKey;
+
+    [ObservableProperty]
+    private string terminalText = string.Empty;
+
+    [ObservableProperty]
+    private string terminalInput = string.Empty;
+
+    [ObservableProperty]
+    private bool isTerminalActive;
+
+    public bool IsSshSelected => string.Equals(SelectedConnection?.Profile.ProtocolId, "ssh2", StringComparison.OrdinalIgnoreCase);
+
+    public bool IsVncSelected => string.Equals(SelectedConnection?.Profile.ProtocolId, "vnc", StringComparison.OrdinalIgnoreCase);
+
+    public bool ShowSessionPlaceholder => RemoteFrame is null && !IsTerminalActive;
+
     public bool IsVncSessionActive => _vncClient?.IsConnected is true;
 
     public Task<bool> SendVncKeyAsync(uint keySym, bool isDown) =>
@@ -127,7 +168,32 @@ public sealed partial class MainViewModel : ViewModelBase
     public Task<bool> SendVncPointerAsync(byte buttonMask, ushort x, ushort y) =>
         _vncClient?.SendPointerAsync(buttonMask, x, y) ?? Task.FromResult(false);
 
-    public Task ShutdownAsync() => StopVncAsync();
+    public async Task ShutdownAsync()
+    {
+        await StopVncAsync();
+        await StopSshAsync();
+    }
+
+    partial void OnSelectedConnectionChanged(ConnectionListItem? value)
+    {
+        IsViewOnly = value?.Profile.DefaultAccessMode is SessionAccessMode.ViewOnly;
+        OnPropertyChanged(nameof(IsSshSelected));
+        OnPropertyChanged(nameof(IsVncSelected));
+    }
+
+    partial void OnSelectedTreeItemChanged(ConnectionTreeDisplayItem? value)
+    {
+        if (value?.Connection is { } connection)
+        {
+            SelectedConnection = Connections.FirstOrDefault(item => item.Profile.Id == connection.Id);
+        }
+    }
+
+    partial void OnRemoteFrameChanged(WriteableBitmap? value) =>
+        OnPropertyChanged(nameof(ShowSessionPlaceholder));
+
+    partial void OnIsTerminalActiveChanged(bool value) =>
+        OnPropertyChanged(nameof(ShowSessionPlaceholder));
 
     public string RuntimeStatus => _sessionService.GetStatus().State;
 
@@ -214,7 +280,9 @@ public sealed partial class MainViewModel : ViewModelBase
         };
         var item = new ConnectionListItem(profile, "RDP only", false);
         Connections.Add(item);
+        ConnectionTree.Add(ConnectionTreeDisplayItem.ForConnection(item.Profile));
         SelectedConnection = item;
+        SelectedTreeItem = ConnectionTree[^1];
         IsViewOnly = EditViewOnly;
         ConnectionEditorError = string.Empty;
         IsEditingConnection = false;
@@ -280,6 +348,12 @@ public sealed partial class MainViewModel : ViewModelBase
             return;
         }
 
+        if (string.Equals(connection.ProtocolId, "ssh2", StringComparison.OrdinalIgnoreCase))
+        {
+            await LaunchSshAsync(connection, session.Id);
+            return;
+        }
+
         if (!string.Equals(connection.ProtocolId, "rdp", StringComparison.OrdinalIgnoreCase))
         {
             SessionStatusLabel = $"{session.State} · 等待 {connection.ProtocolId.ToUpperInvariant()} Adapter Host";
@@ -304,6 +378,135 @@ public sealed partial class MainViewModel : ViewModelBase
             _sessionWorkspace.SetState(session.Id, SessionState.Faulted, exception.Message);
             SessionStatusLabel = exception.Message;
         }
+    }
+
+    private async Task LaunchSshAsync(ConnectionProfile connection, SessionId sessionId)
+    {
+        if (string.IsNullOrWhiteSpace(SessionUsername) || string.IsNullOrEmpty(SessionPassword))
+        {
+            SessionStatusLabel = "SSH2 需要使用者名稱與密碼；請在右側登入區輸入";
+            return;
+        }
+
+        await StopSshAsync();
+        _sshCancellation = new CancellationTokenSource();
+        _sshSession = new SshTerminalSession();
+        SshHostKeyInfo? acceptedHostKey = null;
+        try
+        {
+            await _sshSession.ConnectAsync(new SshSessionOptions
+            {
+                Endpoint = connection.Endpoint,
+                Username = SessionUsername.Trim(),
+                Password = SessionPassword,
+                ExpectedHostKeySha256 = string.IsNullOrWhiteSpace(ExpectedHostKey) ? null : ExpectedHostKey.Trim(),
+                ConfirmUnknownHostKey = TrustUnknownHostKey
+                    ? key => { acceptedHostKey = key; return true; }
+                    : null,
+                AccessMode = connection.DefaultAccessMode,
+            }, _sshCancellation.Token);
+            SessionPassword = string.Empty;
+            if (acceptedHostKey is not null)
+            {
+                ExpectedHostKey = $"SHA256:{acceptedHostKey.Sha256Fingerprint}";
+                TrustUnknownHostKey = false;
+            }
+
+            TerminalText = string.Empty;
+            IsTerminalActive = true;
+            _sessionWorkspace.SetState(sessionId, SessionState.Connected);
+            SessionStatusLabel = $"SSH2 已連線 · {connection.Endpoint.Host} · {AccessModeLabel}";
+            _ = ObserveSshAsync(_sshSession, sessionId, _sshCancellation.Token);
+        }
+        catch (Exception exception) when (exception is IOException or InvalidOperationException or Renci.SshNet.Common.SshException)
+        {
+            _sessionWorkspace.SetState(sessionId, SessionState.Faulted, exception.Message);
+            SessionStatusLabel = $"SSH2 連線失敗：{exception.Message}";
+            SessionPassword = string.Empty;
+            await StopSshAsync();
+        }
+    }
+
+    [RelayCommand]
+    private async Task SendTerminalInputAsync()
+    {
+        var input = TerminalInput;
+        if (_sshSession is null || input.Length == 0)
+        {
+            return;
+        }
+
+        var bytes = Encoding.UTF8.GetBytes(input + "\n");
+        try
+        {
+            if (await _sshSession.WriteAsync(bytes))
+            {
+                TerminalInput = string.Empty;
+            }
+            else
+            {
+                SessionStatusLabel = "VIEW ONLY：SSH2 輸入已在協定層阻擋";
+            }
+        }
+        finally
+        {
+            System.Security.Cryptography.CryptographicOperations.ZeroMemory(bytes);
+        }
+    }
+
+    private async Task ObserveSshAsync(
+        SshTerminalSession session,
+        SessionId sessionId,
+        CancellationToken cancellationToken)
+    {
+        var buffer = new byte[16 * 1024];
+        try
+        {
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                var read = await session.ReadAsync(buffer, cancellationToken);
+                if (read == 0)
+                {
+                    break;
+                }
+
+                var text = Encoding.UTF8.GetString(buffer, 0, read);
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    TerminalText += text;
+                    if (TerminalText.Length > 1_000_000)
+                    {
+                        TerminalText = TerminalText[^750_000..];
+                    }
+                });
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception) when (exception is IOException or Renci.SshNet.Common.SshException)
+        {
+            _sessionWorkspace.SetState(sessionId, SessionState.Faulted, exception.Message);
+            await Dispatcher.UIThread.InvokeAsync(() => SessionStatusLabel = $"SSH2 工作階段中斷：{exception.Message}");
+        }
+        finally
+        {
+            System.Security.Cryptography.CryptographicOperations.ZeroMemory(buffer);
+        }
+    }
+
+    private async Task StopSshAsync()
+    {
+        _sshCancellation?.Cancel();
+        _sshCancellation?.Dispose();
+        _sshCancellation = null;
+        if (_sshSession is not null)
+        {
+            await _sshSession.DisposeAsync();
+            _sshSession = null;
+        }
+
+        IsTerminalActive = false;
     }
 
     private async Task LaunchVncAsync(ConnectionProfile connection, SessionId sessionId)
@@ -380,6 +583,72 @@ public sealed partial class MainViewModel : ViewModelBase
         ProtocolId = protocolId,
         Endpoint = new Uri(endpoint),
     };
+
+    private static ObservableCollection<ConnectionTreeDisplayItem> BuildConnectionTree(
+        IReadOnlyList<ConnectionFolder> folders,
+        IEnumerable<ConnectionListItem> connections)
+    {
+        var profiles = connections.Select(item => item.Profile).ToArray();
+        var nodes = new ConnectionTreeBuilder().Build(folders, profiles);
+        var result = new ObservableCollection<ConnectionTreeDisplayItem>(nodes.Select(ConvertNode));
+        foreach (var connection in profiles.Where(profile => profile.FolderId is null))
+        {
+            result.Add(ConnectionTreeDisplayItem.ForConnection(connection));
+        }
+
+        return result;
+    }
+
+    private static ConnectionTreeDisplayItem ConvertNode(ConnectionTreeNode node)
+    {
+        var children = node.Children.Select(ConvertNode)
+            .Concat(node.Connections.Select(ConnectionTreeDisplayItem.ForConnection));
+        return ConnectionTreeDisplayItem.ForFolder(node.Folder, children);
+    }
+
+    private static ConnectionTreeDisplayItem? FindConnectionTreeItem(
+        IEnumerable<ConnectionTreeDisplayItem> items,
+        ConnectionId id)
+    {
+        foreach (var item in items)
+        {
+            if (item.Connection?.Id == id)
+            {
+                return item;
+            }
+
+            var nested = FindConnectionTreeItem(item.Children, id);
+            if (nested is not null)
+            {
+                return nested;
+            }
+        }
+
+        return null;
+    }
+}
+
+public sealed record ConnectionTreeDisplayItem(
+    string Name,
+    string Detail,
+    bool IsFolder,
+    ConnectionProfile? Connection,
+    ObservableCollection<ConnectionTreeDisplayItem> Children)
+{
+    public string Glyph => IsFolder ? "▾" : "●";
+
+    public static ConnectionTreeDisplayItem ForFolder(
+        ConnectionFolder folder,
+        IEnumerable<ConnectionTreeDisplayItem> children) =>
+        new(folder.Name, "資料夾", true, null, new(children));
+
+    public static ConnectionTreeDisplayItem ForConnection(ConnectionProfile connection) =>
+        new(
+            connection.Name,
+            $"{connection.ProtocolId.ToUpperInvariant()} · {connection.Endpoint.Host}:{connection.Endpoint.Port}",
+            false,
+            connection,
+            []);
 }
 
 public sealed record ConnectionListItem(

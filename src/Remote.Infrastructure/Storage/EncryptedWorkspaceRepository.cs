@@ -77,7 +77,8 @@ public sealed class EncryptedWorkspaceRepository(EncryptedWorkspaceFile workspac
             card.Name,
             card.ProtocolId,
             card.Username,
-            card.Domain)).ToArray());
+            card.Domain)).ToArray(),
+        document.EncryptedPrimaryVault);
 
     private static WorkspaceDocument FromDto(WorkspaceDto dto)
     {
@@ -117,6 +118,7 @@ public sealed class EncryptedWorkspaceRepository(EncryptedWorkspaceFile workspac
                 Username = card.Username,
                 Domain = card.Domain,
             }).ToArray(),
+            EncryptedPrimaryVault = dto.EncryptedPrimaryVault,
         };
         Validate(document);
         return document;
@@ -159,7 +161,8 @@ public sealed class EncryptedWorkspaceRepository(EncryptedWorkspaceFile workspac
         int SchemaVersion,
         FolderDto[] Folders,
         ConnectionDto[] Connections,
-        IdentityCardDto[] IdentityCards);
+        IdentityCardDto[] IdentityCards,
+        byte[]? EncryptedPrimaryVault);
 
     private sealed record FolderDto(Guid Id, string Name, Guid? ParentId, CredentialDto Credential);
 

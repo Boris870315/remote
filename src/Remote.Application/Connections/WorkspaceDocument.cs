@@ -14,4 +14,7 @@ public sealed record WorkspaceDocument
     public IReadOnlyList<ConnectionProfile> Connections { get; init; } = [];
 
     public IReadOnlyList<IdentityCard> IdentityCards { get; init; } = [];
+
+    /// <summary>An independently encrypted primary Vault archive. Never contains plaintext secrets.</summary>
+    public byte[]? EncryptedPrimaryVault { get; init; }
 }
