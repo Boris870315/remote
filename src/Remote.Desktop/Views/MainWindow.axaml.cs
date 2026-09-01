@@ -3,6 +3,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using System.ComponentModel;
 using Remote.Desktop.ViewModels;
+using Avalonia.Threading;
 
 namespace Remote.Desktop.Views;
 
@@ -11,6 +12,7 @@ public partial class MainWindow : Window
     private bool _isSessionFullScreen;
     private byte _vncButtonMask;
     private MainViewModel? _viewModel;
+    private readonly DispatcherTimer _vaultTimer;
 
     public MainWindow()
     {
@@ -19,10 +21,15 @@ public partial class MainWindow : Window
         Opened += (_, _) => ApplyAdaptiveLayout();
         Closed += HandleClosed;
         KeyDown += HandleWindowKeyDown;
+        PointerPressed += (_, _) => _viewModel?.RecordUserActivity();
+        _vaultTimer = new DispatcherTimer(TimeSpan.FromSeconds(15), DispatcherPriority.Background, (_, _) =>
+            _viewModel?.EvaluateVaultAutoLock());
+        _vaultTimer.Start();
     }
 
     private async void HandleClosed(object? sender, EventArgs e)
     {
+        _vaultTimer.Stop();
         if (_viewModel is not null)
         {
             await _viewModel.ShutdownAsync();
@@ -61,6 +68,7 @@ public partial class MainWindow : Window
 
     private void HandleWindowKeyDown(object? sender, KeyEventArgs e)
     {
+        _viewModel?.RecordUserActivity();
         if (e.Key is Key.Escape && _isSessionFullScreen)
         {
             SetSessionFullScreen(false);
