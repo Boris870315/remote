@@ -2,6 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/Remote.Application/Remote.Application.csproj" />
     <Project Path="src/Remote.Desktop/Remote.Desktop.csproj" />
+    <Project Path="src/Remote.Infrastructure/Remote.Infrastructure.csproj" />
     <Project Path="src/Remote.Protocols/Remote.Protocols.csproj" />
   </Folder>
   <Folder Name="/tests/">
