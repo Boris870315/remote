@@ -80,6 +80,7 @@ public readonly record struct SessionId(Guid Value)
 public enum SessionState
 {
     Connecting,
+    ExternalClientLaunched,
     Connected,
     Disconnecting,
     Disconnected,
@@ -89,16 +90,19 @@ public enum SessionState
 internal static class SessionStateExtensions
 {
     public static bool IsOpen(this SessionState state) =>
-        state is SessionState.Connecting or SessionState.Connected or SessionState.Disconnecting;
+        state is SessionState.Connecting or SessionState.ExternalClientLaunched or SessionState.Connected or SessionState.Disconnecting;
 
     public static bool CanTransitionTo(this SessionState state, SessionState next) =>
         (state, next) switch
         {
             (SessionState.Connecting, SessionState.Connected) => true,
+            (SessionState.Connecting, SessionState.ExternalClientLaunched) => true,
             (SessionState.Connecting, SessionState.Faulted) => true,
             (SessionState.Connecting, SessionState.Disconnecting) => true,
             (SessionState.Connected, SessionState.Disconnecting) => true,
             (SessionState.Connected, SessionState.Faulted) => true,
+            (SessionState.ExternalClientLaunched, SessionState.Disconnecting) => true,
+            (SessionState.ExternalClientLaunched, SessionState.Faulted) => true,
             (SessionState.Disconnecting, SessionState.Disconnected) => true,
             _ => false,
         };

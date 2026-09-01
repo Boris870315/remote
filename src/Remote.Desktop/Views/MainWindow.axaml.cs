@@ -1,12 +1,15 @@
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using System.ComponentModel;
+using Remote.Desktop.ViewModels;
 
 namespace Remote.Desktop.Views;
 
 public partial class MainWindow : Window
 {
     private bool _isSessionFullScreen;
+    private MainViewModel? _viewModel;
 
     public MainWindow()
     {
@@ -14,6 +17,31 @@ public partial class MainWindow : Window
         SizeChanged += (_, _) => ApplyAdaptiveLayout();
         Opened += (_, _) => ApplyAdaptiveLayout();
         KeyDown += HandleWindowKeyDown;
+    }
+
+    protected override void OnDataContextChanged(EventArgs e)
+    {
+        if (_viewModel is not null)
+        {
+            _viewModel.PropertyChanged -= HandleViewModelPropertyChanged;
+        }
+
+        base.OnDataContextChanged(e);
+        _viewModel = DataContext as MainViewModel;
+        if (_viewModel is not null)
+        {
+            _viewModel.PropertyChanged += HandleViewModelPropertyChanged;
+        }
+
+        ApplyAdaptiveLayout();
+    }
+
+    private void HandleViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(MainViewModel.IsEditingConnection))
+        {
+            ApplyAdaptiveLayout();
+        }
     }
 
     private void ToggleFullScreen(object? sender, RoutedEventArgs e)
@@ -67,8 +95,12 @@ public partial class MainWindow : Window
         var isCompact = Bounds.Width < 820 || isPortrait;
         var isMedium = !isCompact && Bounds.Width < 1120;
 
+        var showCompactEditor = isCompact && _viewModel?.IsEditingConnection is true;
         ConnectionTree.IsVisible = !isCompact;
-        Inspector.IsVisible = !isCompact && !isMedium;
+        Inspector.IsVisible = showCompactEditor || (!isCompact && !isMedium);
+        Grid.SetColumn(Inspector, showCompactEditor ? 2 : 3);
+        Inspector.HorizontalAlignment = showCompactEditor ? Avalonia.Layout.HorizontalAlignment.Right : Avalonia.Layout.HorizontalAlignment.Stretch;
+        Inspector.Width = showCompactEditor ? Math.Min(360, Math.Max(280, Bounds.Width - 52)) : double.NaN;
         NavigationRail.IsVisible = true;
         QuickConnect.IsVisible = Bounds.Width >= 760;
 

@@ -25,6 +25,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Remote.Application\Remote.Application.csproj" />
+    <ProjectReference Include="..\Remote.Infrastructure\Remote.Infrastructure.csproj" />
     <ProjectReference Include="..\Remote.Protocols\Remote.Protocols.csproj" />
   </ItemGroup>
 </Project>
