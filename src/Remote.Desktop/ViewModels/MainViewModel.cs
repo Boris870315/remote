@@ -40,6 +40,7 @@ public sealed partial class MainViewModel : ViewModelBase
     private CredentialVault? _vault;
     private string _activeMasterPassword = string.Empty;
     private VaultId _primaryVaultId = new(Guid.NewGuid());
+    private VaultAutoLockController _autoLockController = new(new VaultLockSettings());
 
     public MainViewModel()
         : this(
@@ -208,6 +209,26 @@ public sealed partial class MainViewModel : ViewModelBase
     [ObservableProperty]
     private CredentialDefinition? selectedVaultCredential;
 
+    [ObservableProperty]
+    private InactivityLockInterval selectedLockInterval = InactivityLockInterval.FiveMinutes;
+
+    [ObservableProperty]
+    private bool lockOnSystemSleep = true;
+
+    [ObservableProperty]
+    private bool lockOnSessionLogout = true;
+
+    public IReadOnlyList<InactivityLockInterval> LockIntervalOptions { get; } =
+    [
+        InactivityLockInterval.OneMinute,
+        InactivityLockInterval.FiveMinutes,
+        InactivityLockInterval.FifteenMinutes,
+        InactivityLockInterval.ThirtyMinutes,
+        InactivityLockInterval.Disabled,
+    ];
+
+    public bool RequiresReducedSecurityWarning => CurrentLockSettings.RequiresReducedSecurityWarning;
+
     public string VaultStatusLabel => IsVaultLocked ? "🔒 Vault 已鎖定" : "🔓 Vault 已解鎖";
 
     public bool WorkspaceExists => File.Exists(_workspacePath);
@@ -234,6 +255,23 @@ public sealed partial class MainViewModel : ViewModelBase
     }
 
     partial void OnIsVaultLockedChanged(bool value) => OnPropertyChanged(nameof(VaultStatusLabel));
+
+    partial void OnSelectedLockIntervalChanged(InactivityLockInterval value) => RefreshAutoLockPolicy();
+
+    partial void OnLockOnSystemSleepChanged(bool value) => RefreshAutoLockPolicy();
+
+    partial void OnLockOnSessionLogoutChanged(bool value) => RefreshAutoLockPolicy();
+
+    public void RecordUserActivity() => _autoLockController.RecordActivity();
+
+    public void EvaluateVaultAutoLock()
+    {
+        if (!IsVaultLocked && _autoLockController.EvaluateInactivity() is VaultLockReason.Inactivity)
+        {
+            LockVault();
+            VaultMessage = "Vault 已因閒置逾時自動鎖定";
+        }
+    }
 
     [RelayCommand]
     private void OpenVaultPanel() => IsVaultPanelOpen = true;
@@ -288,6 +326,7 @@ public sealed partial class MainViewModel : ViewModelBase
             _activeMasterPassword = VaultMasterPassword;
             VaultMasterPassword = string.Empty;
             IsVaultLocked = false;
+            _autoLockController.RecordActivity();
             RefreshVaultCredentials();
             VaultMessage = File.Exists(_workspacePath) ? "Vault 已安全解鎖" : "已建立新的本機主 Vault";
             if (!File.Exists(_workspacePath))
@@ -855,6 +894,23 @@ public sealed partial class MainViewModel : ViewModelBase
 
         SelectedConnection = Connections.FirstOrDefault(item => item.Profile.Id == selectedId);
         SelectedTreeItem = FindConnectionTreeItem(ConnectionTree, selectedId);
+    }
+
+    private VaultLockSettings CurrentLockSettings => new()
+    {
+        InactivityInterval = SelectedLockInterval,
+        LockOnSystemSleep = LockOnSystemSleep,
+        LockOnSessionLogout = LockOnSessionLogout,
+    };
+
+    private void RefreshAutoLockPolicy()
+    {
+        _autoLockController = new VaultAutoLockController(CurrentLockSettings);
+        OnPropertyChanged(nameof(RequiresReducedSecurityWarning));
+        if (RequiresReducedSecurityWarning)
+        {
+            VaultMessage = "警告：停用閒置、睡眠或登出鎖定會降低敏感資料安全性";
+        }
     }
 
     private async Task LaunchVncAsync(ConnectionProfile connection, SessionId sessionId)

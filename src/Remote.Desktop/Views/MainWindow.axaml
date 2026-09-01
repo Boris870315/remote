@@ -117,6 +117,11 @@
               </StackPanel>
               <StackPanel Spacing="10" IsVisible="{Binding !IsVaultLocked}">
                 <Grid ColumnDefinitions="*,Auto"><TextBlock Text="身份卡" FontSize="15" FontWeight="SemiBold"/><Button Grid.Column="1" Content="立即鎖定" Command="{Binding LockVaultCommand}" Classes="tool"/></Grid>
+                <TextBlock Text="自動鎖定" FontSize="11" Foreground="#7F8DA5"/>
+                <ComboBox ItemsSource="{Binding LockIntervalOptions}" SelectedItem="{Binding SelectedLockInterval}"/>
+                <CheckBox IsChecked="{Binding LockOnSystemSleep}" Content="系統睡眠時鎖定"/>
+                <CheckBox IsChecked="{Binding LockOnSessionLogout}" Content="使用者登出時鎖定"/>
+                <Border Background="#4A341F" CornerRadius="7" Padding="8" IsVisible="{Binding RequiresReducedSecurityWarning}"><TextBlock Text="⚠ 已停用一項安全鎖定條件" Foreground="#FFD18A" FontSize="10"/></Border>
                 <ListBox ItemsSource="{Binding VaultCredentials}" SelectedItem="{Binding SelectedVaultCredential}" Background="Transparent" BorderThickness="0" MaxHeight="180">
                   <ListBox.ItemTemplate><DataTemplate><Border Margin="0,3" Padding="10" Background="#20293B" CornerRadius="8"><Grid ColumnDefinitions="*,Auto"><StackPanel><TextBlock Text="{Binding Name}"/><TextBlock Text="{Binding Username}" FontSize="10" Foreground="#8290A7"/></StackPanel><TextBlock Grid.Column="1" Text="{Binding ProtocolScope}" Foreground="#9FA5FF"/></Grid></Border></DataTemplate></ListBox.ItemTemplate>
                 </ListBox>
