@@ -18,7 +18,7 @@
           <TextBlock Text="Remote" FontSize="17" FontWeight="SemiBold" VerticalAlignment="Center"/>
         </StackPanel>
         <Border x:Name="QuickConnect" Grid.Column="2" MaxWidth="540" Height="36" Background="#101624" BorderBrush="#35405A" BorderThickness="1" CornerRadius="8">
-          <Grid ColumnDefinitions="*,Auto"><TextBox Margin="3,0,0,0" Padding="8,0" VerticalContentAlignment="Center" Background="Transparent" BorderThickness="0" PlaceholderText="快速連線：輸入主機名稱或 host:port" Text="{Binding QuickConnectText}"/><Button Grid.Column="1" Margin="3" Padding="12,3" Background="#293451" Foreground="#DCE4F3" CornerRadius="6" Content="連線" Command="{Binding QuickConnectCommand}"/></Grid>
+          <Grid ColumnDefinitions="*,Auto"><TextBox Margin="3,0,0,0" Padding="8,0" VerticalContentAlignment="Center" Background="Transparent" BorderThickness="0" PlaceholderText="快速連線：host:port 或 https://…" Text="{Binding QuickConnectText}"/><Button Grid.Column="1" Margin="3" Padding="12,3" Background="#293451" Foreground="#DCE4F3" CornerRadius="6" Content="連線" Command="{Binding QuickConnectCommand}"/></Grid>
         </Border>
         <StackPanel x:Name="HeaderActions" Grid.Column="4" Orientation="Horizontal" Spacing="8">
           <Button Content="{Binding VaultStatusLabel}" Classes="tool" Command="{Binding OpenVaultPanelCommand}"/><Button Content="＋ 新增連線" Background="#5B5CE2" Foreground="White" CornerRadius="8" Padding="12,7" Command="{Binding BeginNewConnectionCommand}"/>
@@ -53,6 +53,15 @@
           <Grid>
             <Border Background="#1D3653" Margin="1" CornerRadius="8"/>
             <Image x:Name="RemoteSurface" Source="{Binding RemoteFrame}" Stretch="Uniform" Focusable="True" PointerPressed="HandleRemotePointerPressed" PointerMoved="HandleRemotePointerMoved" PointerReleased="HandleRemotePointerReleased" KeyDown="HandleRemoteKeyDown" KeyUp="HandleRemoteKeyUp"/>
+            <Grid IsVisible="{Binding IsWebSessionActive}" RowDefinitions="Auto,*">
+              <Grid ColumnDefinitions="Auto,Auto,*,Auto" Margin="8" ColumnSpacing="6" IsEnabled="{Binding !IsViewOnly}">
+                <Button Content="←" Classes="tool" Click="GoWebBack"/>
+                <Button Grid.Column="1" Content="↻" Classes="tool" Click="RefreshWeb"/>
+                <TextBox Grid.Column="2" Text="{Binding WebAddress}" PlaceholderText="https://example.com"/>
+                <Button Grid.Column="3" Content="前往" Command="{Binding NavigateWebCommand}" Classes="tool"/>
+              </Grid>
+              <NativeWebView x:Name="WebSessionView" Grid.Row="1" Source="{Binding WebSource}" IsHitTestVisible="{Binding !IsViewOnly}"/>
+            </Grid>
             <Grid IsVisible="{Binding IsTerminalActive}" RowDefinitions="*,Auto" Margin="8">
               <TextBox Text="{Binding TerminalText}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap" FontFamily="Menlo,Consolas,monospace" FontSize="12" Background="#090D14" Foreground="#D6E2F0" BorderThickness="0" Padding="12" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Auto"/>
               <Grid Grid.Row="1" ColumnDefinitions="*,Auto" Margin="0,8,0,0" IsEnabled="{Binding !IsViewOnly}">
@@ -85,18 +94,16 @@
         </StackPanel>
         <ScrollViewer IsVisible="{Binding IsEditingConnection}">
           <StackPanel Spacing="12">
-            <TextBlock Text="新增 RDP 連線" FontSize="16" FontWeight="SemiBold"/>
+            <TextBlock Text="新增連線" FontSize="16" FontWeight="SemiBold"/>
+            <StackPanel Spacing="4"><TextBlock Text="協定" FontSize="10" Foreground="#7F8DA5"/><ComboBox ItemsSource="{Binding ConnectionProtocols}" SelectedItem="{Binding EditProtocol}"/></StackPanel>
             <StackPanel Spacing="4"><TextBlock Text="名稱" FontSize="10" Foreground="#7F8DA5"/><TextBox Text="{Binding EditName}" PlaceholderText="例如：Windows Prod"/></StackPanel>
             <StackPanel Spacing="4"><TextBlock Text="主機或 IP" FontSize="10" Foreground="#7F8DA5"/><TextBox Text="{Binding EditHost}" PlaceholderText="server.example 或 10.20.0.24"/></StackPanel>
             <StackPanel Spacing="4"><TextBlock Text="連接埠" FontSize="10" Foreground="#7F8DA5"/><TextBox Text="{Binding EditPort}"/></StackPanel>
-            <StackPanel Spacing="4"><TextBlock Text="RD Gateway（選填）" FontSize="10" Foreground="#7F8DA5"/><TextBox Text="{Binding EditGateway}" PlaceholderText="gateway.example"/></StackPanel>
+            <StackPanel Spacing="4" IsVisible="{Binding IsEditingRdp}"><TextBlock Text="RD Gateway（選填）" FontSize="10" Foreground="#7F8DA5"/><TextBox Text="{Binding EditGateway}" PlaceholderText="gateway.example"/></StackPanel>
             <ToggleSwitch IsChecked="{Binding EditUseAllMonitors}" Content="跨全部螢幕"/>
             <ToggleSwitch IsChecked="{Binding EditViewOnly}" Content="View Only"/>
             <TextBlock Text="外部 RDP 用戶端無法可靠執行 View Only；啟用時必須使用後續內嵌 Host。" FontSize="10" Foreground="#E5B96F" TextWrapping="Wrap" IsVisible="{Binding EditViewOnly}"/>
-            <TextBlock Text="裝置重新導向" FontSize="10" Foreground="#7F8DA5"/>
-            <CheckBox IsChecked="{Binding EditRedirectClipboard}" Content="文字剪貼簿"/>
-            <CheckBox IsChecked="{Binding EditRedirectPrinters}" Content="印表機"/>
-            <CheckBox IsChecked="{Binding EditRedirectDrives}" Content="磁碟機"/>
+            <StackPanel Spacing="6" IsVisible="{Binding IsEditingRdp}"><TextBlock Text="裝置重新導向" FontSize="10" Foreground="#7F8DA5"/><CheckBox IsChecked="{Binding EditRedirectClipboard}" Content="文字剪貼簿"/><CheckBox IsChecked="{Binding EditRedirectPrinters}" Content="印表機"/><CheckBox IsChecked="{Binding EditRedirectDrives}" Content="磁碟機"/></StackPanel>
             <TextBlock Text="{Binding ConnectionEditorError}" Foreground="#FF8A8A" FontSize="11" TextWrapping="Wrap"/>
             <Grid ColumnDefinitions="*,*" ColumnSpacing="8"><Button Content="取消" Command="{Binding CancelConnectionEditCommand}"/><Button Grid.Column="1" Content="儲存" Command="{Binding SaveConnectionCommand}" Background="#5B5CE2" Foreground="White"/></Grid>
           </StackPanel>

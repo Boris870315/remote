@@ -78,12 +78,14 @@ public sealed partial class MainViewModel : ViewModelBase
         var designMac = CreateConnection("Design Mac", "vnc", "vnc://10.20.0.31:5900") with { FolderId = productionFolder.Id };
         var labSsh = CreateConnection("Lab SSH", "ssh2", "ssh://10.20.1.18:22") with { FolderId = labFolder.Id };
         var financeVm = CreateConnection("Finance VM", "rdp", "rdp://10.20.2.12:3389") with { FolderId = productionFolder.Id };
+        var routerConsole = CreateConnection("Router Console", "https", "https://example.com") with { FolderId = labFolder.Id };
         Connections =
         [
             new(windowsProd, "RDP only", true),
             new(designMac, "VNC only", false),
             new(labSsh, "SSH2 only", false),
             new(financeVm, "RDP only", false),
+            new(routerConsole, "HTTPS only", false),
         ];
         ConnectionTree = BuildConnectionTree([productionFolder, labFolder], Connections);
         selectedConnection = Connections[0];
@@ -127,6 +129,13 @@ public sealed partial class MainViewModel : ViewModelBase
 
     [ObservableProperty]
     private string editName = string.Empty;
+
+    [ObservableProperty]
+    private string editProtocol = "rdp";
+
+    public IReadOnlyList<string> ConnectionProtocols { get; } = ["rdp", "vnc", "ssh2", "https", "http"];
+
+    public bool IsEditingRdp => string.Equals(EditProtocol, "rdp", StringComparison.OrdinalIgnoreCase);
 
     [ObservableProperty]
     private string editHost = string.Empty;
@@ -178,6 +187,15 @@ public sealed partial class MainViewModel : ViewModelBase
 
     [ObservableProperty]
     private bool isTerminalActive;
+
+    [ObservableProperty]
+    private bool isWebSessionActive;
+
+    [ObservableProperty]
+    private Uri? webSource;
+
+    [ObservableProperty]
+    private string webAddress = string.Empty;
 
     [ObservableProperty]
     private bool isVaultPanelOpen;
@@ -237,7 +255,7 @@ public sealed partial class MainViewModel : ViewModelBase
 
     public bool IsVncSelected => string.Equals(SelectedConnection?.Profile.ProtocolId, "vnc", StringComparison.OrdinalIgnoreCase);
 
-    public bool ShowSessionPlaceholder => RemoteFrame is null && !IsTerminalActive;
+    public bool ShowSessionPlaceholder => RemoteFrame is null && !IsTerminalActive && !IsWebSessionActive;
 
     public bool IsVncSessionActive => _vncClient?.IsConnected is true;
 
@@ -255,6 +273,20 @@ public sealed partial class MainViewModel : ViewModelBase
     }
 
     partial void OnIsVaultLockedChanged(bool value) => OnPropertyChanged(nameof(VaultStatusLabel));
+
+    partial void OnEditProtocolChanged(string value)
+    {
+        EditPort = value switch
+        {
+            "rdp" => "3389",
+            "vnc" => "5900",
+            "ssh2" => "22",
+            "https" => "443",
+            "http" => "80",
+            _ => EditPort,
+        };
+        OnPropertyChanged(nameof(IsEditingRdp));
+    }
 
     partial void OnSelectedLockIntervalChanged(InactivityLockInterval value) => RefreshAutoLockPolicy();
 
@@ -458,6 +490,9 @@ public sealed partial class MainViewModel : ViewModelBase
     partial void OnIsTerminalActiveChanged(bool value) =>
         OnPropertyChanged(nameof(ShowSessionPlaceholder));
 
+    partial void OnIsWebSessionActiveChanged(bool value) =>
+        OnPropertyChanged(nameof(ShowSessionPlaceholder));
+
     public string RuntimeStatus => _sessionService.GetStatus().State;
 
     public string ProtocolName => _protocol.Descriptor.DisplayName;
@@ -468,6 +503,7 @@ public sealed partial class MainViewModel : ViewModelBase
     private void BeginNewConnection()
     {
         EditName = string.Empty;
+        EditProtocol = "rdp";
         EditHost = string.Empty;
         EditPort = "3389";
         EditGateway = string.Empty;
@@ -519,7 +555,10 @@ public sealed partial class MainViewModel : ViewModelBase
         };
         try
         {
-            settings.Validate();
+            if (IsEditingRdp)
+            {
+                settings.Validate();
+            }
         }
         catch (ArgumentException exception)
         {
@@ -527,21 +566,22 @@ public sealed partial class MainViewModel : ViewModelBase
             return;
         }
 
-        var endpoint = new UriBuilder("rdp", host, port).Uri;
+        var scheme = EditProtocol == "ssh2" ? "ssh" : EditProtocol;
+        var endpoint = new UriBuilder(scheme, host, port).Uri;
         var profile = new ConnectionProfile
         {
             Id = ConnectionId.New(),
             Name = name,
             Endpoint = endpoint,
-            ProtocolId = "rdp",
+            ProtocolId = EditProtocol,
             DefaultAccessMode = EditViewOnly ? SessionAccessMode.ViewOnly : SessionAccessMode.Interactive,
             Display = new DisplayPreferences
             {
                 MonitorSelection = EditUseAllMonitors ? MonitorSelection.All : MonitorSelection.Single,
             },
-            ProtocolSettings = settings.ToProtocolSettings(),
+            ProtocolSettings = IsEditingRdp ? settings.ToProtocolSettings() : new ProtocolSettings(),
         };
-        var item = new ConnectionListItem(profile, "RDP only", false);
+        var item = new ConnectionListItem(profile, $"{EditProtocol.ToUpperInvariant()} only", false);
         Connections.Add(item);
         ConnectionTree.Add(ConnectionTreeDisplayItem.ForConnection(item.Profile));
         SelectedConnection = item;
@@ -585,12 +625,28 @@ public sealed partial class MainViewModel : ViewModelBase
             return;
         }
 
-        var candidate = value.Contains("://", StringComparison.Ordinal)
-            ? value
-            : $"rdp://{value}";
+        if (value.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+            value.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                var webEndpoint = WebNavigationPolicy.ParseHttpEndpoint(value);
+                await LaunchConnectionAsync(CreateConnection(value, webEndpoint.Scheme, webEndpoint.ToString()) with
+                {
+                    DefaultAccessMode = IsViewOnly ? SessionAccessMode.ViewOnly : SessionAccessMode.Interactive,
+                });
+            }
+            catch (ArgumentException exception)
+            {
+                SessionStatusLabel = exception.Message;
+            }
+
+            return;
+        }
+
+        var candidate = value.Contains("://", StringComparison.Ordinal) ? value : $"rdp://{value}";
         if (!Uri.TryCreate(candidate, UriKind.Absolute, out var endpoint) ||
-            !string.Equals(endpoint.Scheme, "rdp", StringComparison.OrdinalIgnoreCase) ||
-            string.IsNullOrWhiteSpace(endpoint.Host))
+            !string.Equals(endpoint.Scheme, "rdp", StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(endpoint.Host))
         {
             SessionStatusLabel = "RDP 位址格式無效，請使用主機名稱、IP 或 host:port";
             return;
@@ -615,13 +671,29 @@ public sealed partial class MainViewModel : ViewModelBase
         var session = _sessionWorkspace.OpenNew(connection);
         if (string.Equals(connection.ProtocolId, "vnc", StringComparison.OrdinalIgnoreCase))
         {
+            await StopSshAsync();
+            CloseWebSession();
             await LaunchVncAsync(connection, session.Id);
             return;
         }
 
         if (string.Equals(connection.ProtocolId, "ssh2", StringComparison.OrdinalIgnoreCase))
         {
+            await StopVncAsync();
+            CloseWebSession();
             await LaunchSshAsync(connection, session.Id);
+            return;
+        }
+
+        if (connection.ProtocolId is "http" or "https")
+        {
+            await StopVncAsync();
+            await StopSshAsync();
+            WebSource = WebNavigationPolicy.ParseHttpEndpoint(connection.Endpoint.ToString());
+            WebAddress = WebSource.ToString();
+            IsWebSessionActive = true;
+            _sessionWorkspace.SetState(session.Id, SessionState.Connected);
+            SessionStatusLabel = $"{connection.ProtocolId.ToUpperInvariant()} 已載入 · {connection.Endpoint.Host}";
             return;
         }
 
@@ -630,6 +702,10 @@ public sealed partial class MainViewModel : ViewModelBase
             SessionStatusLabel = $"{session.State} · 等待 {connection.ProtocolId.ToUpperInvariant()} Adapter Host";
             return;
         }
+
+        await StopVncAsync();
+        await StopSshAsync();
+        CloseWebSession();
 
         try
         {
@@ -649,6 +725,34 @@ public sealed partial class MainViewModel : ViewModelBase
             _sessionWorkspace.SetState(session.Id, SessionState.Faulted, exception.Message);
             SessionStatusLabel = exception.Message;
         }
+    }
+
+    [RelayCommand]
+    private void NavigateWeb()
+    {
+        if (IsViewOnly)
+        {
+            SessionStatusLabel = "VIEW ONLY：網址導覽已阻擋";
+            return;
+        }
+
+        try
+        {
+            WebSource = WebNavigationPolicy.ParseHttpEndpoint(WebAddress);
+            WebAddress = WebSource.ToString();
+            SessionStatusLabel = $"正在載入 {WebSource.Host}";
+        }
+        catch (ArgumentException exception)
+        {
+            SessionStatusLabel = exception.Message;
+        }
+    }
+
+    private void CloseWebSession()
+    {
+        IsWebSessionActive = false;
+        WebSource = null;
+        WebAddress = string.Empty;
     }
 
     private async Task LaunchSshAsync(ConnectionProfile connection, SessionId sessionId)
