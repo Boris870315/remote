@@ -1,0 +1,11 @@
+{
+  "name": "remote",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "grill-me"
+  ],
+  "scripts": {
+    "check": "npm --workspace grill-me run check-plugin-version"
+  }
+}

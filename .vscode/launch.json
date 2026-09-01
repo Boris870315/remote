@@ -1,0 +1,15 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Remote Desktop",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "build",
+      "program": "${workspaceFolder}/src/Remote.Desktop/bin/Debug/net10.0/Remote.Desktop.dll",
+      "cwd": "${workspaceFolder}/src/Remote.Desktop",
+      "console": "internalConsole",
+      "stopAtEntry": false
+    }
+  ]
+}

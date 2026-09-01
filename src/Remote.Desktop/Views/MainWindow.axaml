@@ -1,0 +1,44 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Remote.Desktop.ViewModels"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        d:DesignWidth="960"
+        d:DesignHeight="600"
+        x:Class="Remote.Desktop.Views.MainWindow"
+        x:DataType="vm:MainViewModel"
+        Width="960"
+        Height="600"
+        MinWidth="720"
+        MinHeight="480"
+        Icon="/Assets/avalonia-logo.ico"
+        Title="Remote">
+
+    <Design.DataContext>
+        <vm:MainViewModel />
+    </Design.DataContext>
+
+    <Grid Margin="48" RowDefinitions="Auto,*,Auto">
+        <StackPanel Spacing="10">
+            <TextBlock Text="{Binding Title}" FontSize="40" FontWeight="SemiBold" />
+            <TextBlock Text="{Binding Runtime}" FontSize="16" Opacity="0.7" />
+        </StackPanel>
+
+        <Border Grid.Row="1"
+                Margin="0,36,0,36"
+                Padding="28"
+                CornerRadius="16"
+                Background="{DynamicResource CardBackgroundFillColorDefaultBrush}">
+            <StackPanel Spacing="14" VerticalAlignment="Center">
+                <TextBlock Text="{Binding Status}" FontSize="28" FontWeight="SemiBold" />
+                <TextBlock Text="{Binding Detail}" FontSize="16" TextWrapping="Wrap" />
+                <TextBlock Text="{Binding Protocol}" FontSize="14" Opacity="0.65" />
+            </StackPanel>
+        </Border>
+
+        <TextBlock Grid.Row="2"
+                   Text="MVVM foundation ready for business logic and protocol management."
+                   Opacity="0.6" />
+    </Grid>
+</Window>

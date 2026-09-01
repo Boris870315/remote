@@ -1,0 +1,17 @@
+node_modules/
+.DS_Store
+
+# .NET
+bin/
+obj/
+artifacts/
+TestResults/
+*.user
+*.suo
+
+# IDEs
+.idea/
+.vscode/*.log
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/tasks.json
