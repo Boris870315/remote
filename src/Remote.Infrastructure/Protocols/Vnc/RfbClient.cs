@@ -11,6 +11,7 @@ public sealed class RfbClient(
     IRfbFrameSink frameSink) : IAsyncDisposable
 {
     private const int RawEncoding = 0;
+    private const int CopyRectEncoding = 1;
     private const int DesktopSizeEncoding = -223;
     private readonly SemaphoreSlim _writeLock = new(1, 1);
     private RfbTransport? _transport;
@@ -221,11 +222,12 @@ public sealed class RfbClient(
         pixelFormat[16] = 0;
         await WriteAsync(pixelFormat, cancellationToken).ConfigureAwait(false);
 
-        var encodings = new byte[12];
+        var encodings = new byte[16];
         encodings[0] = 2;
-        RfbBinary.WriteUInt16(encodings.AsSpan(2), 2);
+        RfbBinary.WriteUInt16(encodings.AsSpan(2), 3);
         RfbBinary.WriteUInt32(encodings.AsSpan(4), unchecked((uint)RawEncoding));
-        RfbBinary.WriteUInt32(encodings.AsSpan(8), unchecked((uint)DesktopSizeEncoding));
+        RfbBinary.WriteUInt32(encodings.AsSpan(8), unchecked((uint)CopyRectEncoding));
+        RfbBinary.WriteUInt32(encodings.AsSpan(12), unchecked((uint)DesktopSizeEncoding));
         await WriteAsync(encodings, cancellationToken).ConfigureAwait(false);
     }
 
@@ -266,6 +268,16 @@ public sealed class RfbClient(
                 _width = width;
                 _height = height;
                 await frameSink.DesktopSizeChangedAsync(width, height, cancellationToken).ConfigureAwait(false);
+                continue;
+            }
+
+            if (encoding == CopyRectEncoding)
+            {
+                var sourceX = await RfbBinary.ReadUInt16Async(stream, cancellationToken).ConfigureAwait(false);
+                var sourceY = await RfbBinary.ReadUInt16Async(stream, cancellationToken).ConfigureAwait(false);
+                await frameSink.RectangleCopiedAsync(
+                    new RfbCopyRectangle(x, y, width, height, sourceX, sourceY),
+                    cancellationToken).ConfigureAwait(false);
                 continue;
             }
 

@@ -48,6 +48,38 @@ public sealed class AvaloniaRfbFrameSink(Action<WriteableBitmap?> frameChanged) 
         return PublishAsync(cancellationToken);
     }
 
+    public ValueTask RectangleCopiedAsync(RfbCopyRectangle rectangle, CancellationToken cancellationToken)
+    {
+        lock (_gate)
+        {
+            if (rectangle.X + rectangle.Width > _width || rectangle.Y + rectangle.Height > _height ||
+                rectangle.SourceX + rectangle.Width > _width || rectangle.SourceY + rectangle.Height > _height)
+            {
+                throw new InvalidDataException("The VNC CopyRect operation exceeds the desktop bounds.");
+            }
+
+            var rowBytes = checked(rectangle.Width * 4);
+            var desktopRowBytes = checked(_width * 4);
+            var copiedPixels = new byte[checked(rowBytes * rectangle.Height)];
+            for (var row = 0; row < rectangle.Height; row++)
+            {
+                _pixels.AsSpan(
+                    ((rectangle.SourceY + row) * desktopRowBytes) + (rectangle.SourceX * 4),
+                    rowBytes).CopyTo(copiedPixels.AsSpan(row * rowBytes, rowBytes));
+            }
+
+            for (var row = 0; row < rectangle.Height; row++)
+            {
+                copiedPixels.AsSpan(row * rowBytes, rowBytes).CopyTo(
+                    _pixels.AsSpan(
+                        ((rectangle.Y + row) * desktopRowBytes) + (rectangle.X * 4),
+                        rowBytes));
+            }
+        }
+
+        return PublishAsync(cancellationToken);
+    }
+
     public void Dispose()
     {
         _bitmap?.Dispose();

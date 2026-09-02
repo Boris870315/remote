@@ -71,6 +71,26 @@ public sealed class RfbClientTests
         Assert.Equal([10, 20, 30, 255], rectangle.BgraPixels);
     }
 
+    [Fact]
+    public async Task ReceiveCopyRect_ForwardsOverlappingFramebufferCopy()
+    {
+        var update = new byte[]
+        {
+            0, 0, 0, 1,
+            0, 10, 0, 20, 0, 30, 0, 40, 0, 0, 0, 1,
+            0, 2, 0, 3,
+        };
+        var stream = new ScriptedDuplexStream(BuildServerScript(update));
+        var sink = new RecordingFrameSink();
+        await using var client = new RfbClient(new ScriptedTransportFactory(stream), sink);
+        await client.ConnectAsync(new RfbConnectionOptions { Endpoint = new Uri("vnc://server.example") });
+
+        await client.ReceiveNextServerMessageAsync();
+
+        var copy = Assert.Single(sink.Copies);
+        Assert.Equal(new RfbCopyRectangle(10, 20, 30, 40, 2, 3), copy);
+    }
+
     [Theory]
     [InlineData(3)]
     [InlineData(7)]
@@ -209,6 +229,8 @@ public sealed class RfbClientTests
 
         public List<RfbRectangle> Rectangles { get; } = [];
 
+        public List<RfbCopyRectangle> Copies { get; } = [];
+
         public ValueTask DesktopSizeChangedAsync(ushort width, ushort height, CancellationToken cancellationToken)
         {
             Width = width;
@@ -219,6 +241,12 @@ public sealed class RfbClientTests
         public ValueTask RectangleUpdatedAsync(RfbRectangle rectangle, CancellationToken cancellationToken)
         {
             Rectangles.Add(rectangle);
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask RectangleCopiedAsync(RfbCopyRectangle rectangle, CancellationToken cancellationToken)
+        {
+            Copies.Add(rectangle);
             return ValueTask.CompletedTask;
         }
     }
