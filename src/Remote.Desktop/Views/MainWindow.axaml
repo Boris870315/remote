@@ -78,7 +78,7 @@
       </Grid>
       <Border x:Name="Inspector" Grid.Column="3" Background="#171F2E" BorderBrush="#293248" BorderThickness="1,0,0,0" Padding="16">
         <Grid>
-          <StackPanel Spacing="16" IsVisible="{Binding !IsEditingConnection}">
+          <StackPanel Spacing="16" IsVisible="{Binding ShowConnectionDetails}">
           <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6"><StackPanel><TextBlock Text="{Binding SelectedConnection.Name, FallbackValue=Windows Prod}" FontSize="16" FontWeight="SemiBold"/><TextBlock Text="{Binding SelectedConnection.Protocol, FallbackValue=RDP}" FontSize="11" Foreground="#8290A7"/></StackPanel><Button Grid.Column="1" Content="編輯" Classes="tool" Command="{Binding BeginEditConnectionCommand}"/><Button Grid.Column="2" Content="🗑" Classes="tool" Foreground="#FF9AA9" ToolTip.Tip="刪除連線" Command="{Binding RequestDeleteConnectionCommand}"/></Grid>
           <StackPanel Spacing="5"><TextBlock Text="主機" FontSize="10" Foreground="#7F8DA5"/><TextBlock Text="{Binding SelectedConnection.Endpoint, FallbackValue=10.20.0.24:3389}" FontSize="12"/></StackPanel>
           <StackPanel Spacing="6"><Grid ColumnDefinitions="*,Auto"><TextBlock Text="帳密來源" FontSize="10" Foreground="#7F8DA5"/><Button Grid.Column="1" Content="管理" Classes="tool" Command="{Binding BeginEditConnectionCommand}"/></Grid><Border Background="#20293B" BorderBrush="#414C68" BorderThickness="1" CornerRadius="8" Padding="10"><StackPanel Spacing="5"><TextBlock Text="{Binding SelectedCredentialName}" FontSize="12"/><TextBlock Text="{Binding SelectedCredentialUsername}" FontSize="10" Foreground="#8290A7"/><Border HorizontalAlignment="Left" Background="#493F78" CornerRadius="5" Padding="6,3"><TextBlock Text="{Binding SelectedCredentialSourceLabel}" Foreground="#C9C6FF" FontSize="9"/></Border></StackPanel></Border></StackPanel>
@@ -106,6 +106,28 @@
             <CheckBox IsChecked="{Binding TrustUnknownHostKey}" Content="僅本次明確信任未知 Host Key"/>
             <TextBlock Text="若未填已知指紋，必須勾選明確信任；成功後會顯示實際 SHA256 指紋。" FontSize="9" Foreground="#E5B96F" TextWrapping="Wrap"/>
           </StackPanel>
+        </StackPanel>
+        <StackPanel Spacing="16" IsVisible="{Binding HasSelectedFolder}">
+          <StackPanel>
+            <TextBlock Text="{Binding SelectedFolder.Name}" FontSize="18" FontWeight="SemiBold"/>
+            <TextBlock Text="資料夾" FontSize="11" Foreground="#8290A7"/>
+          </StackPanel>
+          <Border Background="#20293B" BorderBrush="#414C68" BorderThickness="1" CornerRadius="9" Padding="11">
+            <StackPanel Spacing="8">
+              <TextBlock Text="資料夾管理" FontSize="12" FontWeight="SemiBold"/>
+              <TextBox Text="{Binding FolderEditorName}" PlaceholderText="資料夾名稱"/>
+              <Button Content="重新命名" Classes="tool" Command="{Binding RenameSelectedFolderCommand}"/>
+            </StackPanel>
+          </Border>
+          <Border Background="#20293B" BorderBrush="#414C68" BorderThickness="1" CornerRadius="9" Padding="11">
+            <StackPanel Spacing="8">
+              <TextBlock Text="建立子資料夾" FontSize="12" FontWeight="SemiBold"/>
+              <TextBox Text="{Binding NewFolderName}" PlaceholderText="子資料夾名稱"/>
+              <Button Content="＋ 建立在此資料夾下" Classes="tool" Command="{Binding AddFolderCommand}"/>
+            </StackPanel>
+          </Border>
+          <TextBlock Text="資料夾可依協定提供繼承 ID Card；請在 ID Card 管理中指派。" Foreground="#A9B8CE" FontSize="10" TextWrapping="Wrap"/>
+          <Button Content="刪除此資料夾…" Background="#552B35" Foreground="#FFB2BE" Command="{Binding RequestDeleteFolderCommand}"/>
         </StackPanel>
         <ScrollViewer IsVisible="{Binding IsEditingConnection}">
           <StackPanel Spacing="12">
@@ -232,6 +254,11 @@
     <Border Grid.RowSpan="2" Background="#B3090D16" IsVisible="{Binding IsDeleteConnectionConfirmationOpen}" ZIndex="35">
       <Border Width="430" HorizontalAlignment="Center" VerticalAlignment="Center" Background="#20293B" BorderBrush="#667492" BorderThickness="1" CornerRadius="14" Padding="22">
         <StackPanel Spacing="14"><TextBlock Text="刪除連線？" FontSize="18" FontWeight="SemiBold"/><TextBlock Text="{Binding SelectedConnection.Name, StringFormat='將刪除「{0}」。這不會刪除其使用的身份卡。'}" Foreground="#C4CDDC" TextWrapping="Wrap"/><Grid ColumnDefinitions="*,*" ColumnSpacing="8"><Button Content="取消" Command="{Binding CancelDeleteConnectionCommand}"/><Button Grid.Column="1" Content="刪除" Background="#B54250" Foreground="White" Command="{Binding ConfirmDeleteConnectionCommand}"/></Grid></StackPanel>
+      </Border>
+    </Border>
+    <Border Grid.RowSpan="2" Background="#B3090D16" IsVisible="{Binding IsDeleteFolderConfirmationOpen}" ZIndex="35">
+      <Border Width="460" HorizontalAlignment="Center" VerticalAlignment="Center" Background="#20293B" BorderBrush="#667492" BorderThickness="1" CornerRadius="14" Padding="22">
+        <StackPanel Spacing="14"><TextBlock Text="刪除整個資料夾？" FontSize="18" FontWeight="SemiBold"/><TextBlock Text="{Binding SelectedFolder.Name, StringFormat='將刪除「{0}」、所有子資料夾與其中連線。此操作無法復原，但不會刪除 ID Card。'}" Foreground="#C4CDDC" TextWrapping="Wrap"/><Grid ColumnDefinitions="*,*" ColumnSpacing="8"><Button Content="取消" Command="{Binding CancelDeleteFolderCommand}"/><Button Grid.Column="1" Content="刪除資料夾" Background="#B54250" Foreground="White" Command="{Binding ConfirmDeleteFolderCommand}"/></Grid></StackPanel>
       </Border>
     </Border>
     <Border Grid.RowSpan="2" Background="#B3090D16" IsVisible="{Binding IsNotificationOpen}" ZIndex="40">

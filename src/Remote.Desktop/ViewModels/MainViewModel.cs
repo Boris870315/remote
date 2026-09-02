@@ -143,6 +143,9 @@ public sealed partial class MainViewModel : ViewModelBase
     private ConnectionFolder? selectedFolder;
 
     [ObservableProperty]
+    private string folderEditorName = string.Empty;
+
+    [ObservableProperty]
     private ConnectionListItem? selectedConnection;
 
     [ObservableProperty]
@@ -345,6 +348,9 @@ public sealed partial class MainViewModel : ViewModelBase
     private bool isDeleteConnectionConfirmationOpen;
 
     [ObservableProperty]
+    private bool isDeleteFolderConfirmationOpen;
+
+    [ObservableProperty]
     private string notificationMessage = string.Empty;
 
     [ObservableProperty]
@@ -372,6 +378,12 @@ public sealed partial class MainViewModel : ViewModelBase
     public bool WorkspaceExists => File.Exists(_workspacePath);
 
     public bool IsSshSelected => string.Equals(SelectedConnection?.Profile.ProtocolId, "ssh2", StringComparison.OrdinalIgnoreCase);
+
+    public bool HasSelectedConnection => SelectedConnection is not null;
+
+    public bool ShowConnectionDetails => HasSelectedConnection && !IsEditingConnection;
+
+    public bool HasSelectedFolder => SelectedFolder is not null;
 
     public bool IsVncSelected => string.Equals(SelectedConnection?.Profile.ProtocolId, "vnc", StringComparison.OrdinalIgnoreCase);
 
@@ -1051,6 +1063,8 @@ public sealed partial class MainViewModel : ViewModelBase
         OnPropertyChanged(nameof(SelectedRedirectsClipboard));
         OnPropertyChanged(nameof(SelectedRedirectsPrinters));
         OnPropertyChanged(nameof(SelectedRedirectsDrives));
+        OnPropertyChanged(nameof(HasSelectedConnection));
+        OnPropertyChanged(nameof(ShowConnectionDetails));
         OnPropertyChanged(nameof(RequiresSessionCredentialInput));
         OnPropertyChanged(nameof(SelectedCredentialSourceLabel));
         OnPropertyChanged(nameof(SelectedCredentialName));
@@ -1072,8 +1086,18 @@ public sealed partial class MainViewModel : ViewModelBase
         SelectedFolder = value?.Folder;
         if (SelectedFolder is not null)
         {
+            IsEditingConnection = false;
             SelectedConnection = null;
         }
+    }
+
+    partial void OnIsEditingConnectionChanged(bool value) =>
+        OnPropertyChanged(nameof(ShowConnectionDetails));
+
+    partial void OnSelectedFolderChanged(ConnectionFolder? value)
+    {
+        FolderEditorName = value?.Name ?? string.Empty;
+        OnPropertyChanged(nameof(HasSelectedFolder));
     }
 
     partial void OnRemoteFrameChanged(WriteableBitmap? value)
@@ -1382,6 +1406,98 @@ public sealed partial class MainViewModel : ViewModelBase
         {
             SessionStatusLabel = $"已建立資料夾 {name}；解鎖 Vault 後才能寫入磁碟";
         }
+    }
+
+    [RelayCommand]
+    private async Task RenameSelectedFolderAsync()
+    {
+        if (SelectedFolder is not { } selected)
+        {
+            SessionStatusLabel = "請先選取資料夾";
+            return;
+        }
+
+        var name = FolderEditorName.Trim();
+        if (name.Length == 0)
+        {
+            SessionStatusLabel = "資料夾名稱不可空白";
+            return;
+        }
+
+        var index = _folders.FindIndex(folder => folder.Id == selected.Id);
+        if (index < 0)
+        {
+            SessionStatusLabel = "資料夾已不存在";
+            return;
+        }
+
+        var updated = selected with { Name = name };
+        _folders[index] = updated;
+        RefreshFolderOptions();
+        RebuildConnectionTree(default);
+        SelectedTreeItem = FindFolderTreeItem(ConnectionTree, updated.Id);
+        if (!IsVaultLocked)
+        {
+            await SaveWorkspaceAsync();
+        }
+        SessionStatusLabel = $"資料夾已重新命名為 {name}";
+    }
+
+    [RelayCommand]
+    private void RequestDeleteFolder()
+    {
+        if (SelectedFolder is not null)
+        {
+            IsDeleteFolderConfirmationOpen = true;
+        }
+    }
+
+    [RelayCommand]
+    private void CancelDeleteFolder() => IsDeleteFolderConfirmationOpen = false;
+
+    [RelayCommand]
+    private async Task ConfirmDeleteFolderAsync()
+    {
+        if (SelectedFolder is not { } selected)
+        {
+            IsDeleteFolderConfirmationOpen = false;
+            return;
+        }
+
+        var deletedFolderIds = new HashSet<FolderId> { selected.Id };
+        var changed = true;
+        while (changed)
+        {
+            changed = false;
+            foreach (var folder in _folders)
+            {
+                if (folder.ParentId is { } parentId && deletedFolderIds.Contains(parentId) && deletedFolderIds.Add(folder.Id))
+                {
+                    changed = true;
+                }
+            }
+        }
+
+        var deletedConnectionCount = 0;
+        foreach (var connection in Connections.Where(item =>
+                     item.Profile.FolderId is { } folderId && deletedFolderIds.Contains(folderId)).ToArray())
+        {
+            Connections.Remove(connection);
+            deletedConnectionCount++;
+        }
+        _folders.RemoveAll(folder => deletedFolderIds.Contains(folder.Id));
+        RefreshFolderOptions();
+        SelectedFolder = null;
+        SelectedTreeItem = null;
+        RebuildConnectionTree(default);
+        IsDeleteFolderConfirmationOpen = false;
+        if (!IsVaultLocked)
+        {
+            await SaveWorkspaceAsync();
+        }
+        NotificationMessage = $"已刪除資料夾「{selected.Name}」、{deletedFolderIds.Count - 1} 個子資料夾與 {deletedConnectionCount} 個連線；ID Card 保留。";
+        IsNotificationOpen = true;
+        AddAuditEvent($"資料夾已刪除：{selected.Name}");
     }
 
     [RelayCommand]
