@@ -43,6 +43,7 @@ public sealed partial class MainViewModel : ViewModelBase
     private readonly EncryptedVaultArchiveService _vaultArchiveService;
     private readonly EncryptedWorkspaceBackupService _backupService = new();
     private readonly string _workspacePath;
+    private readonly string _recoveryPath;
     private readonly string _backupDirectory;
     private readonly List<ConnectionFolder> _folders = [];
     private readonly List<ConnectionFolder> _pendingImportedFolders = [];
@@ -50,7 +51,7 @@ public sealed partial class MainViewModel : ViewModelBase
     private ConnectionId? _editingConnectionId;
     private CredentialVault? _vault;
     private CredentialId? _editingCredentialId;
-    private readonly RecoveryKeyService _recoveryKeyService = new();
+    private readonly RecoveryKeyEnvelopeService _recoveryKeyEnvelopeService = new();
     private string _activeMasterPassword = string.Empty;
     private VaultId _primaryVaultId = new(Guid.NewGuid());
     private VaultAutoLockController _autoLockController = new(new VaultLockSettings());
@@ -87,6 +88,7 @@ public sealed partial class MainViewModel : ViewModelBase
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "Remote",
             "workspace.rmtw");
+        _recoveryPath = $"{_workspacePath}.recovery";
         _backupDirectory = Path.Combine(Path.GetDirectoryName(_workspacePath)!, "Backups");
         var productionFolder = new ConnectionFolder { Id = FolderId.New(), Name = "Production" };
         var labFolder = new ConnectionFolder { Id = FolderId.New(), Name = "Lab" };
@@ -346,6 +348,9 @@ public sealed partial class MainViewModel : ViewModelBase
     private string recoveryKey = string.Empty;
 
     [ObservableProperty]
+    private string recoveryKeyInput = string.Empty;
+
+    [ObservableProperty]
     private bool isDeleteConnectionConfirmationOpen;
 
     [ObservableProperty]
@@ -458,7 +463,6 @@ public sealed partial class MainViewModel : ViewModelBase
         await StopSshAsync();
         await StopLocalTerminalAsync();
         LockVault();
-        _recoveryKeyService.Dispose();
     }
 
     partial void OnIsVaultLockedChanged(bool value)
@@ -560,6 +564,7 @@ public sealed partial class MainViewModel : ViewModelBase
     private void CloseVaultPanel()
     {
         VaultMasterPassword = string.Empty;
+        RecoveryKeyInput = string.Empty;
         NewIdentitySecret = string.Empty;
         IsVaultPanelOpen = false;
     }
@@ -634,6 +639,8 @@ public sealed partial class MainViewModel : ViewModelBase
         VaultMasterPassword = string.Empty;
         SessionPassword = string.Empty;
         NewIdentitySecret = string.Empty;
+        RecoveryKey = string.Empty;
+        RecoveryKeyInput = string.Empty;
         VaultCredentials.Clear();
         CompatibleVaultCredentials.Clear();
         EditSelectedCredential = null;
@@ -909,7 +916,11 @@ public sealed partial class MainViewModel : ViewModelBase
     private void OpenSettingsPanel() => IsSettingsPanelOpen = true;
 
     [RelayCommand]
-    private void CloseSettingsPanel() => IsSettingsPanelOpen = false;
+    private void CloseSettingsPanel()
+    {
+        RecoveryKey = string.Empty;
+        IsSettingsPanelOpen = false;
+    }
 
     [RelayCommand]
     private void OpenAuditPanel() => IsAuditPanelOpen = true;
@@ -984,10 +995,50 @@ public sealed partial class MainViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    private void GenerateRecoveryKey()
+    private async Task GenerateRecoveryKeyAsync()
     {
-        RecoveryKey = _recoveryKeyService.Rotate();
+        if (IsVaultLocked || _activeMasterPassword.Length == 0)
+        {
+            VaultMessage = "請先使用主密碼解鎖 Vault，再建立 Recovery Key";
+            return;
+        }
+
+        await SaveWorkspaceAsync();
+        RecoveryKey = await _recoveryKeyEnvelopeService.CreateAsync(_recoveryPath, _activeMasterPassword);
+        NotificationMessage = "新的 Recovery Key 已建立。請立即離線保存；關閉此畫面後不會再次顯示。舊的 Recovery Key 已失效。";
+        IsNotificationOpen = true;
+        VaultMessage = "Recovery Key 已建立並綁定目前 Workspace";
         AddAuditEvent("已產生新的 Recovery Key");
+    }
+
+    [RelayCommand]
+    private async Task UnlockWithRecoveryKeyAsync()
+    {
+        if (string.IsNullOrWhiteSpace(RecoveryKeyInput))
+        {
+            VaultMessage = "請輸入 Recovery Key";
+            return;
+        }
+
+        try
+        {
+            VaultMasterPassword = await _recoveryKeyEnvelopeService.RecoverMasterPasswordAsync(
+                _recoveryPath,
+                RecoveryKeyInput);
+            RecoveryKeyInput = string.Empty;
+            await UnlockVaultAsync();
+            if (!IsVaultLocked)
+            {
+                VaultMessage = "已使用 Recovery Key 解鎖 Vault";
+                AddAuditEvent("Vault 已使用 Recovery Key 解鎖");
+            }
+        }
+        catch (Exception exception) when (exception is IOException or InvalidDataException)
+        {
+            VaultMasterPassword = string.Empty;
+            RecoveryKeyInput = string.Empty;
+            VaultMessage = exception.Message;
+        }
     }
 
     [RelayCommand]
