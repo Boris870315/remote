@@ -107,10 +107,21 @@
             <StackPanel Spacing="4" IsVisible="{Binding IsEditingNetwork}"><TextBlock Text="主機或 IP" FontSize="10" Foreground="#7F8DA5"/><TextBox Text="{Binding EditHost}" PlaceholderText="server.example 或 10.20.0.24"/></StackPanel>
             <StackPanel Spacing="4" IsVisible="{Binding IsEditingNetwork}"><TextBlock Text="連接埠" FontSize="10" Foreground="#7F8DA5"/><TextBox Text="{Binding EditPort}"/></StackPanel>
             <StackPanel Spacing="4" IsVisible="{Binding IsEditingRdp}"><TextBlock Text="RD Gateway（選填）" FontSize="10" Foreground="#7F8DA5"/><TextBox Text="{Binding EditGateway}" PlaceholderText="gateway.example"/></StackPanel>
-            <ToggleSwitch IsChecked="{Binding EditUseAllMonitors}" Content="跨全部螢幕"/>
-            <ToggleSwitch IsChecked="{Binding EditViewOnly}" Content="View Only"/>
-            <TextBlock Text="外部 RDP 用戶端無法可靠執行 View Only；啟用時必須使用後續內嵌 Host。" FontSize="10" Foreground="#E5B96F" TextWrapping="Wrap" IsVisible="{Binding EditViewOnly}"/>
-            <StackPanel Spacing="6" IsVisible="{Binding IsEditingRdp}"><TextBlock Text="裝置重新導向" FontSize="10" Foreground="#7F8DA5"/><CheckBox IsChecked="{Binding EditRedirectClipboard}" Content="文字剪貼簿"/><CheckBox IsChecked="{Binding EditRedirectPrinters}" Content="印表機"/><CheckBox IsChecked="{Binding EditRedirectDrives}" Content="磁碟機"/></StackPanel>
+            <Border Background="#20293B" BorderBrush="#414C68" BorderThickness="1" CornerRadius="9" Padding="11">
+              <StackPanel Spacing="10">
+                <TextBlock Text="工作階段權限" FontSize="12" FontWeight="SemiBold"/>
+                <TextBlock Text="控制此連線可使用的顯示範圍、輸入能力與本機裝置。" FontSize="9" Foreground="#8290A7" TextWrapping="Wrap"/>
+                <ToggleSwitch IsChecked="{Binding EditUseAllMonitors}" Content="跨全部螢幕"/>
+                <ToggleSwitch IsChecked="{Binding EditViewOnly}" Content="View Only"/>
+                <TextBlock Text="外部 RDP 用戶端無法可靠執行 View Only；啟用時必須使用後續內嵌 Host。" FontSize="10" Foreground="#E5B96F" TextWrapping="Wrap" IsVisible="{Binding EditViewOnly}"/>
+                <StackPanel Spacing="6" IsVisible="{Binding IsEditingRdp}">
+                  <TextBlock Text="裝置重新導向" FontSize="10" Foreground="#7F8DA5"/>
+                  <CheckBox IsChecked="{Binding EditRedirectClipboard}" Content="文字剪貼簿"/>
+                  <CheckBox IsChecked="{Binding EditRedirectPrinters}" Content="印表機"/>
+                  <CheckBox IsChecked="{Binding EditRedirectDrives}" Content="磁碟機"/>
+                </StackPanel>
+              </StackPanel>
+            </Border>
             <TextBlock Text="{Binding ConnectionEditorError}" Foreground="#FF8A8A" FontSize="11" TextWrapping="Wrap"/>
             <Grid ColumnDefinitions="*,*" ColumnSpacing="8"><Button Content="取消" Command="{Binding CancelConnectionEditCommand}"/><Button Grid.Column="1" Content="儲存" Command="{Binding SaveConnectionCommand}" Background="#5B5CE2" Foreground="White"/></Grid>
           </StackPanel>
