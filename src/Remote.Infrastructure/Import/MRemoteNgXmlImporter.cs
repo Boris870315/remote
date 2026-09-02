@@ -5,6 +5,7 @@ using System.Xml.Linq;
 using Remote.Application.Connections;
 using Remote.Application.Credentials;
 using Remote.Application.Vaults;
+using Remote.Infrastructure.Protocols.Rdp;
 
 namespace Remote.Infrastructure.Import;
 
@@ -221,13 +222,29 @@ public sealed class MRemoteNgXmlImporter
 
     private static ProtocolSettings BuildProtocolSettings(XElement node, string protocolId)
     {
-        var settings = new ProtocolSettings();
-        if (protocolId == "rdp")
+        if (protocolId != "rdp")
         {
-            settings = settings.Set("UseConsoleSession", (Attribute(node, "UseConsoleSession") ?? "false").ToLowerInvariant());
+            return new ProtocolSettings();
         }
-        return settings;
+
+        var redirectedDrives = Attribute(node, "RedirectDiskDrives");
+        return new RdpConnectionSettings
+        {
+            GatewayHost = NullIfWhiteSpace(Attribute(node, "RDGatewayHostname")),
+            ConnectAsAdministrator = ReadBoolean(node, "UseConsoleSession"),
+            RedirectClipboard = ReadBoolean(node, "RedirectClipboard", true),
+            RedirectPrinters = ReadBoolean(node, "RedirectPrinters"),
+            RedirectDrives = !string.IsNullOrWhiteSpace(redirectedDrives) &&
+                             !string.Equals(redirectedDrives, "None", StringComparison.OrdinalIgnoreCase) &&
+                             !string.Equals(redirectedDrives, "False", StringComparison.OrdinalIgnoreCase),
+        }.ToProtocolSettings();
     }
+
+    private static string? NullIfWhiteSpace(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static bool ReadBoolean(XElement element, string name, bool fallback = false) =>
+        bool.TryParse(Attribute(element, name), out var value) ? value : fallback;
 
     private static bool TryMapProtocol(string? source, out string id, out string scheme, out int defaultPort)
     {

@@ -1,5 +1,6 @@
 using Remote.Application.Connections;
 using Remote.Infrastructure.Import;
+using Remote.Infrastructure.Protocols.Rdp;
 
 namespace Remote.Application.Tests;
 
@@ -58,5 +59,30 @@ public sealed class MRemoteNgXmlImporterTests
 
         Assert.Empty(result.Connections);
         Assert.Single(result.Warnings);
+    }
+
+    [Fact]
+    public void Import_MapsCommonRdpGatewayAndRedirectionSettings()
+    {
+        var xml = $$"""
+            <Connections KdfIterations="1000" Protected="{{EncryptedValue}}">
+              <Node Type="Connection" Name="Admin RDP" Hostname="10.0.0.4" Protocol="RDP" Port="3389"
+                    UseConsoleSession="true" RDGatewayHostname="gateway.example"
+                    RedirectClipboard="false" RedirectPrinters="true" RedirectDiskDrives="All" />
+            </Connections>
+            """;
+
+        using var result = new MRemoteNgXmlImporter().Import(
+            xml,
+            "Password",
+            new VaultId(Guid.NewGuid()));
+
+        var connection = Assert.Single(result.Connections);
+        var settings = RdpConnectionSettings.FromProtocolSettings(connection.ProtocolSettings);
+        Assert.True(settings.ConnectAsAdministrator);
+        Assert.Equal("gateway.example", settings.GatewayHost);
+        Assert.False(settings.RedirectClipboard);
+        Assert.True(settings.RedirectPrinters);
+        Assert.True(settings.RedirectDrives);
     }
 }
