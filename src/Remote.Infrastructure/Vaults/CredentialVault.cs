@@ -50,6 +50,18 @@ public sealed class CredentialVault : IDisposable
         entry.Update(definition, secret);
     }
 
+    public void UpdateDefinition(CredentialDefinition definition)
+    {
+        EnsureUnlocked();
+        ArgumentNullException.ThrowIfNull(definition);
+        if (!_entries.TryGetValue(definition.Id, out var entry))
+        {
+            throw new KeyNotFoundException($"Credential '{definition.Id.Value}' was not found.");
+        }
+
+        entry.UpdateDefinition(definition);
+    }
+
     public byte[] Reveal(CredentialId credentialId)
     {
         EnsureUnlocked();
@@ -137,6 +149,8 @@ public sealed class CredentialVault : IDisposable
             Current = new SensitiveBuffer(secret);
             Definition = definition;
         }
+
+        public void UpdateDefinition(CredentialDefinition definition) => Definition = definition;
 
         public void Dispose()
         {

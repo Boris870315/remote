@@ -128,7 +128,9 @@ public sealed partial class MainViewModel : ViewModelBase
 
     public ObservableCollection<IdentityAssignmentTarget> IdentityAssignmentTargets { get; } = [];
 
-    public IReadOnlyList<string> IdentityProtocols { get; } = ["rdp", "vnc", "ssh2", "http", "https", "terminal"];
+    public ObservableCollection<string> SelectedIdentityUsages { get; } = [];
+
+    public IReadOnlyList<string> IdentityProtocols { get; } = ["rdp", "vnc", "ssh2", "http", "https"];
 
     public ObservableCollection<ConnectionTreeDisplayItem> ConnectionTree { get; }
 
@@ -281,6 +283,9 @@ public sealed partial class MainViewModel : ViewModelBase
     private bool isVaultPanelOpen;
 
     [ObservableProperty]
+    private bool isIdentityPanelOpen;
+
+    [ObservableProperty]
     private bool isVaultLocked = true;
 
     [ObservableProperty]
@@ -382,6 +387,8 @@ public sealed partial class MainViewModel : ViewModelBase
 
     public string IdentitySaveLabel => _editingCredentialId is null ? "加密儲存身份卡" : "儲存身份卡變更";
 
+    public bool IsEditingIdentity => _editingCredentialId is not null;
+
     public string SelectedCredentialSourceLabel => SelectedConnection?.Profile.Credential.Kind switch
     {
         CredentialReferenceKind.IdentityCard => "直接使用 Vault ID Card",
@@ -474,7 +481,28 @@ public sealed partial class MainViewModel : ViewModelBase
     [RelayCommand]
     private void OpenVaultPanel()
     {
+        IsVaultPanelOpen = true;
+    }
+
+    [RelayCommand]
+    private void OpenIdentityPanel()
+    {
         RefreshIdentityAssignmentTargets();
+        RefreshSelectedIdentityUsages();
+        IsIdentityPanelOpen = true;
+    }
+
+    [RelayCommand]
+    private void CloseIdentityPanel()
+    {
+        NewIdentitySecret = string.Empty;
+        IsIdentityPanelOpen = false;
+    }
+
+    [RelayCommand]
+    private void UnlockVaultFromIdentityPanel()
+    {
+        IsIdentityPanelOpen = false;
         IsVaultPanelOpen = true;
     }
 
@@ -571,10 +599,15 @@ public sealed partial class MainViewModel : ViewModelBase
         var name = NewIdentityName.Trim();
         var protocol = NewIdentityProtocol.Trim().ToLowerInvariant();
         var username = NewIdentityUsername.Trim();
-        if (name.Length == 0 || username.Length == 0 || NewIdentitySecret.Length == 0 ||
-            protocol is not ("rdp" or "vnc" or "ssh2" or "http" or "https" or "terminal"))
+        var isNew = _editingCredentialId is null;
+        var usernameRequired = protocol is not "vnc";
+        if (name.Length == 0 || (usernameRequired && username.Length == 0) ||
+            (isNew && NewIdentitySecret.Length == 0) ||
+            protocol is not ("rdp" or "vnc" or "ssh2" or "http" or "https"))
         {
-            VaultMessage = "名稱、支援的協定、使用者名稱與密碼皆為必填";
+            VaultMessage = usernameRequired
+                ? "名稱、支援的協定、使用者名稱與密碼皆為必填"
+                : "名稱、VNC 密碼皆為必填；使用者名稱為選填";
             return;
         }
 
@@ -588,12 +621,16 @@ public sealed partial class MainViewModel : ViewModelBase
             Username = username,
             Domain = string.IsNullOrWhiteSpace(NewIdentityDomain) ? null : NewIdentityDomain.Trim(),
         };
-        var secret = Encoding.UTF8.GetBytes(NewIdentitySecret);
+        byte[]? secret = NewIdentitySecret.Length == 0 ? null : Encoding.UTF8.GetBytes(NewIdentitySecret);
         try
         {
             if (_editingCredentialId is null)
             {
-                _vault.Add(definition, secret);
+                _vault.Add(definition, secret!);
+            }
+            else if (secret is null)
+            {
+                _vault.UpdateDefinition(definition);
             }
             else
             {
@@ -606,6 +643,7 @@ public sealed partial class MainViewModel : ViewModelBase
             _editingCredentialId = null;
             OnPropertyChanged(nameof(IdentityEditorTitle));
             OnPropertyChanged(nameof(IdentitySaveLabel));
+            OnPropertyChanged(nameof(IsEditingIdentity));
             RefreshVaultCredentials();
             await SaveWorkspaceAsync();
             VaultMessage = $"身份卡「{definition.Name}」已加密儲存";
@@ -613,7 +651,10 @@ public sealed partial class MainViewModel : ViewModelBase
         }
         finally
         {
-            System.Security.Cryptography.CryptographicOperations.ZeroMemory(secret);
+            if (secret is not null)
+            {
+                System.Security.Cryptography.CryptographicOperations.ZeroMemory(secret);
+            }
         }
     }
 
@@ -875,7 +916,8 @@ public sealed partial class MainViewModel : ViewModelBase
         NewIdentitySecret = string.Empty;
         OnPropertyChanged(nameof(IdentityEditorTitle));
         OnPropertyChanged(nameof(IdentitySaveLabel));
-        VaultMessage = "請重新輸入密碼以儲存身份卡變更";
+        OnPropertyChanged(nameof(IsEditingIdentity));
+        VaultMessage = "密碼留空會保留原密碼；輸入新密碼才會建立新版本";
     }
 
     [RelayCommand]
@@ -888,6 +930,7 @@ public sealed partial class MainViewModel : ViewModelBase
         NewIdentitySecret = string.Empty;
         OnPropertyChanged(nameof(IdentityEditorTitle));
         OnPropertyChanged(nameof(IdentitySaveLabel));
+        OnPropertyChanged(nameof(IsEditingIdentity));
     }
 
     [RelayCommand]
@@ -968,6 +1011,9 @@ public sealed partial class MainViewModel : ViewModelBase
         OnPropertyChanged(nameof(SelectedCredentialName));
         OnPropertyChanged(nameof(SelectedCredentialUsername));
     }
+
+    partial void OnSelectedVaultCredentialChanged(CredentialDefinition? value) =>
+        RefreshSelectedIdentityUsages();
 
     partial void OnSelectedTreeItemChanged(ConnectionTreeDisplayItem? value)
     {
@@ -2143,6 +2189,55 @@ public sealed partial class MainViewModel : ViewModelBase
                 ? IdentityAssignmentTargets.FirstOrDefault(target => target.FolderId == selectedFolder.Id)
                 : null)
             ?? IdentityAssignmentTargets.FirstOrDefault();
+    }
+
+    private void RefreshSelectedIdentityUsages()
+    {
+        SelectedIdentityUsages.Clear();
+        if (SelectedVaultCredential is not { } selected)
+        {
+            return;
+        }
+
+        foreach (var folder in _folders.Where(folder => folder.ProtocolCredentials.Values.Any(reference =>
+                     reference.Kind is CredentialReferenceKind.IdentityCard &&
+                     reference.VaultId == selected.VaultId &&
+                     reference.CredentialId == selected.Id)))
+        {
+            SelectedIdentityUsages.Add($"資料夾 · {folder.Name} · {selected.ProtocolScope.ToUpperInvariant()} 預設");
+        }
+
+        var cards = VaultCredentials
+            .Where(credential => credential.Kind is CredentialKind.UsernamePassword)
+            .Select(credential => new IdentityCard
+            {
+                VaultId = credential.VaultId,
+                CredentialId = credential.Id,
+                Name = credential.Name,
+                ProtocolId = credential.ProtocolScope,
+                Username = credential.Username ?? string.Empty,
+                Domain = credential.Domain,
+            })
+            .ToArray();
+        var resolver = new ConnectionCredentialResolver();
+        foreach (var connection in Connections)
+        {
+            var resolved = resolver.ResolveIdentityCard(connection.Profile, _folders, cards);
+            if (resolved?.CredentialId != selected.Id || resolved.VaultId != selected.VaultId)
+            {
+                continue;
+            }
+
+            var source = connection.Profile.Credential.Kind is CredentialReferenceKind.IdentityCard
+                ? "直接指派"
+                : "資料夾繼承";
+            SelectedIdentityUsages.Add($"連線 · {connection.Name} · {source}");
+        }
+
+        if (SelectedIdentityUsages.Count == 0)
+        {
+            SelectedIdentityUsages.Add("尚未指派給任何連線或資料夾");
+        }
     }
 
     private void AddAuditEvent(string description)
