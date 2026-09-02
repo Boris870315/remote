@@ -52,6 +52,8 @@ public sealed partial class MainViewModel : ViewModelBase
     private readonly List<ConnectionFolder> _folders = [];
     private readonly List<ConnectionFolder> _pendingImportedFolders = [];
     private readonly List<ConnectionProfile> _pendingImportedConnections = [];
+    private ConnectionProfile? _pendingSessionConnection;
+    private SessionId? _pendingExistingSessionId;
     private ConnectionId? _editingConnectionId;
     private CredentialVault? _vault;
     private CredentialId? _editingCredentialId;
@@ -176,6 +178,12 @@ public sealed partial class MainViewModel : ViewModelBase
 
     [ObservableProperty]
     private string sessionStatusLabel = "尚未開啟工作階段";
+
+    [ObservableProperty]
+    private bool isSessionOpenChoiceVisible;
+
+    [ObservableProperty]
+    private string sessionOpenChoiceMessage = string.Empty;
 
     [ObservableProperty]
     private string quickConnectText = string.Empty;
@@ -1757,9 +1765,18 @@ public sealed partial class MainViewModel : ViewModelBase
         var request = _sessionWorkspace.RequestOpen(connection);
         if (request.RequiresChoice)
         {
-            SessionStatusLabel = "已有工作階段：請選擇切換既有分頁或另開工作階段";
+            _pendingSessionConnection = connection;
+            _pendingExistingSessionId = request.ExistingSessions[0].Id;
+            SessionOpenChoiceMessage = $"「{connection.Name}」已有工作階段。要切換至現有分頁，還是另開一個工作階段？";
+            IsSessionOpenChoiceVisible = true;
             return;
         }
+
+        await LaunchNewConnectionAsync(connection);
+    }
+
+    private async Task LaunchNewConnectionAsync(ConnectionProfile connection)
+    {
 
         var session = _sessionWorkspace.OpenNew(connection);
         var tab = new SessionTabViewModel(session.Id, connection.Name, connection.ProtocolId);
@@ -1879,6 +1896,33 @@ public sealed partial class MainViewModel : ViewModelBase
             }
             SessionPassword = string.Empty;
         }
+    }
+
+    [RelayCommand]
+    private void SwitchToExistingSession()
+    {
+        var tab = _pendingExistingSessionId is { } id
+            ? SessionTabs.FirstOrDefault(item => item.SessionId == id)
+            : null;
+        if (tab is not null) SelectSessionTab(tab);
+        CancelSessionOpenChoice();
+    }
+
+    [RelayCommand]
+    private async Task OpenAdditionalSessionAsync()
+    {
+        var connection = _pendingSessionConnection;
+        CancelSessionOpenChoice();
+        if (connection is not null) await LaunchNewConnectionAsync(connection);
+    }
+
+    [RelayCommand]
+    private void CancelSessionOpenChoice()
+    {
+        IsSessionOpenChoiceVisible = false;
+        SessionOpenChoiceMessage = string.Empty;
+        _pendingSessionConnection = null;
+        _pendingExistingSessionId = null;
     }
 
     [RelayCommand]
