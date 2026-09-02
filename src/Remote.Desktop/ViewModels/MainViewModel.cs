@@ -57,7 +57,8 @@ public sealed partial class MainViewModel : ViewModelBase
             new RdpExternalSessionLauncher(
                 new SystemProcessLauncher(),
                 new WindowsRdpLaunchSpecFactory(),
-                new MacOsRdpLaunchSpecFactory()))
+                new MacOsRdpLaunchSpecFactory(),
+                credentialStore: new WindowsRdpCredentialStore()))
     {
     }
 
@@ -873,23 +874,44 @@ public sealed partial class MainViewModel : ViewModelBase
         await StopLocalTerminalAsync();
         CloseWebSession();
 
+        byte[]? rdpSecret = null;
         try
         {
+            string? username = null;
+            if (ResolveCredentialDefinition(connection) is { } definition)
+            {
+                username = string.IsNullOrWhiteSpace(definition.Domain)
+                    ? definition.Username
+                    : $"{definition.Domain}\\{definition.Username}";
+                rdpSecret = _vault!.Reveal(definition.Id);
+            }
+
             await _rdpLauncher.LaunchAsync(new RdpExternalLaunchRequest
             {
                 Endpoint = connection.Endpoint,
+                Username = username,
+                PasswordUtf8 = rdpSecret,
                 AccessMode = connection.DefaultAccessMode,
                 Display = connection.Display,
                 Settings = RdpConnectionSettings.FromProtocolSettings(connection.ProtocolSettings),
             });
             _sessionWorkspace.SetState(session.Id, SessionState.ExternalClientLaunched);
-            SessionStatusLabel = "已啟動平台 RDP 用戶端 · 密碼由用戶端安全提示";
+            SessionStatusLabel = rdpSecret is null
+                ? "已啟動平台 RDP 用戶端 · 尚未指派 ID Card"
+                : "已使用 ID Card 啟動 RDP 自動登入";
         }
         catch (Exception exception) when (
             exception is NotSupportedException or InvalidOperationException or System.ComponentModel.Win32Exception)
         {
             _sessionWorkspace.SetState(session.Id, SessionState.Faulted, exception.Message);
             SessionStatusLabel = exception.Message;
+        }
+        finally
+        {
+            if (rdpSecret is not null)
+            {
+                System.Security.Cryptography.CryptographicOperations.ZeroMemory(rdpSecret);
+            }
         }
     }
 

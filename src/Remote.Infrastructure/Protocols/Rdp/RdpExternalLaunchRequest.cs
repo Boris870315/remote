@@ -9,6 +9,8 @@ public sealed record RdpExternalLaunchRequest
 
     public string? Username { get; init; }
 
+    public ReadOnlyMemory<byte> PasswordUtf8 { get; init; }
+
     public SessionAccessMode AccessMode { get; init; } = SessionAccessMode.Interactive;
 
     public DisplayPreferences Display { get; init; } = new();

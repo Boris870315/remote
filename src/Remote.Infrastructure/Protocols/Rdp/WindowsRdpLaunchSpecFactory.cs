@@ -15,9 +15,12 @@ public sealed class WindowsRdpLaunchSpecFactory
         var arguments = new List<string>
         {
             $"/v:{RdpEndpoint.FormatAuthority(request.Endpoint)}",
-            "/public",
-            "/prompt",
         };
+
+        if (string.IsNullOrWhiteSpace(request.Username) || request.PasswordUtf8.IsEmpty)
+        {
+            arguments.Add("/prompt");
+        }
 
         if (request.StartFullScreen)
         {

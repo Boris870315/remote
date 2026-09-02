@@ -8,7 +8,7 @@ namespace Remote.Application.Tests;
 public sealed class RdpExternalLaunchSpecTests
 {
     [Fact]
-    public void Windows_WithAllMonitors_BuildsPublicPromptedMstscLaunch()
+    public void Windows_WithAllMonitors_BuildsPromptedMstscLaunchWhenNoIdentityCardExists()
     {
         var request = CreateRequest() with
         {
@@ -27,13 +27,53 @@ public sealed class RdpExternalLaunchSpecTests
         Assert.Equal("mstsc.exe", specification.FileName);
         Assert.False(specification.UseShellExecute);
         Assert.Contains("/v:server.example:3390", specification.Arguments);
-        Assert.Contains("/public", specification.Arguments);
         Assert.Contains("/prompt", specification.Arguments);
         Assert.Contains("/multimon", specification.Arguments);
         Assert.Contains("/f", specification.Arguments);
         Assert.Contains("/g:gateway.example", specification.Arguments);
         Assert.Contains("/admin", specification.Arguments);
         Assert.Contains("/remoteGuard", specification.Arguments);
+    }
+
+    [Fact]
+    public void Windows_WithIdentityCard_DoesNotPromptOrExposeSecretInArguments()
+    {
+        var request = CreateRequest() with
+        {
+            Username = "CORP\\operator",
+            PasswordUtf8 = "top-secret"u8.ToArray(),
+        };
+
+        var specification = new WindowsRdpLaunchSpecFactory().Create(request);
+
+        Assert.DoesNotContain("/prompt", specification.Arguments);
+        Assert.DoesNotContain("/public", specification.Arguments);
+        Assert.DoesNotContain(specification.Arguments, value => value.Contains("top-secret", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Launcher_ProvisionsWindowsCredentialBeforeStartingClient()
+    {
+        var processLauncher = new RecordingProcessLauncher();
+        var credentialStore = new RecordingCredentialStore();
+        var launcher = new RdpExternalSessionLauncher(
+            processLauncher,
+            new WindowsRdpLaunchSpecFactory(),
+            new MacOsRdpLaunchSpecFactory(),
+            () => RdpHostPlatform.Windows,
+            credentialStore);
+        var request = CreateRequest() with
+        {
+            Username = "CORP\\operator",
+            PasswordUtf8 = "secret"u8.ToArray(),
+        };
+
+        await launcher.LaunchAsync(request);
+
+        Assert.Equal("server.example", credentialStore.Endpoint?.Host);
+        Assert.Equal("CORP\\operator", credentialStore.Username);
+        Assert.Equal("secret", System.Text.Encoding.UTF8.GetString(credentialStore.Password));
+        Assert.NotNull(processLauncher.Specification);
     }
 
     [Fact]
@@ -112,6 +152,25 @@ public sealed class RdpExternalLaunchSpecTests
         {
             Specification = specification;
             return Task.FromResult(new LaunchedProcess(42));
+        }
+    }
+
+    private sealed class RecordingCredentialStore : IRdpCredentialStore
+    {
+        public Uri? Endpoint { get; private set; }
+        public string? Username { get; private set; }
+        public byte[] Password { get; private set; } = [];
+
+        public Task StoreAsync(
+            Uri endpoint,
+            string username,
+            ReadOnlyMemory<byte> passwordUtf8,
+            CancellationToken cancellationToken = default)
+        {
+            Endpoint = endpoint;
+            Username = username;
+            Password = passwordUtf8.ToArray();
+            return Task.CompletedTask;
         }
     }
 }

@@ -7,21 +7,35 @@ public sealed class RdpExternalSessionLauncher(
     IProcessLauncher processLauncher,
     WindowsRdpLaunchSpecFactory windowsFactory,
     MacOsRdpLaunchSpecFactory macOsFactory,
-    Func<RdpHostPlatform>? platformProvider = null)
+    Func<RdpHostPlatform>? platformProvider = null,
+    IRdpCredentialStore? credentialStore = null)
 {
     private readonly Func<RdpHostPlatform> _platformProvider = platformProvider ?? DetectPlatform;
+    private readonly IRdpCredentialStore _credentialStore = credentialStore ?? new NullRdpCredentialStore();
 
-    public Task<LaunchedProcess> LaunchAsync(
+    public async Task<LaunchedProcess> LaunchAsync(
         RdpExternalLaunchRequest request,
         CancellationToken cancellationToken = default)
     {
-        var specification = _platformProvider() switch
+        var platform = _platformProvider();
+        if (platform is RdpHostPlatform.Windows &&
+            !string.IsNullOrWhiteSpace(request.Username) &&
+            !request.PasswordUtf8.IsEmpty)
+        {
+            await _credentialStore.StoreAsync(
+                request.Endpoint,
+                request.Username,
+                request.PasswordUtf8,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        var specification = platform switch
         {
             RdpHostPlatform.Windows => windowsFactory.Create(request),
             RdpHostPlatform.MacOs => macOsFactory.Create(request),
             _ => throw new PlatformNotSupportedException("The native RDP fallback supports Windows and macOS only."),
         };
-        return processLauncher.LaunchAsync(specification, cancellationToken);
+        return await processLauncher.LaunchAsync(specification, cancellationToken).ConfigureAwait(false);
     }
 
     private static RdpHostPlatform DetectPlatform()
