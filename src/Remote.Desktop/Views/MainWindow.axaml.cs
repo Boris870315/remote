@@ -170,6 +170,28 @@ public partial class MainWindow : Window
         }
     }
 
+    private async void RestoreWorkspaceBackup(object? sender, RoutedEventArgs e)
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "選擇 Remote 加密備份",
+            AllowMultiple = false,
+            FileTypeFilter =
+            [
+                new FilePickerFileType("Remote Workspace Backup") { Patterns = ["*.rmtw.backup"] },
+            ],
+        });
+        if (files.FirstOrDefault()?.TryGetLocalPath() is { } path)
+        {
+            await _viewModel.RestoreBackupAsync(path);
+        }
+    }
+
     private void HandleWindowKeyDown(object? sender, KeyEventArgs e)
     {
         _viewModel?.RecordUserActivity();

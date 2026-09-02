@@ -1102,6 +1102,54 @@ public sealed partial class MainViewModel : ViewModelBase
         }
     }
 
+    public async Task RestoreBackupAsync(string backupPath)
+    {
+        if (_vault is null || IsVaultLocked || _activeMasterPassword.Length == 0)
+        {
+            VaultMessage = "請先解鎖 Vault，再還原備份";
+            return;
+        }
+
+        try
+        {
+            var restoredDocument = await _workspaceRepository.LoadAsync(backupPath, _activeMasterPassword);
+            CredentialVault restoredVault;
+            if (restoredDocument.EncryptedPrimaryVault is { Length: > 0 } archive)
+            {
+                try
+                {
+                    restoredVault = _vaultArchiveService.Import(archive, _activeMasterPassword);
+                }
+                finally
+                {
+                    System.Security.Cryptography.CryptographicOperations.ZeroMemory(archive);
+                }
+            }
+            else
+            {
+                restoredVault = new CredentialVault();
+            }
+
+            if (File.Exists(_workspacePath))
+            {
+                await _backupService.CreateAsync(_workspacePath, _backupDirectory, DateTimeOffset.Now);
+            }
+            await _backupService.RestoreAsync(backupPath, _workspacePath);
+            _vault.Dispose();
+            _vault = restoredVault;
+            LoadWorkspaceDocument(restoredDocument);
+            RefreshVaultCredentials();
+            VaultMessage = "加密備份已還原；原 Workspace 已先建立安全副本";
+            NotificationMessage = VaultMessage;
+            IsNotificationOpen = true;
+            AddAuditEvent("Workspace 已由本機加密備份還原");
+        }
+        catch (Exception exception) when (exception is IOException or InvalidDataException or WorkspaceUnlockException or NotSupportedException)
+        {
+            VaultMessage = $"備份還原失敗：{exception.Message}";
+        }
+    }
+
     partial void OnSelectedConnectionChanged(ConnectionListItem? value)
     {
         IsViewOnly = value?.Profile.DefaultAccessMode is SessionAccessMode.ViewOnly;

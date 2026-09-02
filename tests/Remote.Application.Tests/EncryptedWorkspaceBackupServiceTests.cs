@@ -31,6 +31,28 @@ public sealed class EncryptedWorkspaceBackupServiceTests
     }
 
     [Fact]
+    public async Task Restore_ReplacesWorkspaceWithSelectedEncryptedBackup()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"remote-backup-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(root);
+        try
+        {
+            var workspace = Path.Combine(root, "workspace.rmtw");
+            var backup = Path.Combine(root, "saved.rmtw.backup");
+            await File.WriteAllTextAsync(workspace, "current");
+            await File.WriteAllTextAsync(backup, "restored");
+
+            await new EncryptedWorkspaceBackupService().RestoreAsync(backup, workspace);
+
+            Assert.Equal("restored", await File.ReadAllTextAsync(workspace));
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
     public async Task CreateAsync_RejectsMissingWorkspace()
     {
         var root = Path.Combine(Path.GetTempPath(), $"remote-backup-{Guid.NewGuid():N}");

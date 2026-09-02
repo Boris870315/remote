@@ -189,6 +189,7 @@
                   <CheckBox Content="每次變更後自動建立本機加密備份（預設關閉）" IsChecked="{Binding AutomaticBackupEnabled}" VerticalAlignment="Center"/>
                   <Button Grid.Column="1" Content="立即備份" Command="{Binding CreateBackupCommand}" Classes="tool"/>
                 </Grid>
+                <Button HorizontalAlignment="Left" Content="選擇加密備份並還原…" Click="RestoreWorkspaceBackup" Classes="tool"/>
                 <Button HorizontalAlignment="Left" Content="管理 ID Card" Command="{Binding OpenIdentityPanelCommand}" Classes="tool"/>
               </StackPanel>
             </StackPanel>
