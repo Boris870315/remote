@@ -116,6 +116,8 @@ public sealed partial class MainViewModel : ViewModelBase
 
     public ObservableCollection<CredentialDefinition> VaultCredentials { get; } = [];
 
+    public ObservableCollection<CredentialDefinition> CompatibleVaultCredentials { get; } = [];
+
     public ObservableCollection<string> AuditEvents { get; } =
     [
         "Remote 已啟動",
@@ -174,11 +176,43 @@ public sealed partial class MainViewModel : ViewModelBase
 
     public IReadOnlyList<string> ConnectionProtocols { get; } = ["rdp", "vnc", "ssh2", "https", "http", "terminal"];
 
+    public IReadOnlyList<string> CredentialSourceOptions { get; } =
+    [
+        "從資料夾繼承",
+        "選擇 Vault 中的 ID Card",
+        "新建並加密儲存到 Vault",
+        "每次連線時輸入",
+    ];
+
     public bool IsEditingRdp => string.Equals(EditProtocol, "rdp", StringComparison.OrdinalIgnoreCase);
 
     public bool IsEditingNetwork => !string.Equals(EditProtocol, "terminal", StringComparison.OrdinalIgnoreCase);
 
     public string ConnectionEditorTitle => _editingConnectionId is null ? "新增連線" : "編輯連線";
+
+    [ObservableProperty]
+    private string editCredentialSource = "從資料夾繼承";
+
+    [ObservableProperty]
+    private CredentialDefinition? editSelectedCredential;
+
+    [ObservableProperty]
+    private string editCredentialName = string.Empty;
+
+    [ObservableProperty]
+    private string editCredentialUsername = string.Empty;
+
+    [ObservableProperty]
+    private string editCredentialDomain = string.Empty;
+
+    [ObservableProperty]
+    private string editCredentialPassword = string.Empty;
+
+    public bool IsSelectingExistingCredential => EditCredentialSource == "選擇 Vault 中的 ID Card";
+
+    public bool IsCreatingCredential => EditCredentialSource == "新建並加密儲存到 Vault";
+
+    public bool IsPromptingForCredential => EditCredentialSource == "每次連線時輸入";
 
     [ObservableProperty]
     private string editHost = string.Empty;
@@ -331,6 +365,10 @@ public sealed partial class MainViewModel : ViewModelBase
 
     public bool IsVncSelected => string.Equals(SelectedConnection?.Profile.ProtocolId, "vnc", StringComparison.OrdinalIgnoreCase);
 
+    public bool RequiresSessionCredentialInput =>
+        SelectedConnection?.Profile.Credential.Kind is CredentialReferenceKind.None &&
+        SelectedConnection.Profile.ProtocolId is "rdp" or "vnc" or "ssh2" or "http" or "https";
+
     public bool ShowSessionPlaceholder => RemoteFrame is null && !IsTerminalActive && !IsWebSessionActive && !IsRdpSessionActive;
 
     public bool IsVncSessionActive => _vncClient?.IsConnected is true;
@@ -343,6 +381,30 @@ public sealed partial class MainViewModel : ViewModelBase
     public string IdentityEditorTitle => _editingCredentialId is null ? "新增身份卡" : "編輯身份卡";
 
     public string IdentitySaveLabel => _editingCredentialId is null ? "加密儲存身份卡" : "儲存身份卡變更";
+
+    public string SelectedCredentialSourceLabel => SelectedConnection?.Profile.Credential.Kind switch
+    {
+        CredentialReferenceKind.IdentityCard => "直接使用 Vault ID Card",
+        CredentialReferenceKind.Inherited => "從資料夾繼承 ID Card",
+        _ => "每次連線時輸入",
+    };
+
+    public string SelectedCredentialName => TryResolveSelectedCredential()?.Name ?? "尚未解析到 ID Card";
+
+    public string SelectedCredentialUsername
+    {
+        get
+        {
+            var credential = TryResolveSelectedCredential();
+            if (credential is null)
+            {
+                return IsVaultLocked ? "解鎖 Vault 後顯示" : "未儲存帳號密碼";
+            }
+            return string.IsNullOrWhiteSpace(credential.Domain)
+                ? credential.Username ?? string.Empty
+                : $"{credential.Domain}\\{credential.Username}";
+        }
+    }
 
     public Task<bool> SendVncKeyAsync(uint keySym, bool isDown) =>
         _vncClient?.SendKeyAsync(keySym, isDown) ?? Task.FromResult(false);
@@ -359,7 +421,12 @@ public sealed partial class MainViewModel : ViewModelBase
         _recoveryKeyService.Dispose();
     }
 
-    partial void OnIsVaultLockedChanged(bool value) => OnPropertyChanged(nameof(VaultStatusLabel));
+    partial void OnIsVaultLockedChanged(bool value)
+    {
+        OnPropertyChanged(nameof(VaultStatusLabel));
+        OnPropertyChanged(nameof(SelectedCredentialName));
+        OnPropertyChanged(nameof(SelectedCredentialUsername));
+    }
 
     partial void OnEditProtocolChanged(string value)
     {
@@ -375,6 +442,16 @@ public sealed partial class MainViewModel : ViewModelBase
         };
         OnPropertyChanged(nameof(IsEditingRdp));
         OnPropertyChanged(nameof(IsEditingNetwork));
+        RefreshCompatibleVaultCredentials();
+        OnPropertyChanged(nameof(SelectedCredentialName));
+        OnPropertyChanged(nameof(SelectedCredentialUsername));
+    }
+
+    partial void OnEditCredentialSourceChanged(string value)
+    {
+        OnPropertyChanged(nameof(IsSelectingExistingCredential));
+        OnPropertyChanged(nameof(IsCreatingCredential));
+        OnPropertyChanged(nameof(IsPromptingForCredential));
     }
 
     partial void OnSelectedLockIntervalChanged(InactivityLockInterval value) => RefreshAutoLockPolicy();
@@ -476,6 +553,8 @@ public sealed partial class MainViewModel : ViewModelBase
         SessionPassword = string.Empty;
         NewIdentitySecret = string.Empty;
         VaultCredentials.Clear();
+        CompatibleVaultCredentials.Clear();
+        EditSelectedCredential = null;
         IsVaultLocked = true;
         VaultMessage = "Vault 已鎖定；敏感內容已從執行階段清除";
     }
@@ -884,6 +963,10 @@ public sealed partial class MainViewModel : ViewModelBase
         IsViewOnly = value?.Profile.DefaultAccessMode is SessionAccessMode.ViewOnly;
         OnPropertyChanged(nameof(IsSshSelected));
         OnPropertyChanged(nameof(IsVncSelected));
+        OnPropertyChanged(nameof(RequiresSessionCredentialInput));
+        OnPropertyChanged(nameof(SelectedCredentialSourceLabel));
+        OnPropertyChanged(nameof(SelectedCredentialName));
+        OnPropertyChanged(nameof(SelectedCredentialUsername));
     }
 
     partial void OnSelectedTreeItemChanged(ConnectionTreeDisplayItem? value)
@@ -948,6 +1031,10 @@ public sealed partial class MainViewModel : ViewModelBase
         EditRedirectClipboard = true;
         EditRedirectPrinters = false;
         EditRedirectDrives = false;
+        EditCredentialSource = "從資料夾繼承";
+        EditSelectedCredential = null;
+        ClearConnectionCredentialEditor();
+        RefreshCompatibleVaultCredentials();
         ConnectionEditorError = string.Empty;
         IsEditingConnection = true;
     }
@@ -979,6 +1066,17 @@ public sealed partial class MainViewModel : ViewModelBase
         EditRedirectClipboard = settings.RedirectClipboard;
         EditRedirectPrinters = settings.RedirectPrinters;
         EditRedirectDrives = settings.RedirectDrives;
+        RefreshCompatibleVaultCredentials();
+        EditCredentialSource = profile.Credential.Kind switch
+        {
+            CredentialReferenceKind.IdentityCard => "選擇 Vault 中的 ID Card",
+            CredentialReferenceKind.None => "每次連線時輸入",
+            _ => "從資料夾繼承",
+        };
+        EditSelectedCredential = profile.Credential.CredentialId is { } credentialId
+            ? CompatibleVaultCredentials.FirstOrDefault(item => item.Id == credentialId)
+            : null;
+        ClearConnectionCredentialEditor();
         ConnectionEditorError = string.Empty;
         OnPropertyChanged(nameof(ConnectionEditorTitle));
         IsEditingConnection = true;
@@ -990,6 +1088,7 @@ public sealed partial class MainViewModel : ViewModelBase
         _editingConnectionId = null;
         OnPropertyChanged(nameof(ConnectionEditorTitle));
         ConnectionEditorError = string.Empty;
+        EditCredentialPassword = string.Empty;
         IsEditingConnection = false;
     }
 
@@ -1038,6 +1137,70 @@ public sealed partial class MainViewModel : ViewModelBase
             return;
         }
 
+        var credentialReference = ConnectionCredentialReference.Inherited;
+        if (IsSelectingExistingCredential)
+        {
+            if (_vault is null || IsVaultLocked)
+            {
+                ConnectionEditorError = "請先解鎖 Vault，再選擇 ID Card";
+                return;
+            }
+            if (EditSelectedCredential is not { } selectedCredential ||
+                !string.Equals(selectedCredential.ProtocolScope, EditProtocol, StringComparison.OrdinalIgnoreCase))
+            {
+                ConnectionEditorError = $"請選擇一張可供 {EditProtocol.ToUpperInvariant()} 使用的 ID Card";
+                return;
+            }
+            credentialReference = ConnectionCredentialReference.IdentityCard(
+                selectedCredential.VaultId,
+                selectedCredential.Id);
+        }
+        else if (IsCreatingCredential)
+        {
+            if (_vault is null || IsVaultLocked)
+            {
+                ConnectionEditorError = "請先解鎖 Vault，再建立並儲存帳密";
+                return;
+            }
+            if (string.IsNullOrWhiteSpace(EditCredentialUsername) || EditCredentialPassword.Length == 0)
+            {
+                ConnectionEditorError = "使用者名稱與密碼為必填欄位";
+                return;
+            }
+
+            var definition = new CredentialDefinition
+            {
+                Id = new CredentialId(Guid.NewGuid()),
+                VaultId = _primaryVaultId,
+                Name = string.IsNullOrWhiteSpace(EditCredentialName)
+                    ? $"{name} 登入"
+                    : EditCredentialName.Trim(),
+                Kind = CredentialKind.UsernamePassword,
+                ProtocolScope = EditProtocol,
+                Username = EditCredentialUsername.Trim(),
+                Domain = string.IsNullOrWhiteSpace(EditCredentialDomain)
+                    ? null
+                    : EditCredentialDomain.Trim(),
+            };
+            var secret = Encoding.UTF8.GetBytes(EditCredentialPassword);
+            try
+            {
+                _vault.Add(definition, secret);
+                credentialReference = ConnectionCredentialReference.IdentityCard(definition.VaultId, definition.Id);
+                RefreshVaultCredentials();
+                EditSelectedCredential = definition;
+            }
+            finally
+            {
+                System.Security.Cryptography.CryptographicOperations.ZeroMemory(secret);
+                EditCredentialPassword = string.Empty;
+            }
+        }
+        else if (IsPromptingForCredential)
+        {
+            credentialReference = ConnectionCredentialReference.None;
+        }
+
         var scheme = EditProtocol == "ssh2" ? "ssh" : EditProtocol;
         var endpoint = EditProtocol == "terminal"
             ? new Uri("terminal://localhost")
@@ -1052,7 +1215,7 @@ public sealed partial class MainViewModel : ViewModelBase
             Endpoint = endpoint,
             ProtocolId = EditProtocol,
             FolderId = EditFolder?.Id,
-            Credential = existing?.Profile.Credential ?? ConnectionCredentialReference.Inherited,
+            Credential = credentialReference,
             DefaultAccessMode = EditViewOnly ? SessionAccessMode.ViewOnly : SessionAccessMode.Interactive,
             Display = new DisplayPreferences
             {
@@ -1062,7 +1225,12 @@ public sealed partial class MainViewModel : ViewModelBase
         };
         var item = new ConnectionListItem(
             profile,
-            existing?.IdentityScope ?? $"{EditProtocol.ToUpperInvariant()} only",
+            credentialReference.Kind switch
+            {
+                CredentialReferenceKind.Inherited => "Inherited ID Card",
+                CredentialReferenceKind.IdentityCard => $"{EditProtocol.ToUpperInvariant()} ID Card",
+                _ => "Prompt every time",
+            },
             existing?.IsFavorite ?? false);
         if (existing is null)
         {
@@ -1081,6 +1249,7 @@ public sealed partial class MainViewModel : ViewModelBase
         _editingConnectionId = null;
         OnPropertyChanged(nameof(ConnectionEditorTitle));
         IsEditingConnection = false;
+        ClearConnectionCredentialEditor();
         if (!IsVaultLocked)
         {
             await SaveWorkspaceAsync();
@@ -1255,6 +1424,13 @@ public sealed partial class MainViewModel : ViewModelBase
                     : $"{definition.Domain}\\{definition.Username}";
                 rdpSecret = _vault!.Reveal(definition.Id);
             }
+            else if (connection.Credential.Kind is CredentialReferenceKind.None)
+            {
+                username = string.IsNullOrWhiteSpace(SessionUsername) ? null : SessionUsername.Trim();
+                rdpSecret = string.IsNullOrEmpty(SessionPassword)
+                    ? null
+                    : Encoding.UTF8.GetBytes(SessionPassword);
+            }
 
             var launchRequest = new RdpExternalLaunchRequest
             {
@@ -1296,6 +1472,7 @@ public sealed partial class MainViewModel : ViewModelBase
             {
                 System.Security.Cryptography.CryptographicOperations.ZeroMemory(rdpSecret);
             }
+            SessionPassword = string.Empty;
         }
     }
 
@@ -1586,6 +1763,34 @@ public sealed partial class MainViewModel : ViewModelBase
         {
             _primaryVaultId = first.VaultId;
         }
+
+        RefreshCompatibleVaultCredentials();
+        OnPropertyChanged(nameof(SelectedCredentialName));
+        OnPropertyChanged(nameof(SelectedCredentialUsername));
+    }
+
+    private void RefreshCompatibleVaultCredentials()
+    {
+        var selectedId = EditSelectedCredential?.Id;
+        CompatibleVaultCredentials.Clear();
+        foreach (var credential in VaultCredentials.Where(credential =>
+                     credential.Kind is CredentialKind.UsernamePassword &&
+                     string.Equals(credential.ProtocolScope, EditProtocol, StringComparison.OrdinalIgnoreCase)))
+        {
+            CompatibleVaultCredentials.Add(credential);
+        }
+
+        EditSelectedCredential = selectedId is { } id
+            ? CompatibleVaultCredentials.FirstOrDefault(item => item.Id == id)
+            : CompatibleVaultCredentials.FirstOrDefault();
+    }
+
+    private void ClearConnectionCredentialEditor()
+    {
+        EditCredentialName = string.Empty;
+        EditCredentialUsername = string.Empty;
+        EditCredentialDomain = string.Empty;
+        EditCredentialPassword = string.Empty;
     }
 
     private async Task SaveWorkspaceAsync()
@@ -1696,6 +1901,11 @@ public sealed partial class MainViewModel : ViewModelBase
             {
                 vaultSecret = _vault!.Reveal(definition.Id);
             }
+            else if (connection.Credential.Kind is CredentialReferenceKind.None &&
+                     !string.IsNullOrEmpty(SessionPassword))
+            {
+                vaultSecret = Encoding.UTF8.GetBytes(SessionPassword);
+            }
 
             var server = await _vncClient.ConnectAsync(new RfbConnectionOptions
             {
@@ -1720,6 +1930,7 @@ public sealed partial class MainViewModel : ViewModelBase
             {
                 System.Security.Cryptography.CryptographicOperations.ZeroMemory(vaultSecret);
             }
+            SessionPassword = string.Empty;
         }
     }
 
@@ -1755,6 +1966,23 @@ public sealed partial class MainViewModel : ViewModelBase
 
         return definitions.First(credential =>
             credential.VaultId == card.VaultId && credential.Id == card.CredentialId);
+    }
+
+    private CredentialDefinition? TryResolveSelectedCredential()
+    {
+        if (SelectedConnection is not { } selected || _vault is null || IsVaultLocked)
+        {
+            return null;
+        }
+
+        try
+        {
+            return ResolveCredentialDefinition(selected.Profile);
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
     }
 
     private bool ConnectionUsesIdentityCard(ConnectionProfile connection)
