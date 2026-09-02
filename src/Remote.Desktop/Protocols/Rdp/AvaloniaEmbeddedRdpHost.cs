@@ -43,6 +43,18 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
             advanced.RDPPort = request.Endpoint.IsDefaultPort ? 3389 : request.Endpoint.Port;
             advanced.EnableCredSspSupport = true;
             advanced.SmartSizing = true;
+            advanced.ConnectToServerConsole = request.Settings.ConnectAsAdministrator;
+            advanced.RedirectClipboard = request.Settings.RedirectClipboard;
+            advanced.RedirectPrinters = request.Settings.RedirectPrinters;
+            advanced.RedirectDrives = request.Settings.RedirectDrives;
+            advanced.AudioRedirectionMode = (uint)request.Settings.AudioMode;
+            if (!string.IsNullOrWhiteSpace(request.Settings.GatewayHost))
+            {
+                dynamic transport = client.TransportSettings4;
+                transport.GatewayHostname = request.Settings.GatewayHost;
+                transport.GatewayUsageMethod = 1u;
+                transport.GatewayProfileUsageMethod = 1u;
+            }
             if (request.PasswordUtf8 is { Length: > 0 })
             {
                 advanced.ClearTextPassword = System.Text.Encoding.UTF8.GetString(request.PasswordUtf8.Span);
