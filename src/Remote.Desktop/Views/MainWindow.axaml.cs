@@ -51,6 +51,7 @@ public partial class MainWindow : Window
         {
             _viewModel.PropertyChanged -= HandleViewModelPropertyChanged;
             _viewModel.EmbeddedRdpRequested -= ConnectEmbeddedRdpAsync;
+            _viewModel.EmbeddedRdpCloseRequested -= CloseEmbeddedRdpAsync;
         }
 
         base.OnDataContextChanged(e);
@@ -59,6 +60,7 @@ public partial class MainWindow : Window
         {
             _viewModel.PropertyChanged += HandleViewModelPropertyChanged;
             _viewModel.EmbeddedRdpRequested += ConnectEmbeddedRdpAsync;
+            _viewModel.EmbeddedRdpCloseRequested += CloseEmbeddedRdpAsync;
         }
 
         ApplyAdaptiveLayout();
@@ -77,6 +79,13 @@ public partial class MainWindow : Window
 
         ShowSelectedRdpHost();
         await host.ConnectAsync(request);
+    }
+
+    private async Task CloseEmbeddedRdpAsync(SessionId sessionId)
+    {
+        if (!_rdpHosts.Remove(sessionId, out var host)) return;
+        await host.DisconnectAsync();
+        EmbeddedRdpSurfaces.Children.Remove(host);
     }
 
     private void HandleViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)

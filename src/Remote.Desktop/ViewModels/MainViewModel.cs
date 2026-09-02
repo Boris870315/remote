@@ -61,6 +61,7 @@ public sealed partial class MainViewModel : ViewModelBase
     private VaultAutoLockController _autoLockController = new(new VaultLockSettings());
 
     public event Func<SessionId, RdpExternalLaunchRequest, Task>? EmbeddedRdpRequested;
+    public event Func<SessionId, Task>? EmbeddedRdpCloseRequested;
 
     public ObservableCollection<SessionTabViewModel> SessionTabs { get; } = [];
 
@@ -497,6 +498,10 @@ public sealed partial class MainViewModel : ViewModelBase
 
     public async Task ShutdownAsync()
     {
+        foreach (var tab in SessionTabs.ToArray())
+        {
+            await CloseSessionTabAsync(tab);
+        }
         await StopVncAsync();
         await StopSshAsync();
         await StopLocalTerminalAsync();
@@ -1904,6 +1909,51 @@ public sealed partial class MainViewModel : ViewModelBase
             _sshCancellation = ssh.Cancellation;
             TerminalText = ssh.TerminalText;
             IsTerminalActive = true;
+        }
+    }
+
+    [RelayCommand]
+    private async Task CloseSessionTabAsync(SessionTabViewModel? tab)
+    {
+        if (tab is null || !SessionTabs.Contains(tab)) return;
+
+        var session = _sessionWorkspace.Get(tab.SessionId);
+        if (session.State is SessionState.Connecting or SessionState.Connected or SessionState.ExternalClientLaunched)
+        {
+            SetSessionState(tab.SessionId, SessionState.Disconnecting);
+        }
+
+        if (_vncSessions.ContainsKey(tab.SessionId))
+            await StopVncSessionAsync(tab.SessionId);
+        if (_sshSessions.ContainsKey(tab.SessionId))
+            await StopSshSessionAsync(tab.SessionId);
+        if (string.Equals(session.ProtocolId, "rdp", StringComparison.OrdinalIgnoreCase) &&
+            EmbeddedRdpCloseRequested is { } closeRdp)
+            await closeRdp(tab.SessionId);
+        if (string.Equals(session.ProtocolId, "terminal", StringComparison.OrdinalIgnoreCase))
+            await StopLocalTerminalAsync();
+        if (session.ProtocolId is "http" or "https")
+            CloseWebSession();
+
+        if (_sessionWorkspace.Get(tab.SessionId).State is SessionState.Disconnecting)
+            SetSessionState(tab.SessionId, SessionState.Disconnected);
+        _sessionWorkspace.RemoveClosed(tab.SessionId);
+
+        var index = SessionTabs.IndexOf(tab);
+        SessionTabs.Remove(tab);
+        if (ReferenceEquals(SelectedSessionTab, tab))
+        {
+            var next = SessionTabs.Count == 0 ? null : SessionTabs[Math.Min(index, SessionTabs.Count - 1)];
+            SelectedSessionTab = null;
+            if (next is not null) SelectSessionTab(next);
+            else
+            {
+                RemoteFrame = null;
+                TerminalText = string.Empty;
+                IsTerminalActive = false;
+                IsWebSessionActive = false;
+                IsRdpSessionActive = false;
+            }
         }
     }
 

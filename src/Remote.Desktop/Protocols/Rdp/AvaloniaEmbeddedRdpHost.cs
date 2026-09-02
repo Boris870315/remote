@@ -69,6 +69,15 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
         }
     }
 
+    public Task DisconnectAsync()
+    {
+        if (_rdpClient is not null)
+        {
+            try { ((dynamic)_rdpClient).Disconnect(); } catch (COMException) { }
+        }
+        return Task.CompletedTask;
+    }
+
     protected override IPlatformHandle CreateNativeControlCore(IPlatformHandle parent)
     {
         if (!OperatingSystem.IsWindows())
