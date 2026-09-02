@@ -49,6 +49,8 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
             }
             client.DesktopWidth = Math.Max(640, (int)Bounds.Width);
             client.DesktopHeight = Math.Max(480, (int)Bounds.Height);
+            client.UseMultimon = request.Display.MonitorSelection is Remote.Application.Connections.MonitorSelection.All;
+            client.FullScreen = false;
             dynamic advanced = client.AdvancedSettings9;
             advanced.RDPPort = request.Endpoint.IsDefaultPort ? 3389 : request.Endpoint.Port;
             advanced.EnableCredSspSupport = true;

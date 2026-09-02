@@ -379,7 +379,7 @@ public sealed partial class MainViewModel : ViewModelBase
     private bool isAuditPanelOpen;
 
     [ObservableProperty]
-    private string selectedMonitorOption = "螢幕 1";
+    private string selectedMonitorOption = "目前視窗所在螢幕";
 
     [ObservableProperty]
     private string recoveryKey = string.Empty;
@@ -467,7 +467,7 @@ public sealed partial class MainViewModel : ViewModelBase
     public bool IsSessionConnected =>
         RemoteFrame is not null || IsTerminalActive || IsWebSessionActive || IsRdpSessionActive;
 
-    public IReadOnlyList<string> MonitorOptions { get; } = ["螢幕 1", "螢幕 2", "全部螢幕"];
+    public IReadOnlyList<string> MonitorOptions { get; } = ["目前視窗所在螢幕", "全部本機螢幕"];
 
     public string IdentityEditorTitle => _editingCredentialId is null ? "新增身份卡" : "編輯身份卡";
 
@@ -996,8 +996,8 @@ public sealed partial class MainViewModel : ViewModelBase
             return;
         }
 
-        var all = SelectedMonitorOption == "全部螢幕";
-        var monitorIndex = SelectedMonitorOption == "螢幕 2" ? 1 : 0;
+        var all = SelectedMonitorOption == "全部本機螢幕";
+        const int monitorIndex = 0;
         var updated = selected with
         {
             Profile = selected.Profile with
@@ -1216,8 +1216,8 @@ public sealed partial class MainViewModel : ViewModelBase
         ExpectedHostKey = value?.Profile.ProtocolSettings.Get(SshHostKeySetting) ?? string.Empty;
         TrustUnknownHostKey = false;
         SelectedMonitorOption = value?.Profile.Display.MonitorSelection is MonitorSelection.All
-            ? "全部螢幕"
-            : $"螢幕 {(value?.Profile.Display.MonitorIndex ?? 0) + 1}";
+            ? "全部本機螢幕"
+            : "目前視窗所在螢幕";
         OnPropertyChanged(nameof(IsSshSelected));
         OnPropertyChanged(nameof(IsVncSelected));
         OnPropertyChanged(nameof(IsRdpSelected));
