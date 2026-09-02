@@ -11,6 +11,14 @@ public sealed record ConnectionFolder
 
     public ConnectionCredentialReference Credential { get; init; } =
         ConnectionCredentialReference.None;
+
+    public IReadOnlyDictionary<string, ConnectionCredentialReference> ProtocolCredentials { get; init; } =
+        new Dictionary<string, ConnectionCredentialReference>(StringComparer.OrdinalIgnoreCase);
+
+    public ConnectionCredentialReference GetCredential(string protocolId) =>
+        ProtocolCredentials.TryGetValue(protocolId, out var credential)
+            ? credential
+            : Credential;
 }
 
 public readonly record struct FolderId(Guid Value)

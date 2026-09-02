@@ -5,6 +5,7 @@ using System.ComponentModel;
 using Remote.Application.Layout;
 using Remote.Desktop.ViewModels;
 using Avalonia.Threading;
+using Avalonia.Platform.Storage;
 
 namespace Remote.Desktop.Views;
 
@@ -76,6 +77,29 @@ public partial class MainWindow : Window
     }
 
     private void RefreshWeb(object? sender, RoutedEventArgs e) => WebSessionView.Refresh();
+
+    private async void ImportMRemoteNg(object? sender, RoutedEventArgs e)
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "選擇 mRemoteNG 連線檔",
+            AllowMultiple = false,
+            FileTypeFilter =
+            [
+                new FilePickerFileType("mRemoteNG Connections") { Patterns = ["*.xml", "*.confCons"] },
+            ],
+        });
+        var file = files.FirstOrDefault();
+        if (file is not null && file.TryGetLocalPath() is { } path)
+        {
+            await _viewModel.ImportMRemoteNgAsync(path);
+        }
+    }
 
     private void HandleWindowKeyDown(object? sender, KeyEventArgs e)
     {

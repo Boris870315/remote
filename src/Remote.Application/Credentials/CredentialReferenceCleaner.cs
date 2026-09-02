@@ -28,13 +28,22 @@ public sealed class CredentialReferenceCleaner
         var clearedFolders = 0;
         var updatedFolders = folders.Select(folder =>
         {
-            if (!Matches(folder.Credential, vaultId, credentialId))
+            var legacyMatches = Matches(folder.Credential, vaultId, credentialId);
+            var updatedProtocolCredentials = folder.ProtocolCredentials
+                .Where(pair => !Matches(pair.Value, vaultId, credentialId))
+                .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase);
+            var removedProtocolReferences = folder.ProtocolCredentials.Count - updatedProtocolCredentials.Count;
+            if (!legacyMatches && removedProtocolReferences == 0)
             {
                 return folder;
             }
 
-            clearedFolders++;
-            return folder with { Credential = ConnectionCredentialReference.None };
+            clearedFolders += (legacyMatches ? 1 : 0) + removedProtocolReferences;
+            return folder with
+            {
+                Credential = legacyMatches ? ConnectionCredentialReference.None : folder.Credential,
+                ProtocolCredentials = updatedProtocolCredentials,
+            };
         }).ToArray();
 
         return new CredentialReferenceCleanupResult(

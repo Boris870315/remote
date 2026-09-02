@@ -52,6 +52,34 @@ public sealed class ConnectionCredentialResolverTests
             [CreateCard(vaultId, credentialId, "SSH")])) ;
     }
 
+    [Fact]
+    public void Resolve_Inherited_SelectsFolderIdentityForConnectionProtocol()
+    {
+        var vaultId = new VaultId(Guid.NewGuid());
+        var rdpCredential = new CredentialId(Guid.NewGuid());
+        var sshCredential = new CredentialId(Guid.NewGuid());
+        var folder = new ConnectionFolder
+        {
+            Id = FolderId.New(),
+            Name = "Mixed",
+            ProtocolCredentials = new Dictionary<string, ConnectionCredentialReference>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["rdp"] = ConnectionCredentialReference.IdentityCard(vaultId, rdpCredential),
+                ["ssh2"] = ConnectionCredentialReference.IdentityCard(vaultId, sshCredential),
+            },
+        };
+
+        var resolved = new ConnectionCredentialResolver().ResolveIdentityCard(
+            CreateConnection("ssh2", folder.Id),
+            [folder],
+            [
+                CreateCard(vaultId, rdpCredential, "RDP", "rdp"),
+                CreateCard(vaultId, sshCredential, "SSH", "ssh2"),
+            ]);
+
+        Assert.Equal("SSH", resolved?.Name);
+    }
+
     private static ConnectionProfile CreateConnection(string protocol, FolderId? folderId) => new()
     {
         Id = ConnectionId.New(),
@@ -61,12 +89,16 @@ public sealed class ConnectionCredentialResolverTests
         FolderId = folderId,
     };
 
-    private static IdentityCard CreateCard(VaultId vaultId, CredentialId credentialId, string name) => new()
+    private static IdentityCard CreateCard(
+        VaultId vaultId,
+        CredentialId credentialId,
+        string name,
+        string protocol = "ssh2") => new()
     {
         VaultId = vaultId,
         CredentialId = credentialId,
         Name = name,
-        ProtocolId = "ssh2",
+        ProtocolId = protocol,
         Username = "operator",
     };
 }

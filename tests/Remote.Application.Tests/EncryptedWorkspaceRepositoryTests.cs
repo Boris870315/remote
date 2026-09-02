@@ -29,7 +29,10 @@ public sealed class EncryptedWorkspaceRepositoryTests
                     {
                         Id = folderId,
                         Name = "Production",
-                        Credential = ConnectionCredentialReference.IdentityCard(vaultId, credentialId),
+                        ProtocolCredentials = new Dictionary<string, ConnectionCredentialReference>
+                        {
+                            ["ssh2"] = ConnectionCredentialReference.IdentityCard(vaultId, credentialId),
+                        },
                     },
                 ],
                 Connections =
@@ -61,7 +64,9 @@ public sealed class EncryptedWorkspaceRepositoryTests
             await repository.SaveAsync(path, document, "correct horse battery staple");
             var loaded = await repository.LoadAsync(path, "correct horse battery staple");
 
-            Assert.Equal("Production", Assert.Single(loaded.Folders).Name);
+            var loadedFolder = Assert.Single(loaded.Folders);
+            Assert.Equal("Production", loadedFolder.Name);
+            Assert.Equal(credentialId, loadedFolder.GetCredential("ssh2").CredentialId);
             var connection = Assert.Single(loaded.Connections);
             Assert.Equal(folderId, connection.FolderId);
             Assert.Equal(SessionAccessMode.ViewOnly, connection.DefaultAccessMode);

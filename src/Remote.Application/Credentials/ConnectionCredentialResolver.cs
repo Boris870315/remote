@@ -15,7 +15,7 @@ public sealed class ConnectionCredentialResolver
         var reference = connection.Credential;
         if (reference.Kind is CredentialReferenceKind.Inherited)
         {
-            reference = ResolveInheritedReference(connection.FolderId, folders.ToArray());
+            reference = ResolveInheritedReference(connection.FolderId, connection.ProtocolId, folders.ToArray());
         }
 
         if (reference.Kind is not CredentialReferenceKind.IdentityCard ||
@@ -42,6 +42,7 @@ public sealed class ConnectionCredentialResolver
 
     private static ConnectionCredentialReference ResolveInheritedReference(
         FolderId? folderId,
+        string protocolId,
         IReadOnlyList<ConnectionFolder> folders)
     {
         var visited = new HashSet<FolderId>();
@@ -54,9 +55,10 @@ public sealed class ConnectionCredentialResolver
 
             var folder = folders.FirstOrDefault(candidate => candidate.Id == currentId)
                 ?? throw new InvalidOperationException("The Connection references a missing Folder.");
-            if (folder.Credential.Kind is CredentialReferenceKind.IdentityCard)
+            var credential = folder.GetCredential(protocolId);
+            if (credential.Kind is CredentialReferenceKind.IdentityCard)
             {
-                return folder.Credential;
+                return credential;
             }
 
             folderId = folder.ParentId;

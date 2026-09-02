@@ -148,6 +148,14 @@
                 <TextBox Text="{Binding NewIdentityDomain}" PlaceholderText="網域（選填）"/>
                 <TextBox Text="{Binding NewIdentitySecret}" PasswordChar="●" PlaceholderText="密碼"/>
                 <Button Content="加密儲存身份卡" Command="{Binding AddIdentityCardCommand}" Background="#5B5CE2" Foreground="White" Padding="14,9"/>
+                <Border Background="#20293B" CornerRadius="9" Padding="12" Margin="0,8,0,0">
+                  <StackPanel Spacing="8">
+                    <TextBlock Text="從 mRemoteNG 一次性匯入" FontSize="13" FontWeight="SemiBold"/>
+                    <TextBlock Text="保留資料夾、協定與繼承帳密；重複帳密會合併為 ID Card。" FontSize="10" Foreground="#8290A7" TextWrapping="Wrap"/>
+                    <TextBox Text="{Binding LegacyImportPassword}" PasswordChar="●" PlaceholderText="mRemoteNG 加密密碼"/>
+                    <Button Content="選擇 confCons.xml／XML" Click="ImportMRemoteNg" Classes="tool"/>
+                  </StackPanel>
+                </Border>
               </StackPanel>
             </StackPanel>
           </ScrollViewer>

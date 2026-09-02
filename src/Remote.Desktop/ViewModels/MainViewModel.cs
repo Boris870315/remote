@@ -15,6 +15,7 @@ using Remote.Infrastructure.Protocols.Terminal;
 using Remote.Infrastructure.Security;
 using Remote.Infrastructure.Storage;
 using Remote.Infrastructure.Vaults;
+using Remote.Infrastructure.Import;
 using Remote.Application.Vaults;
 using Remote.Application.Credentials;
 using Remote.Desktop.Protocols.Vnc;
@@ -235,6 +236,9 @@ public sealed partial class MainViewModel : ViewModelBase
 
     [ObservableProperty]
     private string vaultMessage = "Vault 已鎖定";
+
+    [ObservableProperty]
+    private string legacyImportPassword = string.Empty;
 
     [ObservableProperty]
     private string newIdentityName = string.Empty;
@@ -473,6 +477,56 @@ public sealed partial class MainViewModel : ViewModelBase
         }
     }
 
+    public async Task ImportMRemoteNgAsync(string path)
+    {
+        if (_vault is null || IsVaultLocked)
+        {
+            VaultMessage = "請先解鎖 Vault，再匯入 mRemoteNG";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(LegacyImportPassword))
+        {
+            VaultMessage = "請輸入 mRemoteNG 連線檔的加密密碼";
+            return;
+        }
+
+        try
+        {
+            var xml = await File.ReadAllTextAsync(path);
+            using var result = new MRemoteNgXmlImporter().Import(xml, LegacyImportPassword, _primaryVaultId);
+            foreach (var imported in result.IdentityCards)
+            {
+                _vault.Add(imported.Definition, imported.Secret);
+            }
+
+            _folders.AddRange(result.Folders);
+            foreach (var profile in result.Connections)
+            {
+                Connections.Add(new ConnectionListItem(
+                    profile,
+                    profile.Credential.Kind is CredentialReferenceKind.Inherited
+                        ? $"Inherited {profile.ProtocolId.ToUpperInvariant()} ID Card"
+                        : $"{profile.ProtocolId.ToUpperInvariant()} ID Card",
+                    false));
+            }
+
+            LegacyImportPassword = string.Empty;
+            RefreshFolderOptions();
+            RefreshVaultCredentials();
+            RebuildConnectionTree(result.Connections.FirstOrDefault()?.Id ?? default);
+            await SaveWorkspaceAsync();
+            VaultMessage = result.Warnings.Count == 0
+                ? $"匯入完成：{result.Folders.Count} 個資料夾、{result.Connections.Count} 個連線、{result.IdentityCards.Count} 張 ID Card"
+                : $"匯入完成，但有 {result.Warnings.Count} 項不支援內容；已匯入 {result.Connections.Count} 個連線";
+        }
+        catch (Exception exception) when (exception is IOException or InvalidDataException or System.Xml.XmlException or System.Security.Cryptography.CryptographicException or FormatException)
+        {
+            LegacyImportPassword = string.Empty;
+            VaultMessage = $"mRemoteNG 匯入失敗：{exception.Message}";
+        }
+    }
+
     [RelayCommand]
     private async Task AssignIdentityCardAsync()
     {
@@ -495,11 +549,15 @@ public sealed partial class MainViewModel : ViewModelBase
         if (SelectedFolder is { } selectedFolder)
         {
             var folderIndex = _folders.FindIndex(folder => folder.Id == selectedFolder.Id);
+            var protocolCredentials = selectedFolder.ProtocolCredentials
+                .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase);
+            protocolCredentials[SelectedVaultCredential.ProtocolScope] =
+                ConnectionCredentialReference.IdentityCard(
+                    SelectedVaultCredential.VaultId,
+                    SelectedVaultCredential.Id);
             var updatedFolder = selectedFolder with
             {
-                Credential = ConnectionCredentialReference.IdentityCard(
-                    SelectedVaultCredential.VaultId,
-                    SelectedVaultCredential.Id),
+                ProtocolCredentials = protocolCredentials,
             };
             _folders[folderIndex] = updatedFolder;
             RefreshFolderOptions();
@@ -1471,7 +1529,7 @@ public sealed partial class MainViewModel : ViewModelBase
                 return false;
             }
 
-            if (folder.Credential.Kind is CredentialReferenceKind.IdentityCard)
+            if (folder.GetCredential(connection.ProtocolId).Kind is CredentialReferenceKind.IdentityCard)
             {
                 return true;
             }

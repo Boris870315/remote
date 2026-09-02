@@ -60,7 +60,11 @@ public sealed class EncryptedWorkspaceRepository(EncryptedWorkspaceFile workspac
             folder.Id.Value,
             folder.Name,
             folder.ParentId?.Value,
-            ToDto(folder.Credential))).ToArray(),
+            ToDto(folder.Credential),
+            folder.ProtocolCredentials.ToDictionary(
+                pair => pair.Key,
+                pair => ToDto(pair.Value),
+                StringComparer.OrdinalIgnoreCase))).ToArray(),
         document.Connections.Select(connection => new ConnectionDto(
             connection.Id.Value,
             connection.Name,
@@ -82,20 +86,25 @@ public sealed class EncryptedWorkspaceRepository(EncryptedWorkspaceFile workspac
 
     private static WorkspaceDocument FromDto(WorkspaceDto dto)
     {
-        if (dto.SchemaVersion != WorkspaceDocument.CurrentSchemaVersion)
+        if (dto.SchemaVersion is < 1 or > WorkspaceDocument.CurrentSchemaVersion)
         {
             throw new NotSupportedException($"Workspace schema {dto.SchemaVersion} is not supported.");
         }
 
         var document = new WorkspaceDocument
         {
-            SchemaVersion = dto.SchemaVersion,
+            SchemaVersion = WorkspaceDocument.CurrentSchemaVersion,
             Folders = dto.Folders.Select(folder => new ConnectionFolder
             {
                 Id = new FolderId(folder.Id),
                 Name = folder.Name,
                 ParentId = folder.ParentId is { } parent ? new FolderId(parent) : null,
                 Credential = FromDto(folder.Credential),
+                ProtocolCredentials = (folder.ProtocolCredentials ?? [])
+                    .ToDictionary(
+                        pair => pair.Key,
+                        pair => FromDto(pair.Value),
+                        StringComparer.OrdinalIgnoreCase),
             }).ToArray(),
             Connections = dto.Connections.Select(connection => new ConnectionProfile
             {
@@ -164,7 +173,12 @@ public sealed class EncryptedWorkspaceRepository(EncryptedWorkspaceFile workspac
         IdentityCardDto[] IdentityCards,
         byte[]? EncryptedPrimaryVault);
 
-    private sealed record FolderDto(Guid Id, string Name, Guid? ParentId, CredentialDto Credential);
+    private sealed record FolderDto(
+        Guid Id,
+        string Name,
+        Guid? ParentId,
+        CredentialDto Credential,
+        Dictionary<string, CredentialDto>? ProtocolCredentials = null);
 
     private sealed record CredentialDto(CredentialReferenceKind Kind, Guid? VaultId, Guid? CredentialId);
 
