@@ -43,6 +43,7 @@ public partial class MainWindow : Window
         if (_viewModel is not null)
         {
             _viewModel.PropertyChanged -= HandleViewModelPropertyChanged;
+            _viewModel.EmbeddedRdpRequested -= ConnectEmbeddedRdpAsync;
         }
 
         base.OnDataContextChanged(e);
@@ -50,10 +51,14 @@ public partial class MainWindow : Window
         if (_viewModel is not null)
         {
             _viewModel.PropertyChanged += HandleViewModelPropertyChanged;
+            _viewModel.EmbeddedRdpRequested += ConnectEmbeddedRdpAsync;
         }
 
         ApplyAdaptiveLayout();
     }
+
+    private Task ConnectEmbeddedRdpAsync(Remote.Infrastructure.Protocols.Rdp.RdpExternalLaunchRequest request) =>
+        EmbeddedRdpSurface.ConnectAsync(request);
 
     private void HandleViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {

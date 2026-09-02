@@ -1,5 +1,5 @@
 <Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:vm="using:Remote.Desktop.ViewModels" xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:vm="using:Remote.Desktop.ViewModels" xmlns:rdp="using:Remote.Desktop.Protocols.Rdp" xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="d"
         d:DesignWidth="1440" d:DesignHeight="900" x:Class="Remote.Desktop.Views.MainWindow"
         x:DataType="vm:MainViewModel" Width="1280" Height="800" MinWidth="680" MinHeight="520"
@@ -53,6 +53,7 @@
           <Grid>
             <Border Background="#1D3653" Margin="1" CornerRadius="8"/>
             <Image x:Name="RemoteSurface" Source="{Binding RemoteFrame}" Stretch="Uniform" Focusable="True" PointerPressed="HandleRemotePointerPressed" PointerMoved="HandleRemotePointerMoved" PointerReleased="HandleRemotePointerReleased" KeyDown="HandleRemoteKeyDown" KeyUp="HandleRemoteKeyUp"/>
+            <rdp:AvaloniaEmbeddedRdpHost x:Name="EmbeddedRdpSurface" IsVisible="{Binding IsRdpSessionActive}"/>
             <Grid IsVisible="{Binding IsWebSessionActive}" RowDefinitions="Auto,*">
               <Grid ColumnDefinitions="Auto,Auto,*,Auto" Margin="8" ColumnSpacing="6" IsEnabled="{Binding !IsViewOnly}">
                 <Button Content="←" Classes="tool" Click="GoWebBack"/>
@@ -137,6 +138,10 @@
                 <ListBox ItemsSource="{Binding VaultCredentials}" SelectedItem="{Binding SelectedVaultCredential}" Background="Transparent" BorderThickness="0" MaxHeight="180">
                   <ListBox.ItemTemplate><DataTemplate><Border Margin="0,3" Padding="10" Background="#20293B" CornerRadius="8"><Grid ColumnDefinitions="*,Auto"><StackPanel><TextBlock Text="{Binding Name}"/><TextBlock Text="{Binding Username}" FontSize="10" Foreground="#8290A7"/></StackPanel><TextBlock Grid.Column="1" Text="{Binding ProtocolScope}" Foreground="#9FA5FF"/></Grid></Border></DataTemplate></ListBox.ItemTemplate>
                 </ListBox>
+                <StackPanel Spacing="5">
+                  <TextBlock Text="套用目標" FontSize="11" Foreground="#7F8DA5"/>
+                  <ComboBox ItemsSource="{Binding IdentityAssignmentTargets}" SelectedItem="{Binding SelectedIdentityAssignmentTarget}" DisplayMemberBinding="{Binding DisplayName}" PlaceholderText="選擇資料夾或連線"/>
+                </StackPanel>
                 <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
                   <Button Content="指派給目前連線／資料夾" Command="{Binding AssignIdentityCardCommand}" Classes="tool"/>
                   <Button Grid.Column="1" Content="永久刪除" Command="{Binding DeleteIdentityCardCommand}" Background="#552B35" Foreground="#FFB2BE"/>

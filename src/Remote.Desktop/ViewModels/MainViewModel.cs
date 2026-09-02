@@ -50,6 +50,8 @@ public sealed partial class MainViewModel : ViewModelBase
     private VaultId _primaryVaultId = new(Guid.NewGuid());
     private VaultAutoLockController _autoLockController = new(new VaultLockSettings());
 
+    public event Func<RdpExternalLaunchRequest, Task>? EmbeddedRdpRequested;
+
     public MainViewModel()
         : this(
             new RemoteSessionService(),
@@ -114,6 +116,8 @@ public sealed partial class MainViewModel : ViewModelBase
 
     public ObservableCollection<ConnectionFolder> FolderOptions { get; } = [];
 
+    public ObservableCollection<IdentityAssignmentTarget> IdentityAssignmentTargets { get; } = [];
+
     public IReadOnlyList<string> IdentityProtocols { get; } = ["rdp", "vnc", "ssh2", "http", "https", "terminal"];
 
     public ObservableCollection<ConnectionTreeDisplayItem> ConnectionTree { get; }
@@ -126,6 +130,9 @@ public sealed partial class MainViewModel : ViewModelBase
 
     [ObservableProperty]
     private ConnectionListItem? selectedConnection;
+
+    [ObservableProperty]
+    private IdentityAssignmentTarget? selectedIdentityAssignmentTarget;
 
     [ObservableProperty]
     private bool isViewOnly;
@@ -220,6 +227,9 @@ public sealed partial class MainViewModel : ViewModelBase
     private bool isWebSessionActive;
 
     [ObservableProperty]
+    private bool isRdpSessionActive;
+
+    [ObservableProperty]
     private Uri? webSource;
 
     [ObservableProperty]
@@ -295,7 +305,7 @@ public sealed partial class MainViewModel : ViewModelBase
 
     public bool IsVncSelected => string.Equals(SelectedConnection?.Profile.ProtocolId, "vnc", StringComparison.OrdinalIgnoreCase);
 
-    public bool ShowSessionPlaceholder => RemoteFrame is null && !IsTerminalActive && !IsWebSessionActive;
+    public bool ShowSessionPlaceholder => RemoteFrame is null && !IsTerminalActive && !IsWebSessionActive && !IsRdpSessionActive;
 
     public bool IsVncSessionActive => _vncClient?.IsConnected is true;
 
@@ -349,7 +359,11 @@ public sealed partial class MainViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    private void OpenVaultPanel() => IsVaultPanelOpen = true;
+    private void OpenVaultPanel()
+    {
+        RefreshIdentityAssignmentTargets();
+        IsVaultPanelOpen = true;
+    }
 
     [RelayCommand]
     private void CloseVaultPanel()
@@ -530,23 +544,29 @@ public sealed partial class MainViewModel : ViewModelBase
     [RelayCommand]
     private async Task AssignIdentityCardAsync()
     {
-        if ((SelectedConnection is null && SelectedFolder is null) ||
+        if (SelectedIdentityAssignmentTarget is null ||
             SelectedVaultCredential is null || _vault is null || IsVaultLocked)
         {
-            VaultMessage = "請選取身份卡，以及目標連線或資料夾";
+            VaultMessage = "請選取身份卡及套用目標";
             return;
         }
 
-        if (SelectedConnection is not null && !string.Equals(
+        var targetConnection = SelectedIdentityAssignmentTarget.ConnectionId is { } connectionId
+            ? Connections.FirstOrDefault(item => item.Profile.Id == connectionId)
+            : null;
+        var targetFolder = SelectedIdentityAssignmentTarget.FolderId is { } folderId
+            ? _folders.FirstOrDefault(item => item.Id == folderId)
+            : null;
+        if (targetConnection is not null && !string.Equals(
                 SelectedVaultCredential.ProtocolScope,
-                SelectedConnection.Profile.ProtocolId,
+                targetConnection.Profile.ProtocolId,
                 StringComparison.OrdinalIgnoreCase))
         {
             VaultMessage = $"此身份卡僅供 {SelectedVaultCredential.ProtocolScope.ToUpperInvariant()} 使用";
             return;
         }
 
-        if (SelectedFolder is { } selectedFolder)
+        if (targetFolder is { } selectedFolder)
         {
             var folderIndex = _folders.FindIndex(folder => folder.Id == selectedFolder.Id);
             var protocolCredentials = selectedFolder.ProtocolCredentials
@@ -563,12 +583,20 @@ public sealed partial class MainViewModel : ViewModelBase
             RefreshFolderOptions();
             RebuildConnectionTree(default);
             SelectedTreeItem = FindFolderTreeItem(ConnectionTree, updatedFolder.Id);
+            SelectedIdentityAssignmentTarget = IdentityAssignmentTargets.FirstOrDefault(target => target.FolderId == updatedFolder.Id);
             await SaveWorkspaceAsync();
-            VaultMessage = $"已將「{SelectedVaultCredential.Name}」指派給資料夾 {updatedFolder.Name}";
+            VaultMessage = $"已將「{SelectedVaultCredential.Name}」設為資料夾 {updatedFolder.Name} 的 {SelectedVaultCredential.ProtocolScope.ToUpperInvariant()} 身份卡";
             return;
         }
 
-        var selectedConnection = SelectedConnection!;
+        if (targetConnection is null)
+        {
+            VaultMessage = "選取的套用目標已不存在，請重新選擇";
+            RefreshIdentityAssignmentTargets();
+            return;
+        }
+
+        var selectedConnection = targetConnection;
         var index = Connections.IndexOf(selectedConnection);
         var updated = selectedConnection with
         {
@@ -582,8 +610,12 @@ public sealed partial class MainViewModel : ViewModelBase
         };
         Connections[index] = updated;
         RebuildConnectionTree(updated.Profile.Id);
+        SelectedIdentityAssignmentTarget = IdentityAssignmentTargets.FirstOrDefault(target => target.ConnectionId == updated.Profile.Id);
         await SaveWorkspaceAsync();
-        VaultMessage = $"已將「{SelectedVaultCredential.Name}」指派給 {updated.Name}";
+        var resolved = ResolveCredentialDefinition(updated.Profile);
+        VaultMessage = resolved?.Id == SelectedVaultCredential.Id
+            ? $"已驗證：{updated.Name} 連線時會自動使用「{resolved.Name}」"
+            : $"身份卡已指派，但解析驗證失敗，請重新指派";
     }
 
     [RelayCommand]
@@ -688,6 +720,9 @@ public sealed partial class MainViewModel : ViewModelBase
         OnPropertyChanged(nameof(ShowSessionPlaceholder));
 
     partial void OnIsWebSessionActiveChanged(bool value) =>
+        OnPropertyChanged(nameof(ShowSessionPlaceholder));
+
+    partial void OnIsRdpSessionActiveChanged(bool value) =>
         OnPropertyChanged(nameof(ShowSessionPlaceholder));
 
     public string RuntimeStatus => _sessionService.GetStatus().State;
@@ -1020,7 +1055,7 @@ public sealed partial class MainViewModel : ViewModelBase
                 rdpSecret = _vault!.Reveal(definition.Id);
             }
 
-            await _rdpLauncher.LaunchAsync(new RdpExternalLaunchRequest
+            var launchRequest = new RdpExternalLaunchRequest
             {
                 Endpoint = connection.Endpoint,
                 Username = username,
@@ -1028,16 +1063,30 @@ public sealed partial class MainViewModel : ViewModelBase
                 AccessMode = connection.DefaultAccessMode,
                 Display = connection.Display,
                 Settings = RdpConnectionSettings.FromProtocolSettings(connection.ProtocolSettings),
-            });
-            _sessionWorkspace.SetState(session.Id, SessionState.ExternalClientLaunched);
-            SessionStatusLabel = rdpSecret is null
-                ? "已啟動平台 RDP 用戶端 · 尚未指派 ID Card"
-                : "已使用 ID Card 啟動 RDP 自動登入";
+            };
+            if (OperatingSystem.IsWindows() && EmbeddedRdpRequested is { } embeddedRdpRequested)
+            {
+                IsRdpSessionActive = true;
+                await embeddedRdpRequested(launchRequest);
+                _sessionWorkspace.SetState(session.Id, SessionState.Connected);
+                SessionStatusLabel = rdpSecret is null
+                    ? "RDP 已顯示在中央工作區 · 尚未指派 ID Card"
+                    : "RDP 已顯示在中央工作區並使用 ID Card 自動登入";
+            }
+            else
+            {
+                await _rdpLauncher.LaunchAsync(launchRequest);
+                _sessionWorkspace.SetState(session.Id, SessionState.ExternalClientLaunched);
+                SessionStatusLabel = rdpSecret is null
+                    ? "已啟動平台 RDP 用戶端 · 尚未指派 ID Card"
+                    : "已使用 ID Card 啟動 RDP 自動登入";
+            }
         }
         catch (Exception exception) when (
             exception is NotSupportedException or InvalidOperationException or System.ComponentModel.Win32Exception)
         {
             _sessionWorkspace.SetState(session.Id, SessionState.Faulted, exception.Message);
+            IsRdpSessionActive = false;
             SessionStatusLabel = exception.Message;
         }
         finally
@@ -1641,6 +1690,32 @@ public sealed partial class MainViewModel : ViewModelBase
         }
     }
 
+    private void RefreshIdentityAssignmentTargets()
+    {
+        var previousConnectionId = SelectedIdentityAssignmentTarget?.ConnectionId;
+        var previousFolderId = SelectedIdentityAssignmentTarget?.FolderId;
+        IdentityAssignmentTargets.Clear();
+        foreach (var folder in _folders.OrderBy(item => item.Name, StringComparer.CurrentCultureIgnoreCase))
+        {
+            IdentityAssignmentTargets.Add(IdentityAssignmentTarget.ForFolder(folder));
+        }
+
+        foreach (var connection in Connections.OrderBy(item => item.Name, StringComparer.CurrentCultureIgnoreCase))
+        {
+            IdentityAssignmentTargets.Add(IdentityAssignmentTarget.ForConnection(connection.Profile));
+        }
+
+        SelectedIdentityAssignmentTarget = IdentityAssignmentTargets.FirstOrDefault(target =>
+            target.ConnectionId == previousConnectionId && target.FolderId == previousFolderId)
+            ?? (SelectedConnection is { } selected
+                ? IdentityAssignmentTargets.FirstOrDefault(target => target.ConnectionId == selected.Profile.Id)
+                : null)
+            ?? (SelectedFolder is { } selectedFolder
+                ? IdentityAssignmentTargets.FirstOrDefault(target => target.FolderId == selectedFolder.Id)
+                : null)
+            ?? IdentityAssignmentTargets.FirstOrDefault();
+    }
+
     private static ConnectionTreeDisplayItem? FindFolderTreeItem(
         IEnumerable<ConnectionTreeDisplayItem> items,
         FolderId folderId)
@@ -1660,6 +1735,18 @@ public sealed partial class MainViewModel : ViewModelBase
 
         return null;
     }
+}
+
+public sealed record IdentityAssignmentTarget(
+    string DisplayName,
+    ConnectionId? ConnectionId,
+    FolderId? FolderId)
+{
+    public static IdentityAssignmentTarget ForConnection(ConnectionProfile connection) =>
+        new($"連線 · {connection.Name} · {connection.ProtocolId.ToUpperInvariant()}", connection.Id, null);
+
+    public static IdentityAssignmentTarget ForFolder(ConnectionFolder folder) =>
+        new($"資料夾 · {folder.Name}", null, folder.Id);
 }
 
 public sealed record ConnectionTreeDisplayItem(
