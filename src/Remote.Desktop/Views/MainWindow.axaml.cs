@@ -101,6 +101,14 @@ public partial class MainWindow : Window
         }
     }
 
+    private async void ApplyMonitorSelection(object? sender, SelectionChangedEventArgs e)
+    {
+        if (_viewModel is not null && _viewModel.ApplyMonitorSelectionCommand.CanExecute(null))
+        {
+            await _viewModel.ApplyMonitorSelectionCommand.ExecuteAsync(null);
+        }
+    }
+
     private void FitSessionToWindow(object? sender, RoutedEventArgs e) =>
         RemoteSurface.Stretch = Avalonia.Media.Stretch.Uniform;
 

@@ -336,9 +336,6 @@ public sealed partial class MainViewModel : ViewModelBase
     private bool isAuditPanelOpen;
 
     [ObservableProperty]
-    private bool isMonitorPanelOpen;
-
-    [ObservableProperty]
     private string selectedMonitorOption = "螢幕 1";
 
     [ObservableProperty]
@@ -908,26 +905,10 @@ public sealed partial class MainViewModel : ViewModelBase
     private void CloseAuditPanel() => IsAuditPanelOpen = false;
 
     [RelayCommand]
-    private void OpenMonitorPanel()
-    {
-        if (SelectedConnection is { } connection)
-        {
-            SelectedMonitorOption = connection.Profile.Display.MonitorSelection is MonitorSelection.All
-                ? "全部螢幕"
-                : $"螢幕 {(connection.Profile.Display.MonitorIndex ?? 0) + 1}";
-        }
-        IsMonitorPanelOpen = true;
-    }
-
-    [RelayCommand]
-    private void CloseMonitorPanel() => IsMonitorPanelOpen = false;
-
-    [RelayCommand]
     private async Task ApplyMonitorSelectionAsync()
     {
         if (SelectedConnection is not { } selected)
         {
-            IsMonitorPanelOpen = false;
             return;
         }
 
@@ -947,7 +928,6 @@ public sealed partial class MainViewModel : ViewModelBase
         Connections[Connections.IndexOf(selected)] = updated;
         SelectedConnection = updated;
         RebuildConnectionTree(updated.Profile.Id);
-        IsMonitorPanelOpen = false;
         if (!IsVaultLocked)
         {
             await SaveWorkspaceAsync();
@@ -1061,6 +1041,9 @@ public sealed partial class MainViewModel : ViewModelBase
     partial void OnSelectedConnectionChanged(ConnectionListItem? value)
     {
         IsViewOnly = value?.Profile.DefaultAccessMode is SessionAccessMode.ViewOnly;
+        SelectedMonitorOption = value?.Profile.Display.MonitorSelection is MonitorSelection.All
+            ? "全部螢幕"
+            : $"螢幕 {(value?.Profile.Display.MonitorIndex ?? 0) + 1}";
         OnPropertyChanged(nameof(IsSshSelected));
         OnPropertyChanged(nameof(IsVncSelected));
         OnPropertyChanged(nameof(IsRdpSelected));

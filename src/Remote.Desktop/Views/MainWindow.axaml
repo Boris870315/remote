@@ -94,7 +94,7 @@
             </StackPanel>
             <TextBlock Text="{Binding StatusDetail}" FontSize="10" Foreground="#A9B8CE" TextWrapping="Wrap"/>
           </StackPanel>
-          <StackPanel Spacing="7"><TextBlock Text="工作階段控制" FontSize="10" Foreground="#7F8DA5"/><Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="7" RowSpacing="7"><Button Content="重新整理" Classes="tool" Click="RefreshSession"/><Button Grid.Column="1" Content="全螢幕" Classes="tool" Click="ToggleFullScreen"/><Button Grid.Row="1" Content="適應視窗" Classes="tool" Click="FitSessionToWindow"/><Button Grid.Row="1" Grid.Column="1" Content="螢幕設定" Classes="tool" Command="{Binding OpenMonitorPanelCommand}"/></Grid><Border HorizontalAlignment="Left" Background="#493F78" CornerRadius="6" Padding="8,4" IsVisible="{Binding IsViewOnly}"><TextBlock Text="VIEW ONLY" Foreground="#D5D2FF" FontWeight="Bold" FontSize="10"/></Border></StackPanel>
+          <StackPanel Spacing="7"><TextBlock Text="工作階段控制" FontSize="10" Foreground="#7F8DA5"/><Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="7" RowSpacing="7"><Button Content="重新整理" Classes="tool" Click="RefreshSession"/><Button Grid.Column="1" Content="全螢幕" Classes="tool" Click="ToggleFullScreen"/><Button Grid.Row="1" Content="適應視窗" Classes="tool" Click="FitSessionToWindow"/><ComboBox Grid.Row="1" Grid.Column="1" ItemsSource="{Binding MonitorOptions}" SelectedItem="{Binding SelectedMonitorOption}" SelectionChanged="ApplyMonitorSelection"/></Grid><Border HorizontalAlignment="Left" Background="#493F78" CornerRadius="6" Padding="8,4" IsVisible="{Binding IsViewOnly}"><TextBlock Text="VIEW ONLY" Foreground="#D5D2FF" FontWeight="Bold" FontSize="10"/></Border></StackPanel>
           <StackPanel Spacing="6" IsVisible="{Binding RequiresSessionCredentialInput}">
             <TextBlock Text="本次工作階段帳密（連線後清除密碼）" FontSize="10" Foreground="#7F8DA5"/>
             <TextBox Text="{Binding SessionUsername}" PlaceholderText="使用者名稱"/>
@@ -106,7 +106,6 @@
             <CheckBox IsChecked="{Binding TrustUnknownHostKey}" Content="僅本次明確信任未知 Host Key"/>
             <TextBlock Text="若未填已知指紋，必須勾選明確信任；成功後會顯示實際 SHA256 指紋。" FontSize="9" Foreground="#E5B96F" TextWrapping="Wrap"/>
           </StackPanel>
-          <StackPanel Spacing="5"><TextBlock Text="顯示" FontSize="10" Foreground="#7F8DA5"/><TextBlock Text="適應視窗 · 指定螢幕 1" FontSize="12"/></StackPanel>
         </StackPanel>
         <ScrollViewer IsVisible="{Binding IsEditingConnection}">
           <StackPanel Spacing="12">
@@ -229,9 +228,6 @@
       <Border Width="720" MaxHeight="700" HorizontalAlignment="Center" VerticalAlignment="Center" Background="#171F2E" BorderBrush="#4A5874" BorderThickness="1" CornerRadius="14" Padding="22">
         <Grid RowDefinitions="Auto,*"><Grid ColumnDefinitions="*,Auto"><StackPanel><TextBlock Text="稽核紀錄" FontSize="20" FontWeight="SemiBold"/><TextBlock Text="只記錄動作、目標與時間，不記錄密碼內容" FontSize="10" Foreground="#8290A7"/></StackPanel><Button Grid.Column="1" Content="✕" Classes="tool" Command="{Binding CloseAuditPanelCommand}"/></Grid><ListBox Grid.Row="1" Margin="0,18,0,0" ItemsSource="{Binding AuditEvents}" Background="Transparent" BorderThickness="0"><ListBox.ItemTemplate><DataTemplate><Border Margin="0,3" Padding="12" Background="#20293B" CornerRadius="8"><TextBlock Text="{Binding}" FontFamily="Menlo,Consolas,monospace" FontSize="11"/></Border></DataTemplate></ListBox.ItemTemplate></ListBox></Grid>
       </Border>
-    </Border>
-    <Border Grid.RowSpan="2" Background="#B3090D16" IsVisible="{Binding IsMonitorPanelOpen}" ZIndex="30">
-      <Border Width="430" HorizontalAlignment="Center" VerticalAlignment="Center" Background="#20293B" BorderBrush="#667492" BorderThickness="1" CornerRadius="14" Padding="22"><StackPanel Spacing="14"><TextBlock Text="遠端螢幕" FontSize="18" FontWeight="SemiBold"/><TextBlock Text="第一版支援指定單一螢幕或跨全部螢幕。實際可用螢幕將在連線協商後更新。" Foreground="#C4CDDC" TextWrapping="Wrap"/><ComboBox ItemsSource="{Binding MonitorOptions}" SelectedItem="{Binding SelectedMonitorOption}"/><Grid ColumnDefinitions="*,*" ColumnSpacing="8"><Button Content="取消" Command="{Binding CloseMonitorPanelCommand}"/><Button Grid.Column="1" Content="套用" Background="#5B5CE2" Foreground="White" Command="{Binding ApplyMonitorSelectionCommand}"/></Grid></StackPanel></Border>
     </Border>
     <Border Grid.RowSpan="2" Background="#B3090D16" IsVisible="{Binding IsDeleteConnectionConfirmationOpen}" ZIndex="35">
       <Border Width="430" HorizontalAlignment="Center" VerticalAlignment="Center" Background="#20293B" BorderBrush="#667492" BorderThickness="1" CornerRadius="14" Padding="22">
