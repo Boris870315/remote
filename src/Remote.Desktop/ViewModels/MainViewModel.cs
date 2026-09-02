@@ -83,6 +83,7 @@ public sealed partial class MainViewModel : ViewModelBase
         var productionFolder = new ConnectionFolder { Id = FolderId.New(), Name = "Production" };
         var labFolder = new ConnectionFolder { Id = FolderId.New(), Name = "Lab" };
         _folders.AddRange([productionFolder, labFolder]);
+        RefreshFolderOptions();
         var windowsProd = CreateConnection("Windows Prod", "rdp", "rdp://10.20.0.24:3389") with { FolderId = productionFolder.Id };
         var designMac = CreateConnection("Design Mac", "vnc", "vnc://10.20.0.31:5900") with { FolderId = productionFolder.Id };
         var labSsh = CreateConnection("Lab SSH", "ssh2", "ssh://10.20.1.18:22") with { FolderId = labFolder.Id };
@@ -110,12 +111,17 @@ public sealed partial class MainViewModel : ViewModelBase
 
     public ObservableCollection<CredentialDefinition> VaultCredentials { get; } = [];
 
+    public ObservableCollection<ConnectionFolder> FolderOptions { get; } = [];
+
     public IReadOnlyList<string> IdentityProtocols { get; } = ["rdp", "vnc", "ssh2", "http", "https", "terminal"];
 
     public ObservableCollection<ConnectionTreeDisplayItem> ConnectionTree { get; }
 
     [ObservableProperty]
     private ConnectionTreeDisplayItem? selectedTreeItem;
+
+    [ObservableProperty]
+    private ConnectionFolder? selectedFolder;
 
     [ObservableProperty]
     private ConnectionListItem? selectedConnection;
@@ -140,6 +146,12 @@ public sealed partial class MainViewModel : ViewModelBase
 
     [ObservableProperty]
     private string editName = string.Empty;
+
+    [ObservableProperty]
+    private ConnectionFolder? editFolder;
+
+    [ObservableProperty]
+    private string newFolderName = string.Empty;
 
     [ObservableProperty]
     private string editProtocol = "rdp";
@@ -464,13 +476,14 @@ public sealed partial class MainViewModel : ViewModelBase
     [RelayCommand]
     private async Task AssignIdentityCardAsync()
     {
-        if (SelectedConnection is null || SelectedVaultCredential is null || _vault is null || IsVaultLocked)
+        if ((SelectedConnection is null && SelectedFolder is null) ||
+            SelectedVaultCredential is null || _vault is null || IsVaultLocked)
         {
-            VaultMessage = "請選取身份卡與目標連線";
+            VaultMessage = "請選取身份卡，以及目標連線或資料夾";
             return;
         }
 
-        if (!string.Equals(
+        if (SelectedConnection is not null && !string.Equals(
                 SelectedVaultCredential.ProtocolScope,
                 SelectedConnection.Profile.ProtocolId,
                 StringComparison.OrdinalIgnoreCase))
@@ -479,10 +492,29 @@ public sealed partial class MainViewModel : ViewModelBase
             return;
         }
 
-        var index = Connections.IndexOf(SelectedConnection);
-        var updated = SelectedConnection with
+        if (SelectedFolder is { } selectedFolder)
         {
-            Profile = SelectedConnection.Profile with
+            var folderIndex = _folders.FindIndex(folder => folder.Id == selectedFolder.Id);
+            var updatedFolder = selectedFolder with
+            {
+                Credential = ConnectionCredentialReference.IdentityCard(
+                    SelectedVaultCredential.VaultId,
+                    SelectedVaultCredential.Id),
+            };
+            _folders[folderIndex] = updatedFolder;
+            RefreshFolderOptions();
+            RebuildConnectionTree(default);
+            SelectedTreeItem = FindFolderTreeItem(ConnectionTree, updatedFolder.Id);
+            await SaveWorkspaceAsync();
+            VaultMessage = $"已將「{SelectedVaultCredential.Name}」指派給資料夾 {updatedFolder.Name}";
+            return;
+        }
+
+        var selectedConnection = SelectedConnection!;
+        var index = Connections.IndexOf(selectedConnection);
+        var updated = selectedConnection with
+        {
+            Profile = selectedConnection.Profile with
             {
                 Credential = ConnectionCredentialReference.IdentityCard(
                     SelectedVaultCredential.VaultId,
@@ -579,7 +611,15 @@ public sealed partial class MainViewModel : ViewModelBase
     {
         if (value?.Connection is { } connection)
         {
+            SelectedFolder = null;
             SelectedConnection = Connections.FirstOrDefault(item => item.Profile.Id == connection.Id);
+            return;
+        }
+
+        SelectedFolder = value?.Folder;
+        if (SelectedFolder is not null)
+        {
+            SelectedConnection = null;
         }
     }
 
@@ -604,6 +644,7 @@ public sealed partial class MainViewModel : ViewModelBase
         _editingConnectionId = null;
         OnPropertyChanged(nameof(ConnectionEditorTitle));
         EditName = string.Empty;
+        EditFolder = SelectedFolder;
         EditProtocol = "rdp";
         EditHost = string.Empty;
         EditPort = "3389";
@@ -630,6 +671,9 @@ public sealed partial class MainViewModel : ViewModelBase
         var settings = RdpConnectionSettings.FromProtocolSettings(profile.ProtocolSettings);
         _editingConnectionId = profile.Id;
         EditName = profile.Name;
+        EditFolder = profile.FolderId is { } folderId
+            ? _folders.FirstOrDefault(folder => folder.Id == folderId)
+            : null;
         EditProtocol = profile.ProtocolId;
         EditHost = profile.Endpoint.Host;
         EditPort = profile.ProtocolId is "terminal"
@@ -713,7 +757,7 @@ public sealed partial class MainViewModel : ViewModelBase
             Name = name,
             Endpoint = endpoint,
             ProtocolId = EditProtocol,
-            FolderId = existing?.Profile.FolderId,
+            FolderId = EditFolder?.Id,
             Credential = existing?.Profile.Credential ?? ConnectionCredentialReference.Inherited,
             DefaultAccessMode = EditViewOnly ? SessionAccessMode.ViewOnly : SessionAccessMode.Interactive,
             Display = new DisplayPreferences
@@ -751,6 +795,38 @@ public sealed partial class MainViewModel : ViewModelBase
         else
         {
             SessionStatusLabel = $"已加入 {name}；解鎖 Vault 後才能加密寫入磁碟";
+        }
+    }
+
+    [RelayCommand]
+    private async Task AddFolderAsync()
+    {
+        var name = NewFolderName.Trim();
+        if (name.Length == 0)
+        {
+            SessionStatusLabel = "請輸入資料夾名稱";
+            return;
+        }
+
+        var folder = new ConnectionFolder
+        {
+            Id = FolderId.New(),
+            Name = name,
+            ParentId = SelectedFolder?.Id,
+        };
+        _folders.Add(folder);
+        RefreshFolderOptions();
+        RebuildConnectionTree(SelectedConnection?.Profile.Id ?? default);
+        SelectedTreeItem = FindFolderTreeItem(ConnectionTree, folder.Id);
+        NewFolderName = string.Empty;
+        if (!IsVaultLocked)
+        {
+            await SaveWorkspaceAsync();
+            SessionStatusLabel = $"已建立資料夾 {name}";
+        }
+        else
+        {
+            SessionStatusLabel = $"已建立資料夾 {name}；解鎖 Vault 後才能寫入磁碟";
         }
     }
 
@@ -1251,6 +1327,7 @@ public sealed partial class MainViewModel : ViewModelBase
     {
         _folders.Clear();
         _folders.AddRange(document.Folders);
+        RefreshFolderOptions();
         Connections.Clear();
         foreach (var connection in document.Connections)
         {
@@ -1496,12 +1573,42 @@ public sealed partial class MainViewModel : ViewModelBase
 
         return null;
     }
+
+    private void RefreshFolderOptions()
+    {
+        FolderOptions.Clear();
+        foreach (var folder in _folders.OrderBy(folder => folder.Name, StringComparer.CurrentCultureIgnoreCase))
+        {
+            FolderOptions.Add(folder);
+        }
+    }
+
+    private static ConnectionTreeDisplayItem? FindFolderTreeItem(
+        IEnumerable<ConnectionTreeDisplayItem> items,
+        FolderId folderId)
+    {
+        foreach (var item in items)
+        {
+            if (item.Folder?.Id == folderId)
+            {
+                return item;
+            }
+
+            if (FindFolderTreeItem(item.Children, folderId) is { } nested)
+            {
+                return nested;
+            }
+        }
+
+        return null;
+    }
 }
 
 public sealed record ConnectionTreeDisplayItem(
     string Name,
     string Detail,
     bool IsFolder,
+    ConnectionFolder? Folder,
     ConnectionProfile? Connection,
     ObservableCollection<ConnectionTreeDisplayItem> Children)
 {
@@ -1510,13 +1617,14 @@ public sealed record ConnectionTreeDisplayItem(
     public static ConnectionTreeDisplayItem ForFolder(
         ConnectionFolder folder,
         IEnumerable<ConnectionTreeDisplayItem> children) =>
-        new(folder.Name, "資料夾", true, null, new(children));
+        new(folder.Name, "資料夾", true, folder, null, new(children));
 
     public static ConnectionTreeDisplayItem ForConnection(ConnectionProfile connection) =>
         new(
             connection.Name,
             $"{connection.ProtocolId.ToUpperInvariant()} · {connection.Endpoint.Host}:{connection.Endpoint.Port}",
             false,
+            null,
             connection,
             []);
 }

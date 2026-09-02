@@ -27,11 +27,11 @@
     </Border>
     <Grid x:Name="ShellGrid" Grid.Row="1" ColumnDefinitions="56,240,*,260">
       <Border x:Name="NavigationRail" Grid.Column="0" Background="#121927" BorderBrush="#293248" BorderThickness="0,0,1,0">
-        <StackPanel Margin="8,12" Spacing="8"><Button Content="⌁" Classes="nav selected" ToolTip.Tip="連線"/><Button Content="▣" Classes="nav" ToolTip.Tip="Vault"/><Button Content="♙" Classes="nav" ToolTip.Tip="身份卡"/><Button Content="≡" Classes="nav" ToolTip.Tip="稽核"/></StackPanel>
+        <StackPanel Margin="8,12" Spacing="8"><Button Content="⌁" Classes="nav selected" ToolTip.Tip="連線"/><Button Content="▣" Classes="nav" ToolTip.Tip="Vault" Command="{Binding OpenVaultPanelCommand}"/><Button Content="♙" Classes="nav" ToolTip.Tip="身份卡" Command="{Binding OpenVaultPanelCommand}"/><Button Content="≡" Classes="nav" ToolTip.Tip="稽核"/></StackPanel>
       </Border>
       <Border x:Name="ConnectionTree" Grid.Column="1" Background="#171F2E" BorderBrush="#293248" BorderThickness="0,0,1,0" Padding="12,14">
         <Grid RowDefinitions="Auto,Auto,Auto,*">
-          <Grid ColumnDefinitions="*,Auto"><TextBlock Text="連線" FontWeight="SemiBold"/><Button Grid.Column="1" Content="•••" Background="Transparent" Padding="4"/></Grid>
+          <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="4"><TextBox Text="{Binding NewFolderName}" PlaceholderText="新資料夾" MinWidth="100"/><Button Grid.Column="1" Content="＋資料夾" Classes="tool" Command="{Binding AddFolderCommand}"/><Button Grid.Column="2" Content="•••" Background="Transparent" Padding="4"/></Grid>
           <Border Grid.Row="1" Height="32" Margin="0,12,0,8" Background="#111827" BorderBrush="#35405A" BorderThickness="1" CornerRadius="7"><TextBlock Text="⌕ 搜尋連線與標籤" Margin="9,0" VerticalAlignment="Center" Foreground="#8795AD" FontSize="11"/></Border>
           <TextBlock Grid.Row="2" Text="我的連線" Margin="6,8,0,5" Foreground="#74829A" FontSize="10" FontWeight="SemiBold"/>
           <TreeView Grid.Row="3" ItemsSource="{Binding ConnectionTree}" SelectedItem="{Binding SelectedTreeItem}" Background="Transparent" BorderThickness="0">
@@ -97,6 +97,7 @@
             <TextBlock Text="{Binding ConnectionEditorTitle}" FontSize="16" FontWeight="SemiBold"/>
             <StackPanel Spacing="4"><TextBlock Text="協定" FontSize="10" Foreground="#7F8DA5"/><ComboBox ItemsSource="{Binding ConnectionProtocols}" SelectedItem="{Binding EditProtocol}"/></StackPanel>
             <StackPanel Spacing="4"><TextBlock Text="名稱" FontSize="10" Foreground="#7F8DA5"/><TextBox Text="{Binding EditName}" PlaceholderText="例如：Windows Prod"/></StackPanel>
+            <StackPanel Spacing="4"><TextBlock Text="資料夾" FontSize="10" Foreground="#7F8DA5"/><ComboBox ItemsSource="{Binding FolderOptions}" SelectedItem="{Binding EditFolder}" DisplayMemberBinding="{Binding Name}" PlaceholderText="不放入資料夾"/></StackPanel>
             <StackPanel Spacing="4" IsVisible="{Binding IsEditingNetwork}"><TextBlock Text="主機或 IP" FontSize="10" Foreground="#7F8DA5"/><TextBox Text="{Binding EditHost}" PlaceholderText="server.example 或 10.20.0.24"/></StackPanel>
             <StackPanel Spacing="4" IsVisible="{Binding IsEditingNetwork}"><TextBlock Text="連接埠" FontSize="10" Foreground="#7F8DA5"/><TextBox Text="{Binding EditPort}"/></StackPanel>
             <StackPanel Spacing="4" IsVisible="{Binding IsEditingRdp}"><TextBlock Text="RD Gateway（選填）" FontSize="10" Foreground="#7F8DA5"/><TextBox Text="{Binding EditGateway}" PlaceholderText="gateway.example"/></StackPanel>
@@ -137,7 +138,7 @@
                   <ListBox.ItemTemplate><DataTemplate><Border Margin="0,3" Padding="10" Background="#20293B" CornerRadius="8"><Grid ColumnDefinitions="*,Auto"><StackPanel><TextBlock Text="{Binding Name}"/><TextBlock Text="{Binding Username}" FontSize="10" Foreground="#8290A7"/></StackPanel><TextBlock Grid.Column="1" Text="{Binding ProtocolScope}" Foreground="#9FA5FF"/></Grid></Border></DataTemplate></ListBox.ItemTemplate>
                 </ListBox>
                 <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
-                  <Button Content="指派給目前連線" Command="{Binding AssignIdentityCardCommand}" Classes="tool"/>
+                  <Button Content="指派給目前連線／資料夾" Command="{Binding AssignIdentityCardCommand}" Classes="tool"/>
                   <Button Grid.Column="1" Content="永久刪除" Command="{Binding DeleteIdentityCardCommand}" Background="#552B35" Foreground="#FFB2BE"/>
                 </Grid>
                 <TextBlock Text="新增身份卡" FontSize="13" FontWeight="SemiBold" Margin="0,8,0,0"/>
