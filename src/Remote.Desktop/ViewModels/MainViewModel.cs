@@ -2953,6 +2953,20 @@ public sealed partial class MainViewModel : ViewModelBase
         });
     }
 
+    public async Task HandleEmbeddedRdpFailureAsync(SessionId sessionId, string reason)
+    {
+        try
+        {
+            SetSessionState(sessionId, SessionState.Faulted, reason);
+        }
+        catch (InvalidOperationException)
+        {
+            return;
+        }
+        SessionStatusLabel = reason;
+        await ReportMajorErrorAsync("RDP", "session-disconnected", reason, new IOException(reason));
+    }
+
     private static ConnectionTreeDisplayItem? FindFolderTreeItem(
         IEnumerable<ConnectionTreeDisplayItem> items,
         FolderId folderId)

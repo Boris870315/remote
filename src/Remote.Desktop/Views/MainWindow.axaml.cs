@@ -73,6 +73,8 @@ public partial class MainWindow : Window
         if (!_rdpHosts.TryGetValue(sessionId, out var host))
         {
             host = new AvaloniaEmbeddedRdpHost();
+            host.UnexpectedlyDisconnected += reason =>
+                _ = _viewModel?.HandleEmbeddedRdpFailureAsync(sessionId, reason);
             _rdpHosts.Add(sessionId, host);
             EmbeddedRdpSurfaces.Children.Add(host);
         }

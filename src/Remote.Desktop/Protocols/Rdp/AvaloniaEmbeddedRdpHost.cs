@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using Avalonia.Controls;
 using Avalonia.Platform;
+using Avalonia.Threading;
 using Remote.Infrastructure.Protocols.Rdp;
 
 namespace Remote.Desktop.Protocols.Rdp;
@@ -14,6 +15,12 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
     private nint _window;
     private object? _rdpClient;
     private readonly TaskCompletionSource _hostReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private DispatcherTimer? _connectionMonitor;
+    private bool _hasConnected;
+    private bool _disconnectRequested;
+    private int _connectingTicks;
+
+    public event Action<string>? UnexpectedlyDisconnected;
 
     public async Task ConnectAsync(RdpExternalLaunchRequest request)
     {
@@ -29,6 +36,9 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
         dynamic client = clientObject;
         try
         {
+            _disconnectRequested = false;
+            _hasConnected = false;
+            _connectingTicks = 0;
             try { client.Disconnect(); } catch (COMException) { }
             client.Server = request.Endpoint.Host;
             client.UserName = ParseUsername(request.Username).Username;
@@ -60,6 +70,7 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
                 advanced.ClearTextPassword = System.Text.Encoding.UTF8.GetString(request.PasswordUtf8.Span);
             }
             client.Connect();
+            StartConnectionMonitor();
             EnableWindow(_window, request.AccessMode is not Remote.Protocols.SessionAccessMode.ViewOnly);
             return;
         }
@@ -71,11 +82,51 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
 
     public Task DisconnectAsync()
     {
+        _disconnectRequested = true;
+        _connectionMonitor?.Stop();
         if (_rdpClient is not null)
         {
             try { ((dynamic)_rdpClient).Disconnect(); } catch (COMException) { }
         }
         return Task.CompletedTask;
+    }
+
+    private void StartConnectionMonitor()
+    {
+        _connectionMonitor?.Stop();
+        _connectionMonitor = new DispatcherTimer(TimeSpan.FromSeconds(1), DispatcherPriority.Background, (_, _) =>
+        {
+            if (_disconnectRequested || _rdpClient is null) return;
+            try
+            {
+                dynamic client = _rdpClient;
+                var connected = (short)client.Connected;
+                if (connected != 0)
+                {
+                    _hasConnected = true;
+                    return;
+                }
+                if (!_hasConnected)
+                {
+                    _connectingTicks++;
+                    if (_connectingTicks < 30) return;
+                    _connectionMonitor?.Stop();
+                    UnexpectedlyDisconnected?.Invoke("RDP 連線逾時，請檢查主機、防火牆與帳號密碼");
+                    return;
+                }
+                _connectionMonitor?.Stop();
+                string reason;
+                try { reason = $"RDP 連線已中斷（原因代碼 {(int)client.ExtendedDisconnectReason}）"; }
+                catch (COMException) { reason = "RDP 連線非預期中斷"; }
+                UnexpectedlyDisconnected?.Invoke(reason);
+            }
+            catch (COMException exception)
+            {
+                _connectionMonitor?.Stop();
+                UnexpectedlyDisconnected?.Invoke($"無法讀取 RDP 連線狀態：{exception.Message}");
+            }
+        });
+        _connectionMonitor.Start();
     }
 
     protected override IPlatformHandle CreateNativeControlCore(IPlatformHandle parent)
@@ -133,6 +184,8 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
     {
         if (OperatingSystem.IsWindows() && _window != nint.Zero)
         {
+            _disconnectRequested = true;
+            _connectionMonitor?.Stop();
             if (_rdpClient is not null)
             {
                 try { ((dynamic)_rdpClient).Disconnect(); } catch (COMException) { }
