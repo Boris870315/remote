@@ -49,7 +49,7 @@ A reusable secret-bearing identity that a Connection references, such as a usern
 _Avoid_: Account, login, secret
 
 **Identity Card**:
-A named username, password, and optional domain Credential with an explicit intended protocol or target. Identity Cards are not shared across incompatible purposes: for example, an RDP card may be reused by selected RDP Connections, but is not automatically available to VNC. Editing a card changes the identity used by every compatible Connection that explicitly references it.
+A named username, password, and optional domain Credential that behaves like the reusable login records in mRemoteNG/RDO. A Connection or Folder references the Identity Card once; every later Session automatically supplies that login to the protocol adapter without asking the Operator to type it again. Identity Cards have an explicit intended protocol or target and are not shared across incompatible purposes: for example, an RDP card may be reused by selected RDP Connections, but is not automatically available to VNC. Editing a card changes the identity used by every compatible Connection that explicitly or indirectly references it.
 _Avoid_: Credential group, user profile, embedded password
 
 **Inherited Credential**:
@@ -73,7 +73,7 @@ A secret-free record that a sensitive Vault action occurred, identifying the act
 _Avoid_: Activity log, debug log
 
 **Legacy Import**:
-A one-time conversion of supported mRemoteNG data into the Remote workspace; imported data is not kept synchronized with its source.
+A one-time conversion of supported mRemoteNG XML/CSV data into the Remote workspace; imported data is not kept synchronized with its source. The import preserves Folder hierarchy, Connections, protocol settings, username/domain/password values, and credential-inheritance relationships. Repeated equivalent logins become reusable Identity Cards rather than copied secrets. If the source is password protected, the Operator supplies its import password once to decrypt the source; imported secrets are immediately re-encrypted in the Remote Vault.
 _Avoid_: Migration sync, legacy compatibility mode
 
 **Platform Equivalent**:
@@ -94,6 +94,8 @@ _Avoid_: Identical implementation, reduced version
 - Clipboard text may be enabled per Connection. File transfer, drive, printer, microphone, camera, and other device redirection are disabled by default and require explicit per-Connection enablement.
 - A Connection may have concurrent Sessions. Opening another Session prompts the Operator to switch to the existing Session or explicitly open another.
 - Every Identity Card has one explicit protocol or intended-use scope. Reusing the same secret for another scope requires a separate Identity Card; a future safe-copy action may assist without making the records shared.
+- Opening a saved Connection never displays a routine username/password prompt when its direct or inherited Identity Card is available and the Vault is unlocked. The protocol adapter receives the resolved username, password, and optional domain automatically. A prompt is permitted only when no usable Identity Card exists, the Vault is locked and quick unlock fails, or the remote endpoint explicitly rejects the stored login.
+- The Identity Card UI is an operational credential manager: it supports create, edit, import, protocol-scoped assignment to Connections, assignment to Folders, and a clear preview of which direct or inherited login a Connection will use. It is not a decorative profile-card view.
 - VNC negotiates the official RFB protocol versions 3.3, 3.7, and 3.8, preferring 3.8. Newer security, encoding, and interoperability features are modeled as negotiated capabilities or extensions rather than invented RFB version numbers.
 - Every Protocol must support the shared View Only Session mode. The setting is stored per Connection, may be overridden before opening a Session, and remains visibly indicated in the active Session toolbar.
 - Each protocol adapter enforces View Only according to its interaction model: RDP and VNC suppress keyboard, pointer, outbound clipboard, file transfer, and device input; SSH and Terminal suppress standard input and command transmission while continuing to display output; HTTP and HTTPS block form submission, uploads, modifying requests, scripting bridges, and other state-changing actions while retaining read-only navigation where the embedded engine can enforce it.
