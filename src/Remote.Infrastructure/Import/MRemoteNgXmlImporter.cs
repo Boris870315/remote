@@ -142,6 +142,8 @@ public sealed class MRemoteNgXmlImporter
             FolderId = parentFolderId,
             Credential = reference,
             ProtocolSettings = BuildProtocolSettings(node, protocolId),
+            IsFavorite = ReadBoolean(node, "Favorite"),
+            Tags = ParseTags(Attribute(node, "Tags")),
         });
     }
 
@@ -245,6 +247,12 @@ public sealed class MRemoteNgXmlImporter
 
     private static bool ReadBoolean(XElement element, string name, bool fallback = false) =>
         bool.TryParse(Attribute(element, name), out var value) ? value : fallback;
+
+    private static IReadOnlyList<string> ParseTags(string? value) => string.IsNullOrWhiteSpace(value)
+        ? []
+        : value.Split([',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Distinct(StringComparer.CurrentCultureIgnoreCase)
+            .ToArray();
 
     private static bool TryMapProtocol(string? source, out string id, out string scheme, out int defaultPort)
     {

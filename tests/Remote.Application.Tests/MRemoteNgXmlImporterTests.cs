@@ -68,7 +68,8 @@ public sealed class MRemoteNgXmlImporterTests
             <Connections KdfIterations="1000" Protected="{{EncryptedValue}}">
               <Node Type="Connection" Name="Admin RDP" Hostname="10.0.0.4" Protocol="RDP" Port="3389"
                     UseConsoleSession="true" RDGatewayHostname="gateway.example"
-                    RedirectClipboard="false" RedirectPrinters="true" RedirectDiskDrives="All" />
+                    RedirectClipboard="false" RedirectPrinters="true" RedirectDiskDrives="All"
+                    Favorite="true" Tags="production, finance;windows" />
             </Connections>
             """;
 
@@ -84,5 +85,7 @@ public sealed class MRemoteNgXmlImporterTests
         Assert.False(settings.RedirectClipboard);
         Assert.True(settings.RedirectPrinters);
         Assert.True(settings.RedirectDrives);
+        Assert.True(connection.IsFavorite);
+        Assert.Equal(["production", "finance", "windows"], connection.Tags);
     }
 }
