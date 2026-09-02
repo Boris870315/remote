@@ -46,6 +46,8 @@ public sealed partial class MainViewModel : ViewModelBase
     private readonly List<ConnectionFolder> _folders = [];
     private ConnectionId? _editingConnectionId;
     private CredentialVault? _vault;
+    private CredentialId? _editingCredentialId;
+    private readonly RecoveryKeyService _recoveryKeyService = new();
     private string _activeMasterPassword = string.Empty;
     private VaultId _primaryVaultId = new(Guid.NewGuid());
     private VaultAutoLockController _autoLockController = new(new VaultLockSettings());
@@ -113,6 +115,12 @@ public sealed partial class MainViewModel : ViewModelBase
     public ObservableCollection<ConnectionListItem> Connections { get; }
 
     public ObservableCollection<CredentialDefinition> VaultCredentials { get; } = [];
+
+    public ObservableCollection<string> AuditEvents { get; } =
+    [
+        "Remote 已啟動",
+        "本機 Workspace 已就緒",
+    ];
 
     public ObservableCollection<ConnectionFolder> FolderOptions { get; } = [];
 
@@ -275,6 +283,24 @@ public sealed partial class MainViewModel : ViewModelBase
     private bool isNotificationOpen;
 
     [ObservableProperty]
+    private bool isSettingsPanelOpen;
+
+    [ObservableProperty]
+    private bool isAuditPanelOpen;
+
+    [ObservableProperty]
+    private bool isMonitorPanelOpen;
+
+    [ObservableProperty]
+    private string selectedMonitorOption = "螢幕 1";
+
+    [ObservableProperty]
+    private string recoveryKey = string.Empty;
+
+    [ObservableProperty]
+    private bool isDeleteConnectionConfirmationOpen;
+
+    [ObservableProperty]
     private string notificationMessage = string.Empty;
 
     [ObservableProperty]
@@ -309,6 +335,15 @@ public sealed partial class MainViewModel : ViewModelBase
 
     public bool IsVncSessionActive => _vncClient?.IsConnected is true;
 
+    public bool IsSessionConnected =>
+        RemoteFrame is not null || IsTerminalActive || IsWebSessionActive || IsRdpSessionActive;
+
+    public IReadOnlyList<string> MonitorOptions { get; } = ["螢幕 1", "螢幕 2", "全部螢幕"];
+
+    public string IdentityEditorTitle => _editingCredentialId is null ? "新增身份卡" : "編輯身份卡";
+
+    public string IdentitySaveLabel => _editingCredentialId is null ? "加密儲存身份卡" : "儲存身份卡變更";
+
     public Task<bool> SendVncKeyAsync(uint keySym, bool isDown) =>
         _vncClient?.SendKeyAsync(keySym, isDown) ?? Task.FromResult(false);
 
@@ -321,6 +356,7 @@ public sealed partial class MainViewModel : ViewModelBase
         await StopSshAsync();
         await StopLocalTerminalAsync();
         LockVault();
+        _recoveryKeyService.Dispose();
     }
 
     partial void OnIsVaultLockedChanged(bool value) => OnPropertyChanged(nameof(VaultStatusLabel));
@@ -465,7 +501,7 @@ public sealed partial class MainViewModel : ViewModelBase
 
         var definition = new CredentialDefinition
         {
-            Id = new CredentialId(Guid.NewGuid()),
+            Id = _editingCredentialId ?? new CredentialId(Guid.NewGuid()),
             VaultId = _primaryVaultId,
             Name = name,
             Kind = CredentialKind.UsernamePassword,
@@ -476,14 +512,25 @@ public sealed partial class MainViewModel : ViewModelBase
         var secret = Encoding.UTF8.GetBytes(NewIdentitySecret);
         try
         {
-            _vault.Add(definition, secret);
+            if (_editingCredentialId is null)
+            {
+                _vault.Add(definition, secret);
+            }
+            else
+            {
+                _vault.Update(definition, secret);
+            }
             NewIdentitySecret = string.Empty;
             NewIdentityName = string.Empty;
             NewIdentityUsername = string.Empty;
             NewIdentityDomain = string.Empty;
+            _editingCredentialId = null;
+            OnPropertyChanged(nameof(IdentityEditorTitle));
+            OnPropertyChanged(nameof(IdentitySaveLabel));
             RefreshVaultCredentials();
             await SaveWorkspaceAsync();
             VaultMessage = $"身份卡「{definition.Name}」已加密儲存";
+            AddAuditEvent($"身份卡已儲存：{definition.Name}");
         }
         finally
         {
@@ -672,6 +719,148 @@ public sealed partial class MainViewModel : ViewModelBase
     private void DismissNotification() => IsNotificationOpen = false;
 
     [RelayCommand]
+    private void OpenSettingsPanel() => IsSettingsPanelOpen = true;
+
+    [RelayCommand]
+    private void CloseSettingsPanel() => IsSettingsPanelOpen = false;
+
+    [RelayCommand]
+    private void OpenAuditPanel() => IsAuditPanelOpen = true;
+
+    [RelayCommand]
+    private void CloseAuditPanel() => IsAuditPanelOpen = false;
+
+    [RelayCommand]
+    private void OpenMonitorPanel()
+    {
+        if (SelectedConnection is { } connection)
+        {
+            SelectedMonitorOption = connection.Profile.Display.MonitorSelection is MonitorSelection.All
+                ? "全部螢幕"
+                : $"螢幕 {(connection.Profile.Display.MonitorIndex ?? 0) + 1}";
+        }
+        IsMonitorPanelOpen = true;
+    }
+
+    [RelayCommand]
+    private void CloseMonitorPanel() => IsMonitorPanelOpen = false;
+
+    [RelayCommand]
+    private async Task ApplyMonitorSelectionAsync()
+    {
+        if (SelectedConnection is not { } selected)
+        {
+            IsMonitorPanelOpen = false;
+            return;
+        }
+
+        var all = SelectedMonitorOption == "全部螢幕";
+        var monitorIndex = SelectedMonitorOption == "螢幕 2" ? 1 : 0;
+        var updated = selected with
+        {
+            Profile = selected.Profile with
+            {
+                Display = selected.Profile.Display with
+                {
+                    MonitorSelection = all ? MonitorSelection.All : MonitorSelection.Single,
+                    MonitorIndex = all ? null : monitorIndex,
+                },
+            },
+        };
+        Connections[Connections.IndexOf(selected)] = updated;
+        SelectedConnection = updated;
+        RebuildConnectionTree(updated.Profile.Id);
+        IsMonitorPanelOpen = false;
+        if (!IsVaultLocked)
+        {
+            await SaveWorkspaceAsync();
+        }
+        SessionStatusLabel = $"顯示範圍已設定為 {SelectedMonitorOption}";
+        AddAuditEvent($"變更顯示範圍：{updated.Name} · {SelectedMonitorOption}");
+    }
+
+    [RelayCommand]
+    private void BeginEditIdentityCard()
+    {
+        if (SelectedVaultCredential is not { } credential)
+        {
+            VaultMessage = "請先選取要編輯的身份卡";
+            return;
+        }
+
+        _editingCredentialId = credential.Id;
+        NewIdentityName = credential.Name;
+        NewIdentityProtocol = credential.ProtocolScope;
+        NewIdentityUsername = credential.Username ?? string.Empty;
+        NewIdentityDomain = credential.Domain ?? string.Empty;
+        NewIdentitySecret = string.Empty;
+        OnPropertyChanged(nameof(IdentityEditorTitle));
+        OnPropertyChanged(nameof(IdentitySaveLabel));
+        VaultMessage = "請重新輸入密碼以儲存身份卡變更";
+    }
+
+    [RelayCommand]
+    private void CancelIdentityCardEdit()
+    {
+        _editingCredentialId = null;
+        NewIdentityName = string.Empty;
+        NewIdentityUsername = string.Empty;
+        NewIdentityDomain = string.Empty;
+        NewIdentitySecret = string.Empty;
+        OnPropertyChanged(nameof(IdentityEditorTitle));
+        OnPropertyChanged(nameof(IdentitySaveLabel));
+    }
+
+    [RelayCommand]
+    private void GenerateRecoveryKey()
+    {
+        RecoveryKey = _recoveryKeyService.Rotate();
+        AddAuditEvent("已產生新的 Recovery Key");
+    }
+
+    [RelayCommand]
+    private void RequestDeleteConnection()
+    {
+        if (SelectedConnection is null)
+        {
+            SessionStatusLabel = "請先選取要刪除的連線";
+            return;
+        }
+
+        IsDeleteConnectionConfirmationOpen = true;
+    }
+
+    [RelayCommand]
+    private void CancelDeleteConnection() => IsDeleteConnectionConfirmationOpen = false;
+
+    [RelayCommand]
+    private async Task ConfirmDeleteConnectionAsync()
+    {
+        if (SelectedConnection is not { } selected)
+        {
+            IsDeleteConnectionConfirmationOpen = false;
+            return;
+        }
+
+        var deletedName = selected.Name;
+        Connections.Remove(selected);
+        SelectedConnection = Connections.FirstOrDefault();
+        RebuildConnectionTree(SelectedConnection?.Profile.Id ?? default);
+        SelectedTreeItem = SelectedConnection is { } next
+            ? FindConnectionTreeItem(ConnectionTree, next.Profile.Id)
+            : null;
+        IsDeleteConnectionConfirmationOpen = false;
+        if (!IsVaultLocked)
+        {
+            await SaveWorkspaceAsync();
+        }
+
+        NotificationMessage = $"連線「{deletedName}」已刪除。";
+        IsNotificationOpen = true;
+        AddAuditEvent($"連線已刪除：{deletedName}");
+    }
+
+    [RelayCommand]
     private async Task CreateBackupAsync()
     {
         try
@@ -713,17 +902,29 @@ public sealed partial class MainViewModel : ViewModelBase
         }
     }
 
-    partial void OnRemoteFrameChanged(WriteableBitmap? value) =>
+    partial void OnRemoteFrameChanged(WriteableBitmap? value)
+    {
         OnPropertyChanged(nameof(ShowSessionPlaceholder));
+        OnPropertyChanged(nameof(IsSessionConnected));
+    }
 
-    partial void OnIsTerminalActiveChanged(bool value) =>
+    partial void OnIsTerminalActiveChanged(bool value)
+    {
         OnPropertyChanged(nameof(ShowSessionPlaceholder));
+        OnPropertyChanged(nameof(IsSessionConnected));
+    }
 
-    partial void OnIsWebSessionActiveChanged(bool value) =>
+    partial void OnIsWebSessionActiveChanged(bool value)
+    {
         OnPropertyChanged(nameof(ShowSessionPlaceholder));
+        OnPropertyChanged(nameof(IsSessionConnected));
+    }
 
-    partial void OnIsRdpSessionActiveChanged(bool value) =>
+    partial void OnIsRdpSessionActiveChanged(bool value)
+    {
         OnPropertyChanged(nameof(ShowSessionPlaceholder));
+        OnPropertyChanged(nameof(IsSessionConnected));
+    }
 
     public string RuntimeStatus => _sessionService.GetStatus().State;
 
@@ -1714,6 +1915,15 @@ public sealed partial class MainViewModel : ViewModelBase
                 ? IdentityAssignmentTargets.FirstOrDefault(target => target.FolderId == selectedFolder.Id)
                 : null)
             ?? IdentityAssignmentTargets.FirstOrDefault();
+    }
+
+    private void AddAuditEvent(string description)
+    {
+        AuditEvents.Insert(0, $"{DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss}　{description}");
+        while (AuditEvents.Count > 100)
+        {
+            AuditEvents.RemoveAt(AuditEvents.Count - 1);
+        }
     }
 
     private static ConnectionTreeDisplayItem? FindFolderTreeItem(

@@ -21,17 +21,18 @@
           <Grid ColumnDefinitions="*,Auto"><TextBox Margin="3,0,0,0" Padding="8,0" VerticalContentAlignment="Center" Background="Transparent" BorderThickness="0" PlaceholderText="快速連線：host:port 或 https://…" Text="{Binding QuickConnectText}"/><Button Grid.Column="1" Margin="3" Padding="12,3" Background="#293451" Foreground="#DCE4F3" CornerRadius="6" Content="連線" Command="{Binding QuickConnectCommand}"/></Grid>
         </Border>
         <StackPanel x:Name="HeaderActions" Grid.Column="4" Orientation="Horizontal" Spacing="8">
+          <Border Background="#153427" BorderBrush="#24513B" BorderThickness="1" CornerRadius="7" Padding="9,7" IsVisible="{Binding IsSessionConnected}"><TextBlock Text="● 已連線" Foreground="#76D0A2" FontSize="10"/></Border>
           <Button Content="{Binding VaultStatusLabel}" Classes="tool" Command="{Binding OpenVaultPanelCommand}"/><Button Content="＋ 新增連線" Background="#5B5CE2" Foreground="White" CornerRadius="8" Padding="12,7" Command="{Binding BeginNewConnectionCommand}"/>
         </StackPanel>
       </Grid>
     </Border>
     <Grid x:Name="ShellGrid" Grid.Row="1" ColumnDefinitions="56,240,*,260">
       <Border x:Name="NavigationRail" Grid.Column="0" Background="#121927" BorderBrush="#293248" BorderThickness="0,0,1,0">
-        <StackPanel Margin="8,12" Spacing="8"><Button Content="⌁" Classes="nav selected" ToolTip.Tip="連線"/><Button Content="▣" Classes="nav" ToolTip.Tip="Vault" Command="{Binding OpenVaultPanelCommand}"/><Button Content="♙" Classes="nav" ToolTip.Tip="身份卡" Command="{Binding OpenVaultPanelCommand}"/><Button Content="≡" Classes="nav" ToolTip.Tip="稽核"/></StackPanel>
+        <Grid Margin="8,12" RowDefinitions="*,Auto"><StackPanel Spacing="8"><Button Content="⌁" Classes="nav selected" ToolTip.Tip="連線"/><Button Content="▣" Classes="nav" ToolTip.Tip="Vault" Command="{Binding OpenVaultPanelCommand}"/><Button Content="♙" Classes="nav" ToolTip.Tip="身份卡" Command="{Binding OpenVaultPanelCommand}"/><Button Content="≡" Classes="nav" ToolTip.Tip="稽核" Command="{Binding OpenAuditPanelCommand}"/></StackPanel><Button Grid.Row="1" Content="⚙" Classes="nav" ToolTip.Tip="設定" Command="{Binding OpenSettingsPanelCommand}"/></Grid>
       </Border>
       <Border x:Name="ConnectionTree" Grid.Column="1" Background="#171F2E" BorderBrush="#293248" BorderThickness="0,0,1,0" Padding="12,14">
         <Grid RowDefinitions="Auto,Auto,Auto,*">
-          <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="4"><TextBox Text="{Binding NewFolderName}" PlaceholderText="新資料夾" MinWidth="100"/><Button Grid.Column="1" Content="＋資料夾" Classes="tool" Command="{Binding AddFolderCommand}"/><Button Grid.Column="2" Content="•••" Background="Transparent" Padding="4"/></Grid>
+          <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="4"><TextBox Text="{Binding NewFolderName}" PlaceholderText="新資料夾" MinWidth="100"/><Button Grid.Column="1" Content="＋資料夾" Classes="tool" Command="{Binding AddFolderCommand}"/><Button Grid.Column="2" Content="🗑" Background="Transparent" Foreground="#FF9AA9" Padding="6" ToolTip.Tip="刪除選取的連線" Command="{Binding RequestDeleteConnectionCommand}"/></Grid>
           <Border Grid.Row="1" Height="32" Margin="0,12,0,8" Background="#111827" BorderBrush="#35405A" BorderThickness="1" CornerRadius="7"><TextBlock Text="⌕ 搜尋連線與標籤" Margin="9,0" VerticalAlignment="Center" Foreground="#8795AD" FontSize="11"/></Border>
           <TextBlock Grid.Row="2" Text="我的連線" Margin="6,8,0,5" Foreground="#74829A" FontSize="10" FontWeight="SemiBold"/>
           <TreeView Grid.Row="3" ItemsSource="{Binding ConnectionTree}" SelectedItem="{Binding SelectedTreeItem}" Background="Transparent" BorderThickness="0">
@@ -46,10 +47,9 @@
           </TreeView>
         </Grid>
       </Border>
-      <Grid x:Name="SessionWorkspace" Grid.Column="2" RowDefinitions="40,44,*" Background="#0D1220">
+      <Grid x:Name="SessionWorkspace" Grid.Column="2" RowDefinitions="40,*" Background="#0D1220">
         <Border x:Name="SessionTabs" Background="#141B29" BorderBrush="#293248" BorderThickness="0,0,0,1"><Button HorizontalAlignment="Left" Height="39" Padding="14,0" Background="Transparent" BorderBrush="#7778EF" BorderThickness="0,0,0,2" Content="{Binding SelectedConnection.Name, FallbackValue=Windows Prod}"/></Border>
-        <Border x:Name="SessionToolbar" Grid.Row="1" Background="#111827" BorderBrush="#293248" BorderThickness="0,0,0,1"><Grid Margin="10,0" ColumnDefinitions="Auto,Auto,Auto,*,Auto" ColumnSpacing="8"><Button Content="重新整理" Classes="tool"/><Button x:Name="FullScreenButton" Grid.Column="1" Content="全螢幕" Classes="tool" Click="ToggleFullScreen"/><Button Grid.Column="2" Content="適應視窗" Classes="tool"/><Border Grid.Column="4" Background="#493F78" CornerRadius="6" Padding="8,4" IsVisible="{Binding IsViewOnly}"><TextBlock Text="VIEW ONLY" Foreground="#D5D2FF" FontWeight="Bold" FontSize="11"/></Border></Grid></Border>
-        <Border Grid.Row="2" Margin="10" CornerRadius="9" BorderBrush="#334762" BorderThickness="1" Background="#172941" ClipToBounds="True">
+        <Border Grid.Row="1" Margin="10" CornerRadius="9" BorderBrush="#334762" BorderThickness="1" Background="#172941" ClipToBounds="True">
           <Grid>
             <Border Background="#1D3653" Margin="1" CornerRadius="8"/>
             <Image x:Name="RemoteSurface" Source="{Binding RemoteFrame}" Stretch="Uniform" Focusable="True" PointerPressed="HandleRemotePointerPressed" PointerMoved="HandleRemotePointerMoved" PointerReleased="HandleRemotePointerReleased" KeyDown="HandleRemoteKeyDown" KeyUp="HandleRemoteKeyUp"/>
@@ -79,10 +79,11 @@
       <Border x:Name="Inspector" Grid.Column="3" Background="#171F2E" BorderBrush="#293248" BorderThickness="1,0,0,0" Padding="16">
         <Grid>
           <StackPanel Spacing="16" IsVisible="{Binding !IsEditingConnection}">
-          <Grid ColumnDefinitions="*,Auto"><StackPanel><TextBlock Text="{Binding SelectedConnection.Name, FallbackValue=Windows Prod}" FontSize="16" FontWeight="SemiBold"/><TextBlock Text="{Binding SelectedConnection.Protocol, FallbackValue=RDP}" FontSize="11" Foreground="#8290A7"/></StackPanel><Button Grid.Column="1" Content="編輯" Classes="tool" Command="{Binding BeginEditConnectionCommand}"/></Grid>
+          <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6"><StackPanel><TextBlock Text="{Binding SelectedConnection.Name, FallbackValue=Windows Prod}" FontSize="16" FontWeight="SemiBold"/><TextBlock Text="{Binding SelectedConnection.Protocol, FallbackValue=RDP}" FontSize="11" Foreground="#8290A7"/></StackPanel><Button Grid.Column="1" Content="編輯" Classes="tool" Command="{Binding BeginEditConnectionCommand}"/><Button Grid.Column="2" Content="🗑" Classes="tool" Foreground="#FF9AA9" ToolTip.Tip="刪除連線" Command="{Binding RequestDeleteConnectionCommand}"/></Grid>
           <StackPanel Spacing="5"><TextBlock Text="主機" FontSize="10" Foreground="#7F8DA5"/><TextBlock Text="{Binding SelectedConnection.Endpoint, FallbackValue=10.20.0.24:3389}" FontSize="12"/></StackPanel>
           <StackPanel Spacing="6"><TextBlock Text="身份卡" FontSize="10" Foreground="#7F8DA5"/><Border Background="#20293B" BorderBrush="#414C68" BorderThickness="1" CornerRadius="8" Padding="10"><StackPanel Spacing="5"><TextBlock Text="Windows Admin" FontSize="12"/><TextBlock Text="CORP\operator" FontSize="10" Foreground="#8290A7"/><Border HorizontalAlignment="Left" Background="#493F78" CornerRadius="5" Padding="6,3"><TextBlock Text="{Binding SelectedConnection.IdentityScope, FallbackValue=RDP only}" Foreground="#C9C6FF" FontSize="9"/></Border></StackPanel></Border></StackPanel>
           <StackPanel Spacing="5"><TextBlock Text="工作階段權限" FontSize="10" Foreground="#7F8DA5"/><ToggleSwitch IsChecked="{Binding IsViewOnly}" Content="View Only"/><TextBlock Text="{Binding StatusDetail}" FontSize="10" Foreground="#A9B8CE" TextWrapping="Wrap"/></StackPanel>
+          <StackPanel Spacing="7"><TextBlock Text="工作階段控制" FontSize="10" Foreground="#7F8DA5"/><Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="7" RowSpacing="7"><Button Content="重新整理" Classes="tool" Click="RefreshSession"/><Button Grid.Column="1" Content="全螢幕" Classes="tool" Click="ToggleFullScreen"/><Button Grid.Row="1" Content="適應視窗" Classes="tool" Click="FitSessionToWindow"/><Button Grid.Row="1" Grid.Column="1" Content="{Binding SelectedMonitorOption}" Classes="tool" Command="{Binding OpenMonitorPanelCommand}"/></Grid><Border HorizontalAlignment="Left" Background="#493F78" CornerRadius="6" Padding="8,4" IsVisible="{Binding IsViewOnly}"><TextBlock Text="VIEW ONLY" Foreground="#D5D2FF" FontWeight="Bold" FontSize="10"/></Border></StackPanel>
           <StackPanel Spacing="6" IsVisible="{Binding IsSshSelected}">
             <TextBlock Text="SSH2 登入（連線後清除密碼）" FontSize="10" Foreground="#7F8DA5"/>
             <TextBox Text="{Binding SessionUsername}" PlaceholderText="使用者名稱"/>
@@ -112,6 +113,8 @@
         </ScrollViewer>
         </Grid>
       </Border>
+      <Button x:Name="LeftPanelHandle" Grid.Column="2" HorizontalAlignment="Left" VerticalAlignment="Center" Width="18" Height="50" Padding="0" Margin="-1,0,0,0" CornerRadius="0,18,18,0" Background="#293451" Foreground="#C9CBFF" Content="‹" Click="ToggleConnectionTree" ZIndex="10"/>
+      <Button x:Name="RightPanelHandle" Grid.Column="2" HorizontalAlignment="Right" VerticalAlignment="Center" Width="18" Height="50" Padding="0" Margin="0,0,-1,0" CornerRadius="18,0,0,18" Background="#293451" Foreground="#C9CBFF" Content="›" Click="ToggleInspector" ZIndex="10"/>
     </Grid>
     <Border Grid.RowSpan="2" Background="#B3090D16" IsVisible="{Binding IsVaultPanelOpen}" ZIndex="20">
       <Border Width="520" MaxHeight="720" HorizontalAlignment="Center" VerticalAlignment="Center" Background="#171F2E" BorderBrush="#4A5874" BorderThickness="1" CornerRadius="14" Padding="22">
@@ -142,17 +145,18 @@
                   <TextBlock Text="套用目標" FontSize="11" Foreground="#7F8DA5"/>
                   <ComboBox ItemsSource="{Binding IdentityAssignmentTargets}" SelectedItem="{Binding SelectedIdentityAssignmentTarget}" DisplayMemberBinding="{Binding DisplayName}" PlaceholderText="選擇資料夾或連線"/>
                 </StackPanel>
-                <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
-                  <Button Content="指派給目前連線／資料夾" Command="{Binding AssignIdentityCardCommand}" Classes="tool"/>
-                  <Button Grid.Column="1" Content="永久刪除" Command="{Binding DeleteIdentityCardCommand}" Background="#552B35" Foreground="#FFB2BE"/>
+                <Grid ColumnDefinitions="*,*,*" ColumnSpacing="8">
+                  <Button Content="指派" Command="{Binding AssignIdentityCardCommand}" Classes="tool"/>
+                  <Button Grid.Column="1" Content="編輯" Command="{Binding BeginEditIdentityCardCommand}" Classes="tool"/>
+                  <Button Grid.Column="2" Content="永久刪除" Command="{Binding DeleteIdentityCardCommand}" Background="#552B35" Foreground="#FFB2BE"/>
                 </Grid>
-                <TextBlock Text="新增身份卡" FontSize="13" FontWeight="SemiBold" Margin="0,8,0,0"/>
+                <Grid ColumnDefinitions="*,Auto" Margin="0,8,0,0"><TextBlock Text="{Binding IdentityEditorTitle}" FontSize="13" FontWeight="SemiBold"/><Button Grid.Column="1" Content="取消編輯" Classes="tool" Command="{Binding CancelIdentityCardEditCommand}"/></Grid>
                 <TextBox Text="{Binding NewIdentityName}" PlaceholderText="名稱"/>
                 <ComboBox ItemsSource="{Binding IdentityProtocols}" SelectedItem="{Binding NewIdentityProtocol}"/>
                 <TextBox Text="{Binding NewIdentityUsername}" PlaceholderText="使用者名稱"/>
                 <TextBox Text="{Binding NewIdentityDomain}" PlaceholderText="網域（選填）"/>
                 <TextBox Text="{Binding NewIdentitySecret}" PasswordChar="●" PlaceholderText="密碼"/>
-                <Button Content="加密儲存身份卡" Command="{Binding AddIdentityCardCommand}" Background="#5B5CE2" Foreground="White" Padding="14,9"/>
+                <Button Content="{Binding IdentitySaveLabel}" Command="{Binding AddIdentityCardCommand}" Background="#5B5CE2" Foreground="White" Padding="14,9"/>
                 <Border Background="#20293B" CornerRadius="9" Padding="12" Margin="0,8,0,0">
                   <StackPanel Spacing="8">
                     <TextBlock Text="從 mRemoteNG 一次性匯入" FontSize="13" FontWeight="SemiBold"/>
@@ -166,6 +170,32 @@
           </ScrollViewer>
           <TextBlock Grid.Row="2" Text="{Binding VaultMessage}" Foreground="#A9B8CE" TextWrapping="Wrap" FontSize="11"/>
         </Grid>
+      </Border>
+    </Border>
+    <Border Grid.RowSpan="2" Background="#B3090D16" IsVisible="{Binding IsSettingsPanelOpen}" ZIndex="25">
+      <Border Width="620" MaxHeight="720" HorizontalAlignment="Center" VerticalAlignment="Center" Background="#171F2E" BorderBrush="#4A5874" BorderThickness="1" CornerRadius="14" Padding="22">
+        <Grid RowDefinitions="Auto,*">
+          <Grid ColumnDefinitions="*,Auto"><StackPanel><TextBlock Text="設定" FontSize="20" FontWeight="SemiBold"/><TextBlock Text="個人版 · 本機優先" FontSize="10" Foreground="#8290A7"/></StackPanel><Button Grid.Column="1" Content="✕" Classes="tool" Command="{Binding CloseSettingsPanelCommand}"/></Grid>
+          <ScrollViewer Grid.Row="1" Margin="0,18,0,0"><StackPanel Spacing="18">
+            <StackPanel Spacing="8"><TextBlock Text="外觀與介面" FontSize="14" FontWeight="SemiBold"/><ComboBox SelectedIndex="0"><ComboBoxItem Content="跟隨系統深色主題"/><ComboBoxItem Content="深色"/><ComboBoxItem Content="淺色"/></ComboBox><ToggleSwitch IsChecked="True" Content="自動適應橫向與直式螢幕"/></StackPanel>
+            <StackPanel Spacing="8"><TextBlock Text="Vault 安全性" FontSize="14" FontWeight="SemiBold"/><ComboBox ItemsSource="{Binding LockIntervalOptions}" SelectedItem="{Binding SelectedLockInterval}"/><CheckBox IsChecked="{Binding LockOnSystemSleep}" Content="系統睡眠時鎖定"/><CheckBox IsChecked="{Binding LockOnSessionLogout}" Content="使用者登出時鎖定"/><Border Background="#4A341F" CornerRadius="7" Padding="8" IsVisible="{Binding RequiresReducedSecurityWarning}"><TextBlock Text="⚠ 停用自動鎖定會降低本機帳密安全性" Foreground="#FFD18A" FontSize="10"/></Border><Grid ColumnDefinitions="*,Auto"><StackPanel><TextBlock Text="快速解鎖"/><TextBlock Text="Windows Hello／Touch ID（平台整合中）" Foreground="#8290A7" FontSize="10"/></StackPanel><ToggleSwitch Grid.Column="1" IsEnabled="False"/></Grid><Button HorizontalAlignment="Left" Content="產生新的 Recovery Key" Classes="tool" Command="{Binding GenerateRecoveryKeyCommand}"/><TextBox Text="{Binding RecoveryKey}" IsReadOnly="True" TextWrapping="Wrap" PlaceholderText="Recovery Key 只會在產生後顯示於此處"/></StackPanel>
+            <StackPanel Spacing="8"><TextBlock Text="敏感內容" FontSize="14" FontWeight="SemiBold"/><ComboBox SelectedIndex="1"><ComboBoxItem Content="密碼顯示 5 秒"/><ComboBoxItem Content="密碼顯示 10 秒"/><ComboBoxItem Content="密碼永久顯示"/></ComboBox><ToggleSwitch IsChecked="True" Content="截圖與最近使用畫面隱藏敏感內容"/><ToggleSwitch IsChecked="False" Content="使用後清除剪貼簿"/></StackPanel>
+            <StackPanel Spacing="8"><TextBlock Text="備份" FontSize="14" FontWeight="SemiBold"/><ToggleSwitch IsChecked="{Binding AutomaticBackupEnabled}" Content="自動建立本機加密備份"/><Button HorizontalAlignment="Left" Content="立即建立備份" Classes="tool" Command="{Binding CreateBackupCommand}"/></StackPanel>
+          </StackPanel></ScrollViewer>
+        </Grid>
+      </Border>
+    </Border>
+    <Border Grid.RowSpan="2" Background="#B3090D16" IsVisible="{Binding IsAuditPanelOpen}" ZIndex="28">
+      <Border Width="720" MaxHeight="700" HorizontalAlignment="Center" VerticalAlignment="Center" Background="#171F2E" BorderBrush="#4A5874" BorderThickness="1" CornerRadius="14" Padding="22">
+        <Grid RowDefinitions="Auto,*"><Grid ColumnDefinitions="*,Auto"><StackPanel><TextBlock Text="稽核紀錄" FontSize="20" FontWeight="SemiBold"/><TextBlock Text="只記錄動作、目標與時間，不記錄密碼內容" FontSize="10" Foreground="#8290A7"/></StackPanel><Button Grid.Column="1" Content="✕" Classes="tool" Command="{Binding CloseAuditPanelCommand}"/></Grid><ListBox Grid.Row="1" Margin="0,18,0,0" ItemsSource="{Binding AuditEvents}" Background="Transparent" BorderThickness="0"><ListBox.ItemTemplate><DataTemplate><Border Margin="0,3" Padding="12" Background="#20293B" CornerRadius="8"><TextBlock Text="{Binding}" FontFamily="Menlo,Consolas,monospace" FontSize="11"/></Border></DataTemplate></ListBox.ItemTemplate></ListBox></Grid>
+      </Border>
+    </Border>
+    <Border Grid.RowSpan="2" Background="#B3090D16" IsVisible="{Binding IsMonitorPanelOpen}" ZIndex="30">
+      <Border Width="430" HorizontalAlignment="Center" VerticalAlignment="Center" Background="#20293B" BorderBrush="#667492" BorderThickness="1" CornerRadius="14" Padding="22"><StackPanel Spacing="14"><TextBlock Text="遠端螢幕" FontSize="18" FontWeight="SemiBold"/><TextBlock Text="第一版支援指定單一螢幕或跨全部螢幕。實際可用螢幕將在連線協商後更新。" Foreground="#C4CDDC" TextWrapping="Wrap"/><ComboBox ItemsSource="{Binding MonitorOptions}" SelectedItem="{Binding SelectedMonitorOption}"/><Grid ColumnDefinitions="*,*" ColumnSpacing="8"><Button Content="取消" Command="{Binding CloseMonitorPanelCommand}"/><Button Grid.Column="1" Content="套用" Background="#5B5CE2" Foreground="White" Command="{Binding ApplyMonitorSelectionCommand}"/></Grid></StackPanel></Border>
+    </Border>
+    <Border Grid.RowSpan="2" Background="#B3090D16" IsVisible="{Binding IsDeleteConnectionConfirmationOpen}" ZIndex="35">
+      <Border Width="430" HorizontalAlignment="Center" VerticalAlignment="Center" Background="#20293B" BorderBrush="#667492" BorderThickness="1" CornerRadius="14" Padding="22">
+        <StackPanel Spacing="14"><TextBlock Text="刪除連線？" FontSize="18" FontWeight="SemiBold"/><TextBlock Text="{Binding SelectedConnection.Name, StringFormat='將刪除「{0}」。這不會刪除其使用的身份卡。'}" Foreground="#C4CDDC" TextWrapping="Wrap"/><Grid ColumnDefinitions="*,*" ColumnSpacing="8"><Button Content="取消" Command="{Binding CancelDeleteConnectionCommand}"/><Button Grid.Column="1" Content="刪除" Background="#B54250" Foreground="White" Command="{Binding ConfirmDeleteConnectionCommand}"/></Grid></StackPanel>
       </Border>
     </Border>
     <Border Grid.RowSpan="2" Background="#B3090D16" IsVisible="{Binding IsNotificationOpen}" ZIndex="40">

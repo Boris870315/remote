@@ -12,6 +12,8 @@ namespace Remote.Desktop.Views;
 public partial class MainWindow : Window
 {
     private bool _isSessionFullScreen;
+    private bool _isConnectionTreeCollapsed;
+    private bool _isInspectorCollapsed;
     private byte _vncButtonMask;
     private MainViewModel? _viewModel;
     private readonly DispatcherTimer _vaultTimer;
@@ -82,6 +84,35 @@ public partial class MainWindow : Window
     }
 
     private void RefreshWeb(object? sender, RoutedEventArgs e) => WebSessionView.Refresh();
+
+    private async void RefreshSession(object? sender, RoutedEventArgs e)
+    {
+        if (_viewModel?.IsWebSessionActive is true)
+        {
+            WebSessionView.Refresh();
+            return;
+        }
+
+        if (_viewModel is not null)
+        {
+            await _viewModel.OpenSelectedSessionCommand.ExecuteAsync(null);
+        }
+    }
+
+    private void FitSessionToWindow(object? sender, RoutedEventArgs e) =>
+        RemoteSurface.Stretch = Avalonia.Media.Stretch.Uniform;
+
+    private void ToggleConnectionTree(object? sender, RoutedEventArgs e)
+    {
+        _isConnectionTreeCollapsed = !_isConnectionTreeCollapsed;
+        ApplyAdaptiveLayout();
+    }
+
+    private void ToggleInspector(object? sender, RoutedEventArgs e)
+    {
+        _isInspectorCollapsed = !_isInspectorCollapsed;
+        ApplyAdaptiveLayout();
+    }
 
     private async void ImportMRemoteNg(object? sender, RoutedEventArgs e)
     {
@@ -231,7 +262,6 @@ public partial class MainWindow : Window
         ConnectionTree.IsVisible = !value;
         Inspector.IsVisible = !value;
         SessionTabs.IsVisible = !value;
-        SessionToolbar.IsVisible = !value;
         ExitSessionFullScreenButton.IsVisible = value;
 
         if (value)
@@ -239,13 +269,13 @@ public partial class MainWindow : Window
             Grid.SetRow(ShellGrid, 0);
             Grid.SetRowSpan(ShellGrid, 2);
             ShellGrid.ColumnDefinitions = new ColumnDefinitions("0,0,*,0");
-            SessionWorkspace.RowDefinitions = new RowDefinitions("0,0,*");
+            SessionWorkspace.RowDefinitions = new RowDefinitions("0,*");
             return;
         }
 
         Grid.SetRow(ShellGrid, 1);
         Grid.SetRowSpan(ShellGrid, 1);
-        SessionWorkspace.RowDefinitions = new RowDefinitions("40,44,*");
+        SessionWorkspace.RowDefinitions = new RowDefinitions("40,*");
         ApplyAdaptiveLayout();
     }
 
@@ -262,8 +292,10 @@ public partial class MainWindow : Window
             _viewModel?.IsEditingConnection is true);
         var showCompactEditor = state.Mode is AdaptiveShellMode.Compact &&
             _viewModel?.IsEditingConnection is true;
-        ConnectionTree.IsVisible = state.ShowConnectionTree;
-        Inspector.IsVisible = state.ShowInspector;
+        var showConnectionTree = state.ShowConnectionTree && !_isConnectionTreeCollapsed;
+        var showInspector = state.ShowInspector && !_isInspectorCollapsed;
+        ConnectionTree.IsVisible = showConnectionTree;
+        Inspector.IsVisible = showInspector;
         Grid.SetColumn(Inspector, showCompactEditor ? 2 : 3);
         Inspector.HorizontalAlignment = showCompactEditor ? Avalonia.Layout.HorizontalAlignment.Right : Avalonia.Layout.HorizontalAlignment.Stretch;
         Inspector.Width = showCompactEditor ? state.CompactEditorWidth : double.NaN;
@@ -273,8 +305,13 @@ public partial class MainWindow : Window
         ShellGrid.ColumnDefinitions = state.Mode switch
         {
             AdaptiveShellMode.Compact => new ColumnDefinitions("52,0,*,0"),
-            AdaptiveShellMode.Medium => new ColumnDefinitions("56,220,*,0"),
-            _ => new ColumnDefinitions("56,240,*,260"),
+            AdaptiveShellMode.Medium => new ColumnDefinitions(showConnectionTree ? "56,220,*,0" : "56,0,*,0"),
+            _ => new ColumnDefinitions($"56,{(showConnectionTree ? 240 : 0)},*,{(showInspector ? 260 : 0)}"),
         };
+
+        LeftPanelHandle.IsVisible = state.ShowConnectionTree;
+        LeftPanelHandle.Content = showConnectionTree ? "‹" : "›";
+        RightPanelHandle.IsVisible = state.ShowInspector;
+        RightPanelHandle.Content = showInspector ? "›" : "‹";
     }
 }
