@@ -90,7 +90,9 @@ public enum SessionState
 internal static class SessionStateExtensions
 {
     public static bool IsOpen(this SessionState state) =>
-        state is SessionState.Connecting or SessionState.ExternalClientLaunched or SessionState.Connected or SessionState.Disconnecting;
+        // An external client is handed off to another process and cannot be tracked
+        // reliably by the workspace. It must not permanently block a retry.
+        state is SessionState.Connecting or SessionState.Connected or SessionState.Disconnecting;
 
     public static bool CanTransitionTo(this SessionState state, SessionState next) =>
         (state, next) switch

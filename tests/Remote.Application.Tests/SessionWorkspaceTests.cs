@@ -35,6 +35,20 @@ public sealed class SessionWorkspaceTests
     }
 
     [Fact]
+    public void RequestOpen_AfterExternalClientHandoff_AllowsRetry()
+    {
+        var workspace = new SessionWorkspace();
+        var connection = CreateConnection();
+        var session = workspace.OpenNew(connection);
+        workspace.SetState(session.Id, SessionState.ExternalClientLaunched);
+
+        var request = workspace.RequestOpen(connection);
+
+        Assert.False(request.RequiresChoice);
+        Assert.Empty(request.ExistingSessions);
+    }
+
+    [Fact]
     public void SetState_WhenTransitionIsInvalid_RejectsChange()
     {
         var workspace = new SessionWorkspace();
