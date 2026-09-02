@@ -77,8 +77,8 @@
       </Grid>
       <Border x:Name="Inspector" Grid.Column="3" Background="#171F2E" BorderBrush="#293248" BorderThickness="1,0,0,0" Padding="16">
         <Grid>
-        <StackPanel Spacing="16" IsVisible="{Binding !IsEditingConnection}">
-          <StackPanel><TextBlock Text="{Binding SelectedConnection.Name, FallbackValue=Windows Prod}" FontSize="16" FontWeight="SemiBold"/><TextBlock Text="{Binding SelectedConnection.Protocol, FallbackValue=RDP}" FontSize="11" Foreground="#8290A7"/></StackPanel>
+          <StackPanel Spacing="16" IsVisible="{Binding !IsEditingConnection}">
+          <Grid ColumnDefinitions="*,Auto"><StackPanel><TextBlock Text="{Binding SelectedConnection.Name, FallbackValue=Windows Prod}" FontSize="16" FontWeight="SemiBold"/><TextBlock Text="{Binding SelectedConnection.Protocol, FallbackValue=RDP}" FontSize="11" Foreground="#8290A7"/></StackPanel><Button Grid.Column="1" Content="編輯" Classes="tool" Command="{Binding BeginEditConnectionCommand}"/></Grid>
           <StackPanel Spacing="5"><TextBlock Text="主機" FontSize="10" Foreground="#7F8DA5"/><TextBlock Text="{Binding SelectedConnection.Endpoint, FallbackValue=10.20.0.24:3389}" FontSize="12"/></StackPanel>
           <StackPanel Spacing="6"><TextBlock Text="身份卡" FontSize="10" Foreground="#7F8DA5"/><Border Background="#20293B" BorderBrush="#414C68" BorderThickness="1" CornerRadius="8" Padding="10"><StackPanel Spacing="5"><TextBlock Text="Windows Admin" FontSize="12"/><TextBlock Text="CORP\operator" FontSize="10" Foreground="#8290A7"/><Border HorizontalAlignment="Left" Background="#493F78" CornerRadius="5" Padding="6,3"><TextBlock Text="{Binding SelectedConnection.IdentityScope, FallbackValue=RDP only}" Foreground="#C9C6FF" FontSize="9"/></Border></StackPanel></Border></StackPanel>
           <StackPanel Spacing="5"><TextBlock Text="工作階段權限" FontSize="10" Foreground="#7F8DA5"/><ToggleSwitch IsChecked="{Binding IsViewOnly}" Content="View Only"/><TextBlock Text="{Binding StatusDetail}" FontSize="10" Foreground="#A9B8CE" TextWrapping="Wrap"/></StackPanel>
@@ -94,7 +94,7 @@
         </StackPanel>
         <ScrollViewer IsVisible="{Binding IsEditingConnection}">
           <StackPanel Spacing="12">
-            <TextBlock Text="新增連線" FontSize="16" FontWeight="SemiBold"/>
+            <TextBlock Text="{Binding ConnectionEditorTitle}" FontSize="16" FontWeight="SemiBold"/>
             <StackPanel Spacing="4"><TextBlock Text="協定" FontSize="10" Foreground="#7F8DA5"/><ComboBox ItemsSource="{Binding ConnectionProtocols}" SelectedItem="{Binding EditProtocol}"/></StackPanel>
             <StackPanel Spacing="4"><TextBlock Text="名稱" FontSize="10" Foreground="#7F8DA5"/><TextBox Text="{Binding EditName}" PlaceholderText="例如：Windows Prod"/></StackPanel>
             <StackPanel Spacing="4" IsVisible="{Binding IsEditingNetwork}"><TextBlock Text="主機或 IP" FontSize="10" Foreground="#7F8DA5"/><TextBox Text="{Binding EditHost}" PlaceholderText="server.example 或 10.20.0.24"/></StackPanel>

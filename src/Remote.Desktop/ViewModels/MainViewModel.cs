@@ -43,6 +43,7 @@ public sealed partial class MainViewModel : ViewModelBase
     private readonly string _workspacePath;
     private readonly string _backupDirectory;
     private readonly List<ConnectionFolder> _folders = [];
+    private ConnectionId? _editingConnectionId;
     private CredentialVault? _vault;
     private string _activeMasterPassword = string.Empty;
     private VaultId _primaryVaultId = new(Guid.NewGuid());
@@ -147,6 +148,8 @@ public sealed partial class MainViewModel : ViewModelBase
     public bool IsEditingRdp => string.Equals(EditProtocol, "rdp", StringComparison.OrdinalIgnoreCase);
 
     public bool IsEditingNetwork => !string.Equals(EditProtocol, "terminal", StringComparison.OrdinalIgnoreCase);
+
+    public string ConnectionEditorTitle => _editingConnectionId is null ? "新增連線" : "編輯連線";
 
     [ObservableProperty]
     private string editHost = string.Empty;
@@ -597,6 +600,8 @@ public sealed partial class MainViewModel : ViewModelBase
     [RelayCommand]
     private void BeginNewConnection()
     {
+        _editingConnectionId = null;
+        OnPropertyChanged(nameof(ConnectionEditorTitle));
         EditName = string.Empty;
         EditProtocol = "rdp";
         EditHost = string.Empty;
@@ -612,8 +617,39 @@ public sealed partial class MainViewModel : ViewModelBase
     }
 
     [RelayCommand]
+    private void BeginEditConnection()
+    {
+        if (SelectedConnection is not { } selected)
+        {
+            SessionStatusLabel = "請先選取要編輯的連線";
+            return;
+        }
+
+        var profile = selected.Profile;
+        var settings = RdpConnectionSettings.FromProtocolSettings(profile.ProtocolSettings);
+        _editingConnectionId = profile.Id;
+        EditName = profile.Name;
+        EditProtocol = profile.ProtocolId;
+        EditHost = profile.Endpoint.Host;
+        EditPort = profile.ProtocolId is "terminal"
+            ? "0"
+            : profile.Endpoint.Port.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        EditGateway = settings.GatewayHost ?? string.Empty;
+        EditUseAllMonitors = profile.Display.MonitorSelection is MonitorSelection.All;
+        EditViewOnly = profile.DefaultAccessMode is SessionAccessMode.ViewOnly;
+        EditRedirectClipboard = settings.RedirectClipboard;
+        EditRedirectPrinters = settings.RedirectPrinters;
+        EditRedirectDrives = settings.RedirectDrives;
+        ConnectionEditorError = string.Empty;
+        OnPropertyChanged(nameof(ConnectionEditorTitle));
+        IsEditingConnection = true;
+    }
+
+    [RelayCommand]
     private void CancelConnectionEdit()
     {
+        _editingConnectionId = null;
+        OnPropertyChanged(nameof(ConnectionEditorTitle));
         ConnectionEditorError = string.Empty;
         IsEditingConnection = false;
     }
@@ -667,12 +703,17 @@ public sealed partial class MainViewModel : ViewModelBase
         var endpoint = EditProtocol == "terminal"
             ? new Uri("terminal://localhost")
             : new UriBuilder(scheme, host, port).Uri;
+        var existing = _editingConnectionId is { } editingId
+            ? Connections.FirstOrDefault(item => item.Profile.Id == editingId)
+            : null;
         var profile = new ConnectionProfile
         {
-            Id = ConnectionId.New(),
+            Id = existing?.Profile.Id ?? ConnectionId.New(),
             Name = name,
             Endpoint = endpoint,
             ProtocolId = EditProtocol,
+            FolderId = existing?.Profile.FolderId,
+            Credential = existing?.Profile.Credential ?? ConnectionCredentialReference.Inherited,
             DefaultAccessMode = EditViewOnly ? SessionAccessMode.ViewOnly : SessionAccessMode.Interactive,
             Display = new DisplayPreferences
             {
@@ -680,13 +721,26 @@ public sealed partial class MainViewModel : ViewModelBase
             },
             ProtocolSettings = IsEditingRdp ? settings.ToProtocolSettings() : new ProtocolSettings(),
         };
-        var item = new ConnectionListItem(profile, $"{EditProtocol.ToUpperInvariant()} only", false);
-        Connections.Add(item);
-        ConnectionTree.Add(ConnectionTreeDisplayItem.ForConnection(item.Profile));
+        var item = new ConnectionListItem(
+            profile,
+            existing?.IdentityScope ?? $"{EditProtocol.ToUpperInvariant()} only",
+            existing?.IsFavorite ?? false);
+        if (existing is null)
+        {
+            Connections.Add(item);
+        }
+        else
+        {
+            Connections[Connections.IndexOf(existing)] = item;
+        }
+
+        RebuildConnectionTree(profile.Id);
         SelectedConnection = item;
-        SelectedTreeItem = ConnectionTree[^1];
+        SelectedTreeItem = FindConnectionTreeItem(ConnectionTree, profile.Id);
         IsViewOnly = EditViewOnly;
         ConnectionEditorError = string.Empty;
+        _editingConnectionId = null;
+        OnPropertyChanged(nameof(ConnectionEditorTitle));
         IsEditingConnection = false;
         if (!IsVaultLocked)
         {
