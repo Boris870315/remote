@@ -198,6 +198,8 @@ public sealed partial class MainViewModel : ViewModelBase
 
     public bool IsEditingNetwork => !string.Equals(EditProtocol, "terminal", StringComparison.OrdinalIgnoreCase);
 
+    public bool IsEditingTerminal => string.Equals(EditProtocol, "terminal", StringComparison.OrdinalIgnoreCase);
+
     public string ConnectionEditorTitle => _editingConnectionId is null ? "新增連線" : "編輯連線";
 
     [ObservableProperty]
@@ -247,6 +249,12 @@ public sealed partial class MainViewModel : ViewModelBase
 
     [ObservableProperty]
     private bool editRedirectDrives;
+
+    [ObservableProperty]
+    private string editShellPath = string.Empty;
+
+    [ObservableProperty]
+    private string editWorkingDirectory = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
 
     [ObservableProperty]
     private string connectionEditorError = string.Empty;
@@ -486,6 +494,7 @@ public sealed partial class MainViewModel : ViewModelBase
         };
         OnPropertyChanged(nameof(IsEditingRdp));
         OnPropertyChanged(nameof(IsEditingNetwork));
+        OnPropertyChanged(nameof(IsEditingTerminal));
         RefreshCompatibleVaultCredentials();
         OnPropertyChanged(nameof(SelectedCredentialName));
         OnPropertyChanged(nameof(SelectedCredentialUsername));
@@ -1248,6 +1257,8 @@ public sealed partial class MainViewModel : ViewModelBase
         EditRedirectClipboard = true;
         EditRedirectPrinters = false;
         EditRedirectDrives = false;
+        EditShellPath = string.Empty;
+        EditWorkingDirectory = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         EditCredentialSource = "從資料夾繼承";
         EditSelectedCredential = null;
         ClearConnectionCredentialEditor();
@@ -1283,6 +1294,9 @@ public sealed partial class MainViewModel : ViewModelBase
         EditRedirectClipboard = settings.RedirectClipboard;
         EditRedirectPrinters = settings.RedirectPrinters;
         EditRedirectDrives = settings.RedirectDrives;
+        var terminalSettings = LocalTerminalOptions.FromProtocolSettings(profile.ProtocolSettings);
+        EditShellPath = terminalSettings.ShellPath ?? string.Empty;
+        EditWorkingDirectory = terminalSettings.WorkingDirectory;
         RefreshCompatibleVaultCredentials();
         EditCredentialSource = profile.Credential.Kind switch
         {
@@ -1332,6 +1346,31 @@ public sealed partial class MainViewModel : ViewModelBase
         {
             ConnectionEditorError = "主機名稱或 IP 位址格式無效";
             return;
+        }
+
+        LocalTerminalOptions? terminalOptions = null;
+        if (IsEditingTerminal)
+        {
+            if (string.IsNullOrWhiteSpace(EditWorkingDirectory) || !Directory.Exists(EditWorkingDirectory.Trim()))
+            {
+                ConnectionEditorError = "Terminal 啟動目錄不存在";
+                return;
+            }
+            try
+            {
+                _ = LocalTerminalSession.ResolveShell(string.IsNullOrWhiteSpace(EditShellPath) ? null : EditShellPath.Trim());
+            }
+            catch (Exception exception) when (exception is IOException or ArgumentException)
+            {
+                ConnectionEditorError = exception.Message;
+                return;
+            }
+            terminalOptions = new LocalTerminalOptions
+            {
+                ShellPath = string.IsNullOrWhiteSpace(EditShellPath) ? null : Path.GetFullPath(EditShellPath.Trim()),
+                WorkingDirectory = Path.GetFullPath(EditWorkingDirectory.Trim()),
+                AccessMode = EditViewOnly ? SessionAccessMode.ViewOnly : SessionAccessMode.Interactive,
+            };
         }
 
         var settings = new RdpConnectionSettings
@@ -1438,7 +1477,9 @@ public sealed partial class MainViewModel : ViewModelBase
             {
                 MonitorSelection = EditUseAllMonitors ? MonitorSelection.All : MonitorSelection.Single,
             },
-            ProtocolSettings = IsEditingRdp ? settings.ToProtocolSettings() : new ProtocolSettings(),
+            ProtocolSettings = IsEditingRdp
+                ? settings.ToProtocolSettings()
+                : terminalOptions?.ToProtocolSettings() ?? new ProtocolSettings(),
         };
         var item = new ConnectionListItem(
             profile,
@@ -2007,11 +2048,9 @@ public sealed partial class MainViewModel : ViewModelBase
         _localTerminal = new LocalTerminalSession();
         try
         {
-            await _localTerminal.StartAsync(new LocalTerminalOptions
+            var savedOptions = LocalTerminalOptions.FromProtocolSettings(connection.ProtocolSettings);
+            await _localTerminal.StartAsync(savedOptions with
             {
-                ShellPath = connection.ProtocolSettings.Get("shellPath"),
-                WorkingDirectory = connection.ProtocolSettings.Get("workingDirectory")
-                    ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
                 AccessMode = connection.DefaultAccessMode,
             }, _localTerminalCancellation.Token);
             TerminalText = string.Empty;
