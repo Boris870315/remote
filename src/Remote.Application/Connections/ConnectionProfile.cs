@@ -24,6 +24,10 @@ public sealed record ConnectionProfile
     public DisplayPreferences Display { get; init; } = new();
 
     public ProtocolSettings ProtocolSettings { get; init; } = new();
+
+    public bool IsFavorite { get; init; }
+
+    public IReadOnlyList<string> Tags { get; init; } = [];
 }
 
 public readonly record struct ConnectionId(Guid Value)

@@ -74,7 +74,9 @@ public sealed class EncryptedWorkspaceRepository(EncryptedWorkspaceFile workspac
             ToDto(connection.Credential),
             connection.DefaultAccessMode,
             connection.Display,
-            connection.ProtocolSettings.Values.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase))).ToArray(),
+            connection.ProtocolSettings.Values.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase),
+            connection.IsFavorite,
+            connection.Tags.ToArray())).ToArray(),
         document.IdentityCards.Select(card => new IdentityCardDto(
             card.VaultId.Value,
             card.CredentialId.Value,
@@ -117,6 +119,8 @@ public sealed class EncryptedWorkspaceRepository(EncryptedWorkspaceFile workspac
                 DefaultAccessMode = connection.AccessMode,
                 Display = connection.Display,
                 ProtocolSettings = FromSettings(connection.Settings),
+                IsFavorite = connection.IsFavorite,
+                Tags = connection.Tags ?? [],
             }).ToArray(),
             IdentityCards = dto.IdentityCards.Select(card => new IdentityCard
             {
@@ -191,7 +195,9 @@ public sealed class EncryptedWorkspaceRepository(EncryptedWorkspaceFile workspac
         CredentialDto Credential,
         SessionAccessMode AccessMode,
         DisplayPreferences Display,
-        Dictionary<string, string> Settings);
+        Dictionary<string, string> Settings,
+        bool IsFavorite = false,
+        string[]? Tags = null);
 
     private sealed record IdentityCardDto(
         Guid VaultId,

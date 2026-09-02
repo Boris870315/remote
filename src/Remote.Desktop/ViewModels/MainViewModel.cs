@@ -260,6 +260,12 @@ public sealed partial class MainViewModel : ViewModelBase
     private string editWorkingDirectory = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
 
     [ObservableProperty]
+    private bool editIsFavorite;
+
+    [ObservableProperty]
+    private string editTags = string.Empty;
+
+    [ObservableProperty]
     private string connectionEditorError = string.Empty;
 
     [ObservableProperty]
@@ -1265,6 +1271,8 @@ public sealed partial class MainViewModel : ViewModelBase
         EditRedirectDrives = false;
         EditShellPath = string.Empty;
         EditWorkingDirectory = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        EditIsFavorite = false;
+        EditTags = string.Empty;
         EditCredentialSource = "從資料夾繼承";
         EditSelectedCredential = null;
         ClearConnectionCredentialEditor();
@@ -1303,6 +1311,8 @@ public sealed partial class MainViewModel : ViewModelBase
         var terminalSettings = LocalTerminalOptions.FromProtocolSettings(profile.ProtocolSettings);
         EditShellPath = terminalSettings.ShellPath ?? string.Empty;
         EditWorkingDirectory = terminalSettings.WorkingDirectory;
+        EditIsFavorite = profile.IsFavorite;
+        EditTags = string.Join(", ", profile.Tags);
         RefreshCompatibleVaultCredentials();
         EditCredentialSource = profile.Credential.Kind switch
         {
@@ -1486,6 +1496,10 @@ public sealed partial class MainViewModel : ViewModelBase
             ProtocolSettings = IsEditingRdp
                 ? settings.ToProtocolSettings()
                 : terminalOptions?.ToProtocolSettings() ?? new ProtocolSettings(),
+            IsFavorite = EditIsFavorite,
+            Tags = EditTags.Split([',', '，'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Distinct(StringComparer.CurrentCultureIgnoreCase)
+                .ToArray(),
         };
         var item = new ConnectionListItem(
             profile,
@@ -1495,7 +1509,7 @@ public sealed partial class MainViewModel : ViewModelBase
                 CredentialReferenceKind.IdentityCard => $"{EditProtocol.ToUpperInvariant()} ID Card",
                 _ => "Prompt every time",
             },
-            existing?.IsFavorite ?? false);
+            profile.IsFavorite);
         if (existing is null)
         {
             Connections.Add(item);
@@ -2230,7 +2244,7 @@ public sealed partial class MainViewModel : ViewModelBase
         Connections.Clear();
         foreach (var connection in document.Connections)
         {
-            Connections.Add(new ConnectionListItem(connection, $"{connection.ProtocolId.ToUpperInvariant()} only", false));
+            Connections.Add(new ConnectionListItem(connection, $"{connection.ProtocolId.ToUpperInvariant()} only", connection.IsFavorite));
         }
 
         ConnectionTree.Clear();
@@ -2276,7 +2290,7 @@ public sealed partial class MainViewModel : ViewModelBase
                 Connections.Add(new ConnectionListItem(
                     connection,
                     $"{connection.ProtocolId.ToUpperInvariant()} imported",
-                    false));
+                    connection.IsFavorite));
             }
         }
 
@@ -2534,7 +2548,8 @@ public sealed partial class MainViewModel : ViewModelBase
     private static ConnectionTreeDisplayItem? FilterTreeItem(ConnectionTreeDisplayItem item, string query)
     {
         if (item.Name.Contains(query, StringComparison.CurrentCultureIgnoreCase) ||
-            item.Detail.Contains(query, StringComparison.CurrentCultureIgnoreCase))
+            item.Detail.Contains(query, StringComparison.CurrentCultureIgnoreCase) ||
+            item.Connection?.Tags.Any(tag => tag.Contains(query, StringComparison.CurrentCultureIgnoreCase)) is true)
         {
             return item;
         }
@@ -2721,7 +2736,7 @@ public sealed record ConnectionTreeDisplayItem(
     public static ConnectionTreeDisplayItem ForConnection(ConnectionProfile connection) =>
         new(
             connection.Name,
-            $"{connection.ProtocolId.ToUpperInvariant()} · {connection.Endpoint.Host}:{connection.Endpoint.Port}",
+            $"{(connection.IsFavorite ? "★ · " : string.Empty)}{connection.ProtocolId.ToUpperInvariant()} · {connection.Endpoint.Host}:{connection.Endpoint.Port}",
             false,
             null,
             connection,
@@ -2740,4 +2755,6 @@ public sealed record ConnectionListItem(
     public string Endpoint => Profile.Endpoint.Port < 0
         ? Profile.Endpoint.Host
         : $"{Profile.Endpoint.Host}:{Profile.Endpoint.Port}";
+
+    public string TagsDisplay => Profile.Tags.Count == 0 ? "無標籤" : string.Join(" · ", Profile.Tags);
 }

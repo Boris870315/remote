@@ -45,6 +45,8 @@ public sealed class EncryptedWorkspaceRepositoryTests
                         ProtocolId = "ssh2",
                         FolderId = folderId,
                         DefaultAccessMode = SessionAccessMode.ViewOnly,
+                        IsFavorite = true,
+                        Tags = ["production", "linux"],
                         ProtocolSettings = new ProtocolSettings().Set("keepAliveSeconds", "30"),
                     },
                 ],
@@ -71,6 +73,8 @@ public sealed class EncryptedWorkspaceRepositoryTests
             Assert.Equal(folderId, connection.FolderId);
             Assert.Equal(SessionAccessMode.ViewOnly, connection.DefaultAccessMode);
             Assert.Equal("30", connection.ProtocolSettings.Get("keepAliveSeconds"));
+            Assert.True(connection.IsFavorite);
+            Assert.Equal(["production", "linux"], connection.Tags);
             Assert.Equal("operator", Assert.Single(loaded.IdentityCards).Username);
             Assert.DoesNotContain("operator", Encoding.UTF8.GetString(await File.ReadAllBytesAsync(path)), StringComparison.Ordinal);
         }
