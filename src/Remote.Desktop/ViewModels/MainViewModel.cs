@@ -38,6 +38,7 @@ public sealed partial class MainViewModel : ViewModelBase
     private readonly Dictionary<SessionId, VncSessionRuntime> _vncSessions = [];
     private SshTerminalSession? _sshSession;
     private CancellationTokenSource? _sshCancellation;
+    private readonly Dictionary<SessionId, SshSessionRuntime> _sshSessions = [];
     private LocalTerminalSession? _localTerminal;
     private CancellationTokenSource? _localTerminalCancellation;
     private readonly TerminalOutputDecoder _terminalOutputDecoder = new();
@@ -1897,6 +1898,13 @@ public sealed partial class MainViewModel : ViewModelBase
             RemoteFrame = vnc.Frame;
             OnPropertyChanged(nameof(IsVncSessionActive));
         }
+        if (_sshSessions.TryGetValue(tab.SessionId, out var ssh))
+        {
+            _sshSession = ssh.Session;
+            _sshCancellation = ssh.Cancellation;
+            TerminalText = ssh.TerminalText;
+            IsTerminalActive = true;
+        }
     }
 
     private void UpdateSessionTab(SessionId sessionId, SessionState state)
@@ -1988,13 +1996,16 @@ public sealed partial class MainViewModel : ViewModelBase
             return;
         }
 
-        await StopSshAsync();
-        _sshCancellation = new CancellationTokenSource();
-        _sshSession = new SshTerminalSession();
+        var cancellation = new CancellationTokenSource();
+        var sshSession = new SshTerminalSession();
+        var runtime = new SshSessionRuntime(sshSession, cancellation);
+        _sshSessions.Add(sessionId, runtime);
+        _sshCancellation = cancellation;
+        _sshSession = sshSession;
         SshHostKeyInfo? acceptedHostKey = null;
         try
         {
-            await _sshSession.ConnectAsync(new SshSessionOptions
+            await sshSession.ConnectAsync(new SshSessionOptions
             {
                 Endpoint = connection.Endpoint,
                 Username = username,
@@ -2004,7 +2015,7 @@ public sealed partial class MainViewModel : ViewModelBase
                     ? key => { acceptedHostKey = key; return true; }
                     : null,
                 AccessMode = connection.DefaultAccessMode,
-            }, _sshCancellation.Token);
+            }, cancellation.Token);
             SessionPassword = string.Empty;
             if (acceptedHostKey is not null)
             {
@@ -2018,11 +2029,10 @@ public sealed partial class MainViewModel : ViewModelBase
             }
 
             TerminalText = string.Empty;
-            _terminalOutputDecoder.Reset();
             IsTerminalActive = true;
             SetSessionState(sessionId, SessionState.Connected);
             SessionStatusLabel = $"SSH2 已連線 · {connection.Endpoint.Host} · {AccessModeLabel}";
-            _ = ObserveSshAsync(_sshSession, sessionId, _sshCancellation.Token);
+            _ = ObserveSshAsync(runtime, sessionId);
         }
         catch (Exception exception) when (
             exception is IOException or InvalidOperationException or Renci.SshNet.Common.SshException
@@ -2035,7 +2045,7 @@ public sealed partial class MainViewModel : ViewModelBase
                 ? "authentication-failed"
                 : exception is TimeoutException ? "connection-timeout" : "connection-failed";
             await ReportMajorErrorAsync("SSH2", code, $"無法連線到 {connection.Endpoint.Host}:{connection.Endpoint.Port}。{exception.Message}", exception);
-            await StopSshAsync();
+            await StopSshSessionAsync(sessionId);
         }
         finally
         {
@@ -2103,24 +2113,24 @@ public sealed partial class MainViewModel : ViewModelBase
         }
     }
 
-    private async Task ObserveSshAsync(
-        SshTerminalSession session,
-        SessionId sessionId,
-        CancellationToken cancellationToken)
+    private async Task ObserveSshAsync(SshSessionRuntime runtime, SessionId sessionId)
     {
+        var cancellationToken = runtime.Cancellation.Token;
         var buffer = new byte[16 * 1024];
         try
         {
             while (!cancellationToken.IsCancellationRequested)
             {
-                var read = await session.ReadAsync(buffer, cancellationToken);
+                var read = await runtime.Session.ReadAsync(buffer, cancellationToken);
                 if (read == 0)
                 {
                     break;
                 }
 
-                var text = _terminalOutputDecoder.Decode(buffer.AsSpan(0, read));
-                await Dispatcher.UIThread.InvokeAsync(() => AppendTerminalText(text));
+                var text = runtime.Decoder.Decode(buffer.AsSpan(0, read));
+                runtime.Append(text);
+                if (SelectedSessionTab?.SessionId == sessionId)
+                    await Dispatcher.UIThread.InvokeAsync(() => TerminalText = runtime.TerminalText);
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -2141,16 +2151,35 @@ public sealed partial class MainViewModel : ViewModelBase
 
     private async Task StopSshAsync()
     {
-        _sshCancellation?.Cancel();
-        _sshCancellation?.Dispose();
-        _sshCancellation = null;
-        if (_sshSession is not null)
+        foreach (var sessionId in _sshSessions.Keys.ToArray())
         {
-            await _sshSession.DisposeAsync();
-            _sshSession = null;
+            await StopSshSessionAsync(sessionId);
         }
+    }
 
-        IsTerminalActive = false;
+    private async Task StopSshSessionAsync(SessionId sessionId)
+    {
+        if (!_sshSessions.Remove(sessionId, out var runtime)) return;
+        runtime.Cancellation.Cancel();
+        await runtime.Session.DisposeAsync();
+        runtime.Cancellation.Dispose();
+        if (ReferenceEquals(_sshSession, runtime.Session))
+        {
+            _sshSession = null;
+            _sshCancellation = null;
+            IsTerminalActive = false;
+        }
+    }
+
+    private sealed class SshSessionRuntime(SshTerminalSession session, CancellationTokenSource cancellation)
+    {
+        public SshTerminalSession Session { get; } = session;
+        public CancellationTokenSource Cancellation { get; } = cancellation;
+        public TerminalOutputDecoder Decoder { get; } = new();
+        public string TerminalText { get; private set; } = string.Empty;
+        public void Append(string text) => TerminalText = (TerminalText + text) is { Length: > 1_000_000 } value
+            ? value[^750_000..]
+            : TerminalText + text;
     }
 
     private async Task LaunchLocalTerminalAsync(ConnectionProfile connection, SessionId sessionId)
