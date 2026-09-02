@@ -41,6 +41,7 @@ public sealed partial class MainViewModel : ViewModelBase
     private readonly Dictionary<SessionId, SshSessionRuntime> _sshSessions = [];
     private LocalTerminalSession? _localTerminal;
     private CancellationTokenSource? _localTerminalCancellation;
+    private readonly Dictionary<SessionId, LocalTerminalRuntime> _localTerminalSessions = [];
     private readonly TerminalOutputDecoder _terminalOutputDecoder = new();
     private readonly EncryptedWorkspaceRepository _workspaceRepository;
     private readonly EncryptedVaultArchiveService _vaultArchiveService;
@@ -1784,18 +1785,12 @@ public sealed partial class MainViewModel : ViewModelBase
         SelectSessionTab(tab);
         if (string.Equals(connection.ProtocolId, "vnc", StringComparison.OrdinalIgnoreCase))
         {
-            await StopSshAsync();
-            await StopLocalTerminalAsync();
-            CloseWebSession();
             await LaunchVncAsync(connection, session.Id);
             return;
         }
 
         if (string.Equals(connection.ProtocolId, "ssh2", StringComparison.OrdinalIgnoreCase))
         {
-            await StopVncAsync();
-            await StopLocalTerminalAsync();
-            CloseWebSession();
             await LaunchSshAsync(connection, session.Id);
             return;
         }
@@ -1815,9 +1810,6 @@ public sealed partial class MainViewModel : ViewModelBase
 
         if (string.Equals(connection.ProtocolId, "terminal", StringComparison.OrdinalIgnoreCase))
         {
-            await StopVncAsync();
-            await StopSshAsync();
-            CloseWebSession();
             await LaunchLocalTerminalAsync(connection, session.Id);
             return;
         }
@@ -1827,11 +1819,6 @@ public sealed partial class MainViewModel : ViewModelBase
             SessionStatusLabel = $"{session.State} · 等待 {connection.ProtocolId.ToUpperInvariant()} Adapter Host";
             return;
         }
-
-        await StopVncAsync();
-        await StopSshAsync();
-        await StopLocalTerminalAsync();
-        CloseWebSession();
 
         byte[]? rdpSecret = null;
         try
@@ -1939,6 +1926,10 @@ public sealed partial class MainViewModel : ViewModelBase
         }
 
         SelectedSessionTab = tab;
+        RemoteFrame = null;
+        IsTerminalActive = false;
+        IsWebSessionActive = false;
+        IsRdpSessionActive = string.Equals(tab.ProtocolLabel, "RDP", StringComparison.OrdinalIgnoreCase);
         if (_vncSessions.TryGetValue(tab.SessionId, out var vnc))
         {
             _vncClient = vnc.Client;
@@ -1952,6 +1943,13 @@ public sealed partial class MainViewModel : ViewModelBase
             _sshSession = ssh.Session;
             _sshCancellation = ssh.Cancellation;
             TerminalText = ssh.TerminalText;
+            IsTerminalActive = true;
+        }
+        if (_localTerminalSessions.TryGetValue(tab.SessionId, out var terminal))
+        {
+            _localTerminal = terminal.Session;
+            _localTerminalCancellation = terminal.Cancellation;
+            TerminalText = terminal.TerminalText;
             IsTerminalActive = true;
         }
     }
@@ -1975,7 +1973,7 @@ public sealed partial class MainViewModel : ViewModelBase
             EmbeddedRdpCloseRequested is { } closeRdp)
             await closeRdp(tab.SessionId);
         if (string.Equals(session.ProtocolId, "terminal", StringComparison.OrdinalIgnoreCase))
-            await StopLocalTerminalAsync();
+            await StopLocalTerminalSessionAsync(tab.SessionId);
         if (session.ProtocolId is "http" or "https")
             CloseWebSession();
 
@@ -2278,51 +2276,52 @@ public sealed partial class MainViewModel : ViewModelBase
 
     private async Task LaunchLocalTerminalAsync(ConnectionProfile connection, SessionId sessionId)
     {
-        await StopLocalTerminalAsync();
-        _localTerminalCancellation = new CancellationTokenSource();
-        _localTerminal = new LocalTerminalSession();
+        var cancellation = new CancellationTokenSource();
+        var session = new LocalTerminalSession();
+        var runtime = new LocalTerminalRuntime(session, cancellation);
+        _localTerminalSessions.Add(sessionId, runtime);
+        _localTerminalCancellation = cancellation;
+        _localTerminal = session;
         try
         {
             var savedOptions = LocalTerminalOptions.FromProtocolSettings(connection.ProtocolSettings);
-            await _localTerminal.StartAsync(savedOptions with
+            await session.StartAsync(savedOptions with
             {
                 AccessMode = connection.DefaultAccessMode,
-            }, _localTerminalCancellation.Token);
+            }, cancellation.Token);
             TerminalText = string.Empty;
-            _terminalOutputDecoder.Reset();
             IsTerminalActive = true;
             SetSessionState(sessionId, SessionState.Connected);
-            SessionStatusLabel = $"本機 Terminal 已啟動 · PID {_localTerminal.ProcessId} · {AccessModeLabel}";
-            _ = ObserveLocalTerminalAsync(_localTerminal, sessionId, _localTerminalCancellation.Token);
+            SessionStatusLabel = $"本機 Terminal 已啟動 · PID {session.ProcessId} · {AccessModeLabel}";
+            _ = ObserveLocalTerminalAsync(runtime, sessionId);
         }
         catch (Exception exception) when (exception is IOException or InvalidOperationException or PlatformNotSupportedException)
         {
             SetSessionState(sessionId, SessionState.Faulted, exception.Message);
             SessionStatusLabel = $"Terminal 啟動失敗：{exception.Message}";
             await ReportMajorErrorAsync("Terminal", "launch-failed", SessionStatusLabel, exception);
-            await StopLocalTerminalAsync();
+            await StopLocalTerminalSessionAsync(sessionId);
         }
     }
 
-    private async Task ObserveLocalTerminalAsync(
-        LocalTerminalSession terminal,
-        SessionId sessionId,
-        CancellationToken cancellationToken)
+    private async Task ObserveLocalTerminalAsync(LocalTerminalRuntime runtime, SessionId sessionId)
     {
+        var cancellationToken = runtime.Cancellation.Token;
         var buffer = new byte[16 * 1024];
         try
         {
             while (!cancellationToken.IsCancellationRequested)
             {
-                var read = await terminal.ReadAsync(buffer, cancellationToken);
+                var read = await runtime.Session.ReadAsync(buffer, cancellationToken);
                 if (read == 0)
                 {
                     await Dispatcher.UIThread.InvokeAsync(() => SessionStatusLabel = "本機 Terminal 已結束");
                     break;
                 }
 
-                var text = _terminalOutputDecoder.Decode(buffer.AsSpan(0, read));
-                await Dispatcher.UIThread.InvokeAsync(() => AppendTerminalText(text));
+                runtime.Append(runtime.Decoder.Decode(buffer.AsSpan(0, read)));
+                if (SelectedSessionTab?.SessionId == sessionId)
+                    await Dispatcher.UIThread.InvokeAsync(() => TerminalText = runtime.TerminalText);
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -2343,16 +2342,37 @@ public sealed partial class MainViewModel : ViewModelBase
 
     private async Task StopLocalTerminalAsync()
     {
-        _localTerminalCancellation?.Cancel();
-        _localTerminalCancellation?.Dispose();
-        _localTerminalCancellation = null;
-        if (_localTerminal is not null)
+        foreach (var sessionId in _localTerminalSessions.Keys.ToArray())
         {
-            await _localTerminal.DisposeAsync();
-            _localTerminal = null;
+            await StopLocalTerminalSessionAsync(sessionId);
         }
+    }
 
-        IsTerminalActive = false;
+    private async Task StopLocalTerminalSessionAsync(SessionId sessionId)
+    {
+        if (!_localTerminalSessions.Remove(sessionId, out var runtime)) return;
+        runtime.Cancellation.Cancel();
+        await runtime.Session.DisposeAsync();
+        runtime.Cancellation.Dispose();
+        if (ReferenceEquals(_localTerminal, runtime.Session))
+        {
+            _localTerminal = null;
+            _localTerminalCancellation = null;
+            IsTerminalActive = false;
+        }
+    }
+
+    private sealed class LocalTerminalRuntime(LocalTerminalSession session, CancellationTokenSource cancellation)
+    {
+        public LocalTerminalSession Session { get; } = session;
+        public CancellationTokenSource Cancellation { get; } = cancellation;
+        public TerminalOutputDecoder Decoder { get; } = new();
+        public string TerminalText { get; private set; } = string.Empty;
+        public void Append(string text)
+        {
+            TerminalText += text;
+            if (TerminalText.Length > 1_000_000) TerminalText = TerminalText[^750_000..];
+        }
     }
 
     private void AppendTerminalText(string text)
