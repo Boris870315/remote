@@ -48,7 +48,25 @@
         </Grid>
       </Border>
       <Grid x:Name="SessionWorkspace" Grid.Column="2" RowDefinitions="40,*" Background="#0D1220">
-        <Border x:Name="SessionTabs" Background="#141B29" BorderBrush="#293248" BorderThickness="0,0,0,1"><Button HorizontalAlignment="Left" Height="39" Padding="14,0" Background="Transparent" BorderBrush="#7778EF" BorderThickness="0,0,0,2" Content="{Binding SelectedConnection.Name, FallbackValue=Windows Prod}"/></Border>
+        <Border x:Name="SessionTabs" Background="#141B29" BorderBrush="#293248" BorderThickness="0,0,0,1">
+          <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+            <ItemsControl ItemsSource="{Binding SessionTabs}">
+              <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <Button Height="39" Padding="14,3" Background="Transparent" BorderBrush="#7778EF" BorderThickness="0,0,0,2"
+                          Command="{Binding $parent[Window].DataContext.SelectSessionTabCommand}" CommandParameter="{Binding}">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                      <TextBlock Text="{Binding ConnectionName}" VerticalAlignment="Center"/>
+                      <TextBlock Text="{Binding ProtocolLabel}" Foreground="#8FA0B8" FontSize="10" VerticalAlignment="Center"/>
+                      <TextBlock Text="{Binding StateLabel}" Foreground="#A7E0BA" FontSize="10" VerticalAlignment="Center"/>
+                    </StackPanel>
+                  </Button>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </ScrollViewer>
+        </Border>
         <Border Grid.Row="1" Margin="10" CornerRadius="9" BorderBrush="#334762" BorderThickness="1" Background="#172941" ClipToBounds="True">
           <Grid>
             <Border Background="#1D3653" Margin="1" CornerRadius="8"/>

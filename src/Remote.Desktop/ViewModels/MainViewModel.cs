@@ -60,6 +60,11 @@ public sealed partial class MainViewModel : ViewModelBase
 
     public event Func<RdpExternalLaunchRequest, Task>? EmbeddedRdpRequested;
 
+    public ObservableCollection<SessionTabViewModel> SessionTabs { get; } = [];
+
+    [ObservableProperty]
+    private SessionTabViewModel? selectedSessionTab;
+
     public MainViewModel()
         : this(
             new RemoteSessionService(),
@@ -1750,6 +1755,9 @@ public sealed partial class MainViewModel : ViewModelBase
         }
 
         var session = _sessionWorkspace.OpenNew(connection);
+        var tab = new SessionTabViewModel(session.Id, connection.Name, connection.ProtocolId);
+        SessionTabs.Add(tab);
+        SelectSessionTab(tab);
         if (string.Equals(connection.ProtocolId, "vnc", StringComparison.OrdinalIgnoreCase))
         {
             await StopSshAsync();
@@ -1776,7 +1784,7 @@ public sealed partial class MainViewModel : ViewModelBase
             WebSource = WebNavigationPolicy.ParseHttpEndpoint(connection.Endpoint.ToString());
             WebAddress = WebSource.ToString();
             IsWebSessionActive = true;
-            _sessionWorkspace.SetState(session.Id, SessionState.Connected);
+            SetSessionState(session.Id, SessionState.Connected);
             SessionStatusLabel = $"{connection.ProtocolId.ToUpperInvariant()} 已載入 · {connection.Endpoint.Host}";
             return;
         }
@@ -1833,7 +1841,7 @@ public sealed partial class MainViewModel : ViewModelBase
             {
                 IsRdpSessionActive = true;
                 await embeddedRdpRequested(launchRequest);
-                _sessionWorkspace.SetState(session.Id, SessionState.Connected);
+                SetSessionState(session.Id, SessionState.Connected);
                 SessionStatusLabel = rdpSecret is null
                     ? "RDP 已顯示在中央工作區 · 尚未指派 ID Card"
                     : "RDP 已顯示在中央工作區並使用 ID Card 自動登入";
@@ -1841,7 +1849,7 @@ public sealed partial class MainViewModel : ViewModelBase
             else
             {
                 await _rdpLauncher.LaunchAsync(launchRequest);
-                _sessionWorkspace.SetState(session.Id, SessionState.ExternalClientLaunched);
+                SetSessionState(session.Id, SessionState.ExternalClientLaunched);
                 SessionStatusLabel = rdpSecret is null
                     ? "已啟動平台 RDP 用戶端 · 尚未指派 ID Card"
                     : "已使用 ID Card 啟動 RDP 自動登入";
@@ -1851,7 +1859,7 @@ public sealed partial class MainViewModel : ViewModelBase
             exception is NotSupportedException or InvalidOperationException or System.ComponentModel.Win32Exception
                 or TimeoutException or System.Net.Sockets.SocketException)
         {
-            _sessionWorkspace.SetState(session.Id, SessionState.Faulted, exception.Message);
+            SetSessionState(session.Id, SessionState.Faulted, exception.Message);
             IsRdpSessionActive = false;
             SessionStatusLabel = exception.Message;
             await ReportMajorErrorAsync("RDP", "session-launch-failed", $"無法連線到 {connection.Endpoint.Host}:{connection.Endpoint.Port}。{exception.Message}", exception);
@@ -1864,6 +1872,52 @@ public sealed partial class MainViewModel : ViewModelBase
             }
             SessionPassword = string.Empty;
         }
+    }
+
+    [RelayCommand]
+    private void SelectSessionTab(SessionTabViewModel? tab)
+    {
+        if (tab is null)
+        {
+            return;
+        }
+
+        foreach (var item in SessionTabs)
+        {
+            item.IsSelected = ReferenceEquals(item, tab);
+        }
+
+        SelectedSessionTab = tab;
+    }
+
+    private void UpdateSessionTab(SessionId sessionId, SessionState state)
+    {
+        var tab = SessionTabs.FirstOrDefault(item => item.SessionId == sessionId);
+        if (tab is null)
+        {
+            return;
+        }
+
+        tab.StateLabel = state switch
+        {
+            SessionState.Connecting => "連線中",
+            SessionState.Connected => "已連線",
+            SessionState.ExternalClientLaunched => "外部視窗",
+            SessionState.Disconnecting => "正在中斷",
+            SessionState.Disconnected => "已中斷",
+            SessionState.Faulted => "錯誤",
+            _ => state.ToString(),
+        };
+    }
+
+    private RemoteSession SetSessionState(
+        SessionId sessionId,
+        SessionState state,
+        string? failureDetail = null)
+    {
+        var session = _sessionWorkspace.SetState(sessionId, state, failureDetail);
+        UpdateSessionTab(sessionId, state);
+        return session;
     }
 
     [RelayCommand]
@@ -1957,7 +2011,7 @@ public sealed partial class MainViewModel : ViewModelBase
             TerminalText = string.Empty;
             _terminalOutputDecoder.Reset();
             IsTerminalActive = true;
-            _sessionWorkspace.SetState(sessionId, SessionState.Connected);
+            SetSessionState(sessionId, SessionState.Connected);
             SessionStatusLabel = $"SSH2 已連線 · {connection.Endpoint.Host} · {AccessModeLabel}";
             _ = ObserveSshAsync(_sshSession, sessionId, _sshCancellation.Token);
         }
@@ -1965,7 +2019,7 @@ public sealed partial class MainViewModel : ViewModelBase
             exception is IOException or InvalidOperationException or Renci.SshNet.Common.SshException
                 or TimeoutException or System.Net.Sockets.SocketException)
         {
-            _sessionWorkspace.SetState(sessionId, SessionState.Faulted, exception.Message);
+            SetSessionState(sessionId, SessionState.Faulted, exception.Message);
             SessionStatusLabel = $"SSH2 連線失敗：{exception.Message}";
             SessionPassword = string.Empty;
             var code = exception is Renci.SshNet.Common.SshAuthenticationException
@@ -2065,7 +2119,7 @@ public sealed partial class MainViewModel : ViewModelBase
         }
         catch (Exception exception) when (exception is IOException or Renci.SshNet.Common.SshException)
         {
-            _sessionWorkspace.SetState(sessionId, SessionState.Faulted, exception.Message);
+            SetSessionState(sessionId, SessionState.Faulted, exception.Message);
             var message = $"SSH2 工作階段中斷：{exception.Message}";
             await Dispatcher.UIThread.InvokeAsync(() => SessionStatusLabel = message);
             await ReportMajorErrorAsync("SSH2", "session-interrupted", message, exception);
@@ -2105,13 +2159,13 @@ public sealed partial class MainViewModel : ViewModelBase
             TerminalText = string.Empty;
             _terminalOutputDecoder.Reset();
             IsTerminalActive = true;
-            _sessionWorkspace.SetState(sessionId, SessionState.Connected);
+            SetSessionState(sessionId, SessionState.Connected);
             SessionStatusLabel = $"本機 Terminal 已啟動 · PID {_localTerminal.ProcessId} · {AccessModeLabel}";
             _ = ObserveLocalTerminalAsync(_localTerminal, sessionId, _localTerminalCancellation.Token);
         }
         catch (Exception exception) when (exception is IOException or InvalidOperationException or PlatformNotSupportedException)
         {
-            _sessionWorkspace.SetState(sessionId, SessionState.Faulted, exception.Message);
+            SetSessionState(sessionId, SessionState.Faulted, exception.Message);
             SessionStatusLabel = $"Terminal 啟動失敗：{exception.Message}";
             await ReportMajorErrorAsync("Terminal", "launch-failed", SessionStatusLabel, exception);
             await StopLocalTerminalAsync();
@@ -2144,7 +2198,7 @@ public sealed partial class MainViewModel : ViewModelBase
         }
         catch (Exception exception) when (exception is IOException or InvalidOperationException)
         {
-            _sessionWorkspace.SetState(sessionId, SessionState.Faulted, exception.Message);
+            SetSessionState(sessionId, SessionState.Faulted, exception.Message);
             var message = $"Terminal 中斷：{exception.Message}";
             await Dispatcher.UIThread.InvokeAsync(() => SessionStatusLabel = message);
             await ReportMajorErrorAsync("Terminal", "session-interrupted", message, exception);
@@ -2393,7 +2447,7 @@ public sealed partial class MainViewModel : ViewModelBase
                 Password = vaultSecret,
                 AccessMode = connection.DefaultAccessMode,
             }, _vncCancellation.Token);
-            _sessionWorkspace.SetState(sessionId, SessionState.Connected);
+            SetSessionState(sessionId, SessionState.Connected);
             OnPropertyChanged(nameof(IsVncSessionActive));
             SessionStatusLabel = $"VNC 已連線 · {server.Name} · {server.Width} × {server.Height}";
             _ = ObserveVncAsync(_vncClient, sessionId, _vncCancellation.Token);
@@ -2402,7 +2456,7 @@ public sealed partial class MainViewModel : ViewModelBase
             exception is IOException or InvalidOperationException or NotSupportedException
                 or TimeoutException or System.Net.Sockets.SocketException)
         {
-            _sessionWorkspace.SetState(sessionId, SessionState.Faulted, exception.Message);
+            SetSessionState(sessionId, SessionState.Faulted, exception.Message);
             SessionStatusLabel = $"VNC 連線失敗：{exception.Message}";
             var code = exception is RfbAuthenticationException
                 ? "authentication-failed"
@@ -2515,7 +2569,7 @@ public sealed partial class MainViewModel : ViewModelBase
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or NotSupportedException)
         {
-            _sessionWorkspace.SetState(sessionId, SessionState.Faulted, exception.Message);
+            SetSessionState(sessionId, SessionState.Faulted, exception.Message);
             var message = $"VNC 工作階段中斷：{exception.Message}";
             await Dispatcher.UIThread.InvokeAsync(() => SessionStatusLabel = message);
             await ReportMajorErrorAsync("VNC", "session-interrupted", message, exception);
