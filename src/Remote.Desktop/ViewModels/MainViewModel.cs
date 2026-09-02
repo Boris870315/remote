@@ -60,7 +60,7 @@ public sealed partial class MainViewModel : ViewModelBase
     private VaultId _primaryVaultId = new(Guid.NewGuid());
     private VaultAutoLockController _autoLockController = new(new VaultLockSettings());
 
-    public event Func<RdpExternalLaunchRequest, Task>? EmbeddedRdpRequested;
+    public event Func<SessionId, RdpExternalLaunchRequest, Task>? EmbeddedRdpRequested;
 
     public ObservableCollection<SessionTabViewModel> SessionTabs { get; } = [];
 
@@ -1842,7 +1842,7 @@ public sealed partial class MainViewModel : ViewModelBase
             if (OperatingSystem.IsWindows() && EmbeddedRdpRequested is { } embeddedRdpRequested)
             {
                 IsRdpSessionActive = true;
-                await embeddedRdpRequested(launchRequest);
+                await embeddedRdpRequested(session.Id, launchRequest);
                 SetSessionState(session.Id, SessionState.Connected);
                 SessionStatusLabel = rdpSecret is null
                     ? "RDP 已顯示在中央工作區 · 尚未指派 ID Card"

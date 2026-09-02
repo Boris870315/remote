@@ -8,6 +8,8 @@ using Remote.Application.Layout;
 using Remote.Desktop.ViewModels;
 using Avalonia.Threading;
 using Avalonia.Platform.Storage;
+using Remote.Application.Sessions;
+using Remote.Desktop.Protocols.Rdp;
 
 namespace Remote.Desktop.Views;
 
@@ -18,6 +20,7 @@ public partial class MainWindow : Window
     private bool _isInspectorCollapsed;
     private byte _vncButtonMask;
     private MainViewModel? _viewModel;
+    private readonly Dictionary<SessionId, AvaloniaEmbeddedRdpHost> _rdpHosts = [];
     private readonly DispatcherTimer _vaultTimer;
 
     public MainWindow()
@@ -61,14 +64,39 @@ public partial class MainWindow : Window
         ApplyAdaptiveLayout();
     }
 
-    private Task ConnectEmbeddedRdpAsync(Remote.Infrastructure.Protocols.Rdp.RdpExternalLaunchRequest request) =>
-        EmbeddedRdpSurface.ConnectAsync(request);
+    private async Task ConnectEmbeddedRdpAsync(
+        SessionId sessionId,
+        Remote.Infrastructure.Protocols.Rdp.RdpExternalLaunchRequest request)
+    {
+        if (!_rdpHosts.TryGetValue(sessionId, out var host))
+        {
+            host = new AvaloniaEmbeddedRdpHost();
+            _rdpHosts.Add(sessionId, host);
+            EmbeddedRdpSurfaces.Children.Add(host);
+        }
+
+        ShowSelectedRdpHost();
+        await host.ConnectAsync(request);
+    }
 
     private void HandleViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(MainViewModel.IsEditingConnection))
         {
             ApplyAdaptiveLayout();
+        }
+        else if (e.PropertyName == nameof(MainViewModel.SelectedSessionTab))
+        {
+            ShowSelectedRdpHost();
+        }
+    }
+
+    private void ShowSelectedRdpHost()
+    {
+        var selected = _viewModel?.SelectedSessionTab?.SessionId;
+        foreach (var pair in _rdpHosts)
+        {
+            pair.Value.IsVisible = pair.Key == selected;
         }
     }
 

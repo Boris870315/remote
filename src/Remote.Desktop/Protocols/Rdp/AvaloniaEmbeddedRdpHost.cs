@@ -13,20 +13,20 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
     private const uint WsClipSiblings = 0x04000000;
     private nint _window;
     private object? _rdpClient;
+    private readonly TaskCompletionSource _hostReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-    public Task ConnectAsync(RdpExternalLaunchRequest request)
+    public async Task ConnectAsync(RdpExternalLaunchRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
         if (!OperatingSystem.IsWindows())
         {
             throw new PlatformNotSupportedException("Embedded Microsoft RDP is available on Windows only.");
         }
-        if (_rdpClient is null)
-        {
-            throw new InvalidOperationException("The embedded RDP surface is not ready yet.");
-        }
+        await _hostReady.Task.WaitAsync(TimeSpan.FromSeconds(10));
 
-        dynamic client = _rdpClient;
+        var clientObject = _rdpClient
+            ?? throw new InvalidOperationException("The embedded RDP surface did not initialize correctly.");
+        dynamic client = clientObject;
         try
         {
             try { client.Disconnect(); } catch (COMException) { }
@@ -61,7 +61,7 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
             }
             client.Connect();
             EnableWindow(_window, request.AccessMode is not Remote.Protocols.SessionAccessMode.ViewOnly);
-            return Task.CompletedTask;
+            return;
         }
         catch (COMException exception)
         {
@@ -111,6 +111,7 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
         try
         {
             _rdpClient = Marshal.GetObjectForIUnknown(unknown);
+            _hostReady.TrySetResult();
         }
         finally
         {
