@@ -35,6 +35,7 @@ public sealed partial class MainViewModel : ViewModelBase
     private RfbClient? _vncClient;
     private AvaloniaRfbFrameSink? _vncFrameSink;
     private CancellationTokenSource? _vncCancellation;
+    private readonly Dictionary<SessionId, VncSessionRuntime> _vncSessions = [];
     private SshTerminalSession? _sshSession;
     private CancellationTokenSource? _sshCancellation;
     private LocalTerminalSession? _localTerminal;
@@ -1888,6 +1889,14 @@ public sealed partial class MainViewModel : ViewModelBase
         }
 
         SelectedSessionTab = tab;
+        if (_vncSessions.TryGetValue(tab.SessionId, out var vnc))
+        {
+            _vncClient = vnc.Client;
+            _vncFrameSink = vnc.FrameSink;
+            _vncCancellation = vnc.Cancellation;
+            RemoteFrame = vnc.Frame;
+            OnPropertyChanged(nameof(IsVncSessionActive));
+        }
     }
 
     private void UpdateSessionTab(SessionId sessionId, SessionState state)
@@ -2425,10 +2434,20 @@ public sealed partial class MainViewModel : ViewModelBase
     private async Task LaunchVncAsync(ConnectionProfile connection, SessionId sessionId)
     {
         byte[]? vaultSecret = null;
-        await StopVncAsync();
-        _vncCancellation = new CancellationTokenSource();
-        _vncFrameSink = new AvaloniaRfbFrameSink(frame => RemoteFrame = frame);
-        _vncClient = new RfbClient(new TcpRfbTransportFactory(), _vncFrameSink);
+        var cancellation = new CancellationTokenSource();
+        VncSessionRuntime? runtime = null;
+        var frameSink = new AvaloniaRfbFrameSink(frame =>
+        {
+            if (runtime is null) return;
+            runtime.Frame = frame;
+            if (SelectedSessionTab?.SessionId == sessionId) RemoteFrame = frame;
+        });
+        var client = new RfbClient(new TcpRfbTransportFactory(), frameSink);
+        runtime = new VncSessionRuntime(client, frameSink, cancellation);
+        _vncSessions.Add(sessionId, runtime);
+        _vncClient = client;
+        _vncFrameSink = frameSink;
+        _vncCancellation = cancellation;
         try
         {
             if (ResolveCredentialDefinition(connection) is { } definition)
@@ -2441,16 +2460,16 @@ public sealed partial class MainViewModel : ViewModelBase
                 vaultSecret = Encoding.UTF8.GetBytes(SessionPassword);
             }
 
-            var server = await _vncClient.ConnectAsync(new RfbConnectionOptions
+            var server = await client.ConnectAsync(new RfbConnectionOptions
             {
                 Endpoint = connection.Endpoint,
                 Password = vaultSecret,
                 AccessMode = connection.DefaultAccessMode,
-            }, _vncCancellation.Token);
+            }, cancellation.Token);
             SetSessionState(sessionId, SessionState.Connected);
             OnPropertyChanged(nameof(IsVncSessionActive));
             SessionStatusLabel = $"VNC 已連線 · {server.Name} · {server.Width} × {server.Height}";
-            _ = ObserveVncAsync(_vncClient, sessionId, _vncCancellation.Token);
+            _ = ObserveVncAsync(client, sessionId, cancellation.Token);
         }
         catch (Exception exception) when (
             exception is IOException or InvalidOperationException or NotSupportedException
@@ -2462,7 +2481,7 @@ public sealed partial class MainViewModel : ViewModelBase
                 ? "authentication-failed"
                 : exception is TimeoutException ? "connection-timeout" : "connection-failed";
             await ReportMajorErrorAsync("VNC", code, $"無法連線到 {connection.Endpoint.Host}:{connection.Endpoint.Port}。{exception.Message}", exception);
-            await StopVncAsync();
+            await StopVncSessionAsync(sessionId);
         }
         finally
         {
@@ -2578,19 +2597,38 @@ public sealed partial class MainViewModel : ViewModelBase
 
     private async Task StopVncAsync()
     {
-        _vncCancellation?.Cancel();
-        _vncCancellation?.Dispose();
-        _vncCancellation = null;
-        if (_vncClient is not null)
+        foreach (var sessionId in _vncSessions.Keys.ToArray())
         {
-            await _vncClient.DisposeAsync();
-            _vncClient = null;
+            await StopVncSessionAsync(sessionId);
         }
+    }
 
-        _vncFrameSink?.Dispose();
-        _vncFrameSink = null;
+    private async Task StopVncSessionAsync(SessionId sessionId)
+    {
+        if (!_vncSessions.Remove(sessionId, out var runtime)) return;
+        runtime.Cancellation.Cancel();
+        await runtime.Client.DisposeAsync();
+        runtime.FrameSink.Dispose();
+        runtime.Cancellation.Dispose();
+        if (ReferenceEquals(_vncClient, runtime.Client))
+        {
+            _vncClient = null;
+            _vncFrameSink = null;
+            _vncCancellation = null;
+        }
         RemoteFrame = null;
         OnPropertyChanged(nameof(IsVncSessionActive));
+    }
+
+    private sealed class VncSessionRuntime(
+        RfbClient client,
+        AvaloniaRfbFrameSink frameSink,
+        CancellationTokenSource cancellation)
+    {
+        public RfbClient Client { get; } = client;
+        public AvaloniaRfbFrameSink FrameSink { get; } = frameSink;
+        public CancellationTokenSource Cancellation { get; } = cancellation;
+        public WriteableBitmap? Frame { get; set; }
     }
 
     private void UpdateAccessMode()
