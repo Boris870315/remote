@@ -378,6 +378,21 @@ public sealed partial class MainViewModel : ViewModelBase
 
     public bool IsVncSelected => string.Equals(SelectedConnection?.Profile.ProtocolId, "vnc", StringComparison.OrdinalIgnoreCase);
 
+    public bool IsRdpSelected => string.Equals(SelectedConnection?.Profile.ProtocolId, "rdp", StringComparison.OrdinalIgnoreCase);
+
+    public bool SelectedUsesAllMonitors =>
+        SelectedConnection?.Profile.Display.MonitorSelection is MonitorSelection.All;
+
+    public bool SelectedRedirectsClipboard => SelectedRdpSettings.RedirectClipboard;
+
+    public bool SelectedRedirectsPrinters => SelectedRdpSettings.RedirectPrinters;
+
+    public bool SelectedRedirectsDrives => SelectedRdpSettings.RedirectDrives;
+
+    private RdpConnectionSettings SelectedRdpSettings => SelectedConnection is { Profile.ProtocolId: "rdp" } connection
+        ? RdpConnectionSettings.FromProtocolSettings(connection.Profile.ProtocolSettings)
+        : new RdpConnectionSettings();
+
     public bool RequiresSessionCredentialInput =>
         SelectedConnection?.Profile.Credential.Kind is CredentialReferenceKind.None &&
         SelectedConnection.Profile.ProtocolId is "rdp" or "vnc" or "ssh2" or "http" or "https";
@@ -1048,6 +1063,11 @@ public sealed partial class MainViewModel : ViewModelBase
         IsViewOnly = value?.Profile.DefaultAccessMode is SessionAccessMode.ViewOnly;
         OnPropertyChanged(nameof(IsSshSelected));
         OnPropertyChanged(nameof(IsVncSelected));
+        OnPropertyChanged(nameof(IsRdpSelected));
+        OnPropertyChanged(nameof(SelectedUsesAllMonitors));
+        OnPropertyChanged(nameof(SelectedRedirectsClipboard));
+        OnPropertyChanged(nameof(SelectedRedirectsPrinters));
+        OnPropertyChanged(nameof(SelectedRedirectsDrives));
         OnPropertyChanged(nameof(RequiresSessionCredentialInput));
         OnPropertyChanged(nameof(SelectedCredentialSourceLabel));
         OnPropertyChanged(nameof(SelectedCredentialName));
