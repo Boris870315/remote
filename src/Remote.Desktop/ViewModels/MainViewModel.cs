@@ -182,6 +182,9 @@ public sealed partial class MainViewModel : ViewModelBase
     private string newFolderName = string.Empty;
 
     [ObservableProperty]
+    private string connectionSearchText = string.Empty;
+
+    [ObservableProperty]
     private string editProtocol = "rdp";
 
     public IReadOnlyList<string> ConnectionProtocols { get; } = ["rdp", "vnc", "ssh2", "https", "http", "terminal"];
@@ -506,6 +509,9 @@ public sealed partial class MainViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsCreatingCredential));
         OnPropertyChanged(nameof(IsPromptingForCredential));
     }
+
+    partial void OnConnectionSearchTextChanged(string value) => RebuildConnectionTree(
+        SelectedConnection?.Profile.Id ?? default);
 
     partial void OnSelectedLockIntervalChanged(InactivityLockInterval value) => RefreshAutoLockPolicy();
 
@@ -2228,7 +2234,7 @@ public sealed partial class MainViewModel : ViewModelBase
         }
 
         ConnectionTree.Clear();
-        foreach (var item in BuildConnectionTree(_folders, Connections))
+        foreach (var item in BuildVisibleConnectionTree())
         {
             ConnectionTree.Add(item);
         }
@@ -2276,7 +2282,7 @@ public sealed partial class MainViewModel : ViewModelBase
 
         RefreshFolderOptions();
         ConnectionTree.Clear();
-        foreach (var item in BuildConnectionTree(_folders, Connections))
+        foreach (var item in BuildVisibleConnectionTree())
         {
             ConnectionTree.Add(item);
         }
@@ -2290,7 +2296,7 @@ public sealed partial class MainViewModel : ViewModelBase
     private void RebuildConnectionTree(ConnectionId selectedId)
     {
         ConnectionTree.Clear();
-        foreach (var item in BuildConnectionTree(_folders, Connections))
+        foreach (var item in BuildVisibleConnectionTree())
         {
             ConnectionTree.Add(item);
         }
@@ -2508,6 +2514,39 @@ public sealed partial class MainViewModel : ViewModelBase
         }
 
         return result;
+    }
+
+    private ObservableCollection<ConnectionTreeDisplayItem> BuildVisibleConnectionTree()
+    {
+        var complete = BuildConnectionTree(_folders, Connections);
+        var query = ConnectionSearchText.Trim();
+        if (query.Length == 0)
+        {
+            return complete;
+        }
+
+        return new ObservableCollection<ConnectionTreeDisplayItem>(complete
+            .Select(item => FilterTreeItem(item, query))
+            .Where(item => item is not null)
+            .Select(item => item!));
+    }
+
+    private static ConnectionTreeDisplayItem? FilterTreeItem(ConnectionTreeDisplayItem item, string query)
+    {
+        if (item.Name.Contains(query, StringComparison.CurrentCultureIgnoreCase) ||
+            item.Detail.Contains(query, StringComparison.CurrentCultureIgnoreCase))
+        {
+            return item;
+        }
+
+        var children = item.Children
+            .Select(child => FilterTreeItem(child, query))
+            .Where(child => child is not null)
+            .Select(child => child!)
+            .ToArray();
+        return item.IsFolder && children.Length > 0
+            ? item with { Children = new ObservableCollection<ConnectionTreeDisplayItem>(children) }
+            : null;
     }
 
     private static ConnectionTreeDisplayItem ConvertNode(ConnectionTreeNode node)
