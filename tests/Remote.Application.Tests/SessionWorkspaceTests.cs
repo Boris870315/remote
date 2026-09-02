@@ -58,6 +58,44 @@ public sealed class SessionWorkspaceTests
             () => workspace.SetState(session.Id, SessionState.Disconnected));
     }
 
+    [Fact]
+    public async Task ConcurrentSessions_CanOpenAndChangeStateWithoutCorruptingWorkspace()
+    {
+        var workspace = new SessionWorkspace();
+        var connections = Enumerable.Range(0, 64)
+            .Select(index => CreateConnection() with
+            {
+                Id = ConnectionId.New(),
+                Name = $"Connection {index}",
+            })
+            .ToArray();
+
+        var sessions = await Task.WhenAll(connections.Select(connection => Task.Run(() =>
+        {
+            var session = workspace.OpenNew(connection);
+            workspace.SetState(session.Id, SessionState.Connected);
+            return session;
+        })));
+
+        Assert.Equal(64, workspace.Sessions.Count);
+        Assert.Equal(64, sessions.Select(session => session.Id).Distinct().Count());
+        Assert.All(sessions, session => Assert.Equal(SessionState.Connected, workspace.Get(session.Id).State));
+    }
+
+    [Fact]
+    public void RemoveClosed_RejectsLiveSessionAndRemovesDisconnectedSession()
+    {
+        var workspace = new SessionWorkspace();
+        var session = workspace.OpenNew(CreateConnection());
+
+        Assert.False(workspace.RemoveClosed(session.Id));
+        workspace.SetState(session.Id, SessionState.Disconnecting);
+        workspace.SetState(session.Id, SessionState.Disconnected);
+
+        Assert.True(workspace.RemoveClosed(session.Id));
+        Assert.Empty(workspace.Sessions);
+    }
+
     private static ConnectionProfile CreateConnection() => new()
     {
         Id = ConnectionId.New(),

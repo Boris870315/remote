@@ -6,16 +6,30 @@ namespace Remote.Application.Sessions;
 /// <summary>Owns active Session identity and lifecycle independently of any view.</summary>
 public sealed class SessionWorkspace
 {
+    private readonly object _gate = new();
     private readonly List<RemoteSession> _sessions = [];
 
-    public IReadOnlyList<RemoteSession> Sessions => _sessions;
+    public IReadOnlyList<RemoteSession> Sessions
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _sessions.ToArray();
+            }
+        }
+    }
 
     public SessionOpenRequest RequestOpen(ConnectionProfile connection)
     {
         ArgumentNullException.ThrowIfNull(connection);
-        var existing = _sessions
-            .Where(session => session.ConnectionId == connection.Id && session.State.IsOpen())
-            .ToArray();
+        RemoteSession[] existing;
+        lock (_gate)
+        {
+            existing = _sessions
+                .Where(session => session.ConnectionId == connection.Id && session.State.IsOpen())
+                .ToArray();
+        }
 
         return new(connection, existing);
     }
@@ -30,27 +44,57 @@ public sealed class SessionWorkspace
             connection.ProtocolId,
             connection.DefaultAccessMode,
             SessionState.Connecting);
-        _sessions.Add(session);
+        lock (_gate)
+        {
+            _sessions.Add(session);
+        }
         return session;
     }
 
     public RemoteSession SetState(SessionId sessionId, SessionState state, string? failureDetail = null)
     {
-        var index = _sessions.FindIndex(session => session.Id == sessionId);
-        if (index < 0)
+        lock (_gate)
         {
-            throw new KeyNotFoundException($"Session '{sessionId}' was not found.");
-        }
+            var index = _sessions.FindIndex(session => session.Id == sessionId);
+            if (index < 0)
+            {
+                throw new KeyNotFoundException($"Session '{sessionId}' was not found.");
+            }
 
-        var current = _sessions[index];
-        if (!current.State.CanTransitionTo(state))
+            var current = _sessions[index];
+            if (!current.State.CanTransitionTo(state))
+            {
+                throw new InvalidOperationException($"Session cannot transition from {current.State} to {state}.");
+            }
+
+            var updated = current with { State = state, FailureDetail = failureDetail };
+            _sessions[index] = updated;
+            return updated;
+        }
+    }
+
+    public RemoteSession Get(SessionId sessionId)
+    {
+        lock (_gate)
         {
-            throw new InvalidOperationException($"Session cannot transition from {current.State} to {state}.");
+            return _sessions.FirstOrDefault(session => session.Id == sessionId)
+                ?? throw new KeyNotFoundException($"Session '{sessionId}' was not found.");
         }
+    }
 
-        var updated = current with { State = state, FailureDetail = failureDetail };
-        _sessions[index] = updated;
-        return updated;
+    public bool RemoveClosed(SessionId sessionId)
+    {
+        lock (_gate)
+        {
+            var index = _sessions.FindIndex(session => session.Id == sessionId);
+            if (index < 0 || _sessions[index].State.IsOpen())
+            {
+                return false;
+            }
+
+            _sessions.RemoveAt(index);
+            return true;
+        }
     }
 }
 
