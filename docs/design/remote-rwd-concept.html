@@ -1,46 +1,1326 @@
-<div id="remote-concept">
-  <style>
-    #remote-concept{font-family:Inter,ui-sans-serif,system-ui,sans-serif;color:light-dark(#142033,#edf3ff);background:transparent;width:100%}
-    #remote-concept *{box-sizing:border-box}#remote-concept button{font:inherit}
-    #remote-concept .rc-controls{display:flex;gap:8px;margin:0 0 12px;align-items:center;flex-wrap:wrap}
-    #remote-concept .rc-controls button{border:1px solid light-dark(#d3dbea,#39445a);background:light-dark(#fff,#171d2a);color:inherit;border-radius:8px;padding:7px 11px;cursor:pointer}
-    #remote-concept .rc-controls button[aria-pressed="true"]{background:#5b5ce2;color:white;border-color:#5b5ce2}
-    #remote-concept .rc-divider{width:1px;height:28px;background:#39445a;margin:0 3px}
-    #remote-concept .rc-stage{width:100%;overflow:hidden;border-radius:14px;border:1px solid light-dark(#cdd6e5,#384257);background:#0d1220;box-shadow:0 18px 50px rgba(12,20,38,.22)}
-    #remote-concept .rc-app{width:100%;height:590px;display:grid;grid-template-columns:64px 254px minmax(0,1fr) 248px;grid-template-rows:56px 1fr;background:#111827;color:#edf3ff;transition:.25s ease}
-    #remote-concept .rc-top{grid-column:1/-1;display:grid;grid-template-columns:318px 1fr auto;align-items:center;border-bottom:1px solid #293248;background:#151c2b;padding:0 14px;gap:18px}
-    #remote-concept .rc-brand{display:flex;align-items:center;gap:10px;font-weight:750}.rc-logo{width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,#7b7cf3,#3e8be8);display:grid;place-items:center;font-size:14px}
-    #remote-concept .rc-quick{max-width:540px;height:34px;border:1px solid #35405a;border-radius:8px;background:#101624;color:#aebad1;display:flex;align-items:center;padding:0 11px;font-size:12px}
-    #remote-concept .rc-actions{display:flex;gap:8px;align-items:center}.rc-action{border:0;border-radius:8px;padding:8px 11px;background:#5b5ce2;color:#fff;font-size:12px}.rc-lock{border:1px solid #3d4962;background:#20293b;color:#d8e1f4;border-radius:8px;padding:7px 9px;font-size:12px}
-    #remote-concept .rc-rail{grid-row:2;background:#121927;border-right:1px solid #293248;padding:12px 8px;display:flex;flex-direction:column;gap:8px}.rc-rail button{height:42px;border:0;border-radius:9px;background:transparent;color:#92a0b8;font-size:17px}.rc-rail button:first-child{background:#293451;color:#9fa5ff}
-    #remote-concept .rc-tree{grid-row:2;background:#171f2e;border-right:1px solid #293248;padding:14px 12px;overflow:hidden}.rc-pane-title{font-size:13px;font-weight:700;margin-bottom:12px;display:flex;justify-content:space-between}.rc-search{height:32px;border:1px solid #35405a;background:#111827;border-radius:7px;padding:8px;color:#8795ad;font-size:11px;margin-bottom:14px}.rc-section{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#74829a;margin:12px 6px 6px}.rc-node{display:flex;gap:9px;align-items:center;padding:8px;border-radius:7px;font-size:12px;color:#c8d2e5}.rc-node.sel{background:#2c3552;color:#fff}.rc-dot{width:8px;height:8px;border-radius:50%;background:#47c28a}.rc-dot.vnc{background:#f5ae49}.rc-dot.ssh{background:#65a9f5}
-    #remote-concept .rc-work{grid-row:2;min-width:0;background:#0d1220;display:grid;grid-template-rows:40px 42px 1fr}.rc-tabs{display:flex;align-items:end;border-bottom:1px solid #293248;background:#141b29;padding-left:8px}.rc-tab{height:34px;border:0;border-bottom:2px solid #7778ef;background:transparent;color:#fff;padding:0 13px;font-size:11px}.rc-tools{display:flex;align-items:center;gap:8px;padding:0 10px;border-bottom:1px solid #293248;background:#111827;color:#9aa8bd;font-size:11px}.rc-toolbtn{border:1px solid #303a50;background:#192131;color:#dce4f3;border-radius:6px;padding:5px 8px}.rc-session{margin:10px;background:linear-gradient(135deg,#203855,#15253b);border:1px solid #334762;border-radius:9px;position:relative;overflow:hidden}.rc-wall{position:absolute;inset:0;background:radial-gradient(circle at 78% 24%,rgba(91,92,226,.35),transparent 26%),linear-gradient(120deg,rgba(255,255,255,.04),transparent 55%)}.rc-osbar{position:absolute;left:7%;right:7%;bottom:6%;height:38px;border-radius:10px;background:rgba(10,18,29,.75);backdrop-filter:blur(10px);display:flex;justify-content:center;gap:8px;align-items:center}.rc-osbar span{width:22px;height:22px;border-radius:6px;background:#6097dd}.rc-osbar span:nth-child(2){background:#e2b94e}.rc-osbar span:nth-child(3){background:#6dcaa1}.rc-session-label{position:absolute;top:15px;left:16px;font-size:11px;color:#c6d6e9}
-    #remote-concept .rc-inspector{grid-row:2;background:#171f2e;border-left:1px solid #293248;padding:16px 14px;overflow:hidden}.rc-card-title{font-size:14px;font-weight:700}.rc-sub{font-size:10px;color:#8290a7;margin-top:3px}.rc-field{margin-top:16px}.rc-label{font-size:10px;color:#7f8da5;margin-bottom:5px}.rc-value{font-size:12px;color:#e6edf8}.rc-idcard{margin-top:7px;border:1px solid #414c68;background:#20293b;border-radius:8px;padding:9px}.rc-scope{display:inline-block;margin-top:7px;border-radius:5px;background:#493f78;color:#c9c6ff;padding:3px 6px;font-size:9px}.rc-warning{margin-top:14px;padding:9px;border-left:2px solid #f0a63d;background:#282638;color:#e9d6b5;font-size:10px;line-height:1.45}
-    #remote-concept .rc-app.medium{grid-template-columns:56px 220px minmax(0,1fr)}#remote-concept .rc-app.medium .rc-inspector{display:none}#remote-concept .rc-app.medium .rc-top{grid-template-columns:276px 1fr auto}#remote-concept .rc-app.medium .rc-quick{max-width:390px}
-    #remote-concept .rc-app.compact{grid-template-columns:50px minmax(0,1fr);height:560px}#remote-concept .rc-app.compact .rc-tree,#remote-concept .rc-app.compact .rc-inspector{display:none}#remote-concept .rc-app.compact .rc-top{grid-template-columns:auto 1fr auto;padding:0 9px;gap:9px}#remote-concept .rc-app.compact .rc-brand strong,#remote-concept .rc-app.compact .rc-lock{display:none}#remote-concept .rc-app.compact .rc-quick{font-size:0}#remote-concept .rc-app.compact .rc-quick:after{content:'快速連線…';font-size:11px}#remote-concept .rc-app.compact .rc-action{padding:8px;font-size:0}#remote-concept .rc-app.compact .rc-action:after{content:'＋';font-size:15px}#remote-concept .rc-app.compact .rc-session{margin:7px}#remote-concept .rc-app.compact .rc-tools{overflow:hidden;white-space:nowrap}
-    #remote-concept .rc-app.portrait{grid-template-columns:52px minmax(0,1fr);height:690px}#remote-concept .rc-app.portrait .rc-tree,#remote-concept .rc-app.portrait .rc-inspector{display:none}#remote-concept .rc-app.portrait .rc-top{grid-template-columns:auto 1fr auto;padding:0 9px;gap:9px}#remote-concept .rc-app.portrait .rc-brand strong,#remote-concept .rc-app.portrait .rc-lock{display:none}#remote-concept .rc-app.portrait .rc-session{margin:8px}#remote-concept .rc-app.portrait .rc-tools{overflow:hidden;white-space:nowrap}
-    #remote-concept .rc-session.remote-portrait{background:#090d16}#remote-concept .rc-session.remote-portrait .rc-wall{inset:4% auto 4% 50%;width:min(38%,240px);transform:translateX(-50%);border:1px solid #455b76;box-shadow:0 10px 34px rgba(0,0,0,.45)}#remote-concept .rc-session.remote-portrait .rc-osbar{left:38%;right:38%;height:32px}
-    @media(max-width:620px){#remote-concept .rc-app{grid-template-columns:50px minmax(0,1fr);height:540px}#remote-concept .rc-tree,#remote-concept .rc-inspector{display:none}#remote-concept .rc-top{grid-template-columns:auto 1fr auto;padding:0 8px;gap:8px}#remote-concept .rc-brand strong,#remote-concept .rc-lock{display:none}}
-  </style>
-  <div class="rc-controls" aria-label="Responsive preview sizes">
-    <button type="button" data-size="wide" aria-pressed="true">1440 · 寬版</button>
-    <button type="button" data-size="medium" aria-pressed="false">1024 · 中版</button>
-    <button type="button" data-size="compact" aria-pressed="false">760 · 精簡版</button>
-    <button type="button" data-size="portrait" aria-pressed="false">直式視窗</button>
-    <span class="rc-divider" aria-hidden="true"></span>
-    <button type="button" data-display="landscape" aria-pressed="true">遠端橫式</button>
-    <button type="button" data-display="portrait" aria-pressed="false">遠端直式</button>
-  </div>
-  <div class="rc-stage">
-    <div class="rc-app wide">
-      <header class="rc-top"><div class="rc-brand"><span class="rc-logo">R</span><strong>Remote</strong></div><div class="rc-quick">⌘ K　快速連線：輸入主機名稱或位址</div><div class="rc-actions"><button class="rc-lock">🔒 Vault 已解鎖</button><button class="rc-action">＋ 新增連線</button></div></header>
-      <nav class="rc-rail" aria-label="Primary"><button title="連線">⌁</button><button title="Vault">▣</button><button title="身份卡">♙</button><button title="稽核">≡</button></nav>
-      <aside class="rc-tree"><div class="rc-pane-title"><span>連線</span><span>•••</span></div><div class="rc-search">⌕ 搜尋連線與標籤</div><div class="rc-section">我的最愛</div><div class="rc-node sel"><span class="rc-dot"></span>Windows Prod</div><div class="rc-section">基礎設施</div><div class="rc-node"><span class="rc-dot vnc"></span>Design Mac</div><div class="rc-node"><span class="rc-dot ssh"></span>Lab SSH</div><div class="rc-node"><span class="rc-dot"></span>Finance VM</div></aside>
-      <main class="rc-work"><div class="rc-tabs"><button class="rc-tab">Windows Prod　×</button></div><div class="rc-tools"><button class="rc-toolbtn">重新整理</button><button class="rc-toolbtn">全螢幕</button><button class="rc-toolbtn">適應視窗</button><button class="rc-toolbtn">傳送 Ctrl+Alt+Del</button><span class="rc-resolution">RDP · 1920×1080</span></div><div class="rc-session"><div class="rc-wall"></div><div class="rc-session-label">Windows Prod · 已連線</div><div class="rc-osbar"><span></span><span></span><span></span></div></div></main>
-      <aside class="rc-inspector"><div class="rc-card-title">Windows Prod</div><div class="rc-sub">生產環境 · RDP</div><div class="rc-field"><div class="rc-label">主機</div><div class="rc-value">10.20.0.24:3389</div></div><div class="rc-field"><div class="rc-label">身份卡</div><div class="rc-idcard"><div class="rc-value">Windows Admin</div><div class="rc-sub">CORP\\operator</div><span class="rc-scope">用途：僅限 RDP</span></div></div><div class="rc-field"><div class="rc-label">顯示</div><div class="rc-value">自動調整解析度</div></div><div class="rc-warning">這張身份卡指定給 RDP 使用，不會自動提供給 VNC 或其他協定。</div></aside>
-    </div>
-  </div>
-  <script>
-    (()=>{const root=document.getElementById('remote-concept');const app=root.querySelector('.rc-app');const session=root.querySelector('.rc-session');const resolution=root.querySelector('.rc-resolution');root.querySelectorAll('[data-size]').forEach(b=>b.addEventListener('click',()=>{root.querySelectorAll('[data-size]').forEach(x=>x.setAttribute('aria-pressed','false'));b.setAttribute('aria-pressed','true');app.className='rc-app '+b.dataset.size;}));root.querySelectorAll('[data-display]').forEach(b=>b.addEventListener('click',()=>{root.querySelectorAll('[data-display]').forEach(x=>x.setAttribute('aria-pressed','false'));b.setAttribute('aria-pressed','true');const portrait=b.dataset.display==='portrait';session.classList.toggle('remote-portrait',portrait);resolution.textContent=portrait?'RDP · 1080×1920 · 直式':'RDP · 1920×1080';}));})();
-  </script>
-</div>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; style-src 'unsafe-inline' blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; img-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; font-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; media-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; worker-src blob:; connect-src blob: data:; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<title>Remote Product Design</title>
+<style>:root{color-scheme:light dark;background:light-dark(rgb(255 255 255), rgb(24 24 24))}html,body{margin:0}body{box-sizing:border-box;padding:1rem;background:inherit}iframe{display:block;width:100%;height:calc(100vh - 2rem);margin:0 auto;border:0}</style>
+</head>
+<body>
+<iframe sandbox="allow-scripts" referrerpolicy="no-referrer" title="Remote Product Design" srcdoc="&lt;!doctype html&gt;
+&lt;html lang=&quot;en&quot;&gt;
+&lt;head&gt;
+&lt;meta charset=&quot;utf-8&quot;&gt;
+&lt;meta name=&quot;viewport&quot; content=&quot;width=device-width, initial-scale=1&quot;&gt;
+&lt;meta name=&quot;referrer&quot; content=&quot;no-referrer&quot;&gt;
+&lt;meta http-equiv=&quot;Content-Security-Policy&quot; content=&quot;default-src &#x27;none&#x27;; script-src &#x27;unsafe-inline&#x27; &#x27;unsafe-eval&#x27; &#x27;wasm-unsafe-eval&#x27; blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; style-src &#x27;unsafe-inline&#x27; blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; img-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; font-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; media-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; worker-src blob:; connect-src blob: data:; frame-src &#x27;none&#x27;; object-src &#x27;none&#x27;; base-uri &#x27;none&#x27;; form-action &#x27;none&#x27;&quot;&gt;
+&lt;title&gt;Remote Product Design&lt;/title&gt;
+&lt;style&gt;:root {
+  color-scheme: light dark;
+  background-color: var(
+    --background,
+    var(--color-background-primary, light-dark(rgb(255 255 255), rgb(24 24 24)))
+  ) !important;
+
+  /* Agent-facing contract; keep in sync with SKILL.md. */
+  --background: var(
+    --color-background-primary,
+    light-dark(rgb(255 255 255), rgb(24 24 24))
+  );
+  --foreground: var(
+    --color-text-primary,
+    light-dark(rgb(26 28 31), rgb(255 255 255))
+  );
+  --card: color-mix(in oklab, var(--foreground) 5%, var(--background));
+  --card-foreground: var(
+    --color-text-primary,
+    light-dark(rgb(26 28 31), rgb(255 255 255))
+  );
+  --popover: var(
+    --color-background-secondary,
+    light-dark(rgb(255 255 255), rgb(45 45 45))
+  );
+  --popover-foreground: var(
+    --color-text-primary,
+    light-dark(rgb(26 28 31), rgb(255 255 255))
+  );
+  --primary: var(
+    --color-text-info,
+    light-dark(rgb(51 156 255), rgb(131 195 255))
+  );
+  --primary-foreground: var(
+    --color-text-inverse,
+    light-dark(rgb(255 255 255), rgb(13 13 13))
+  );
+  --secondary: var(
+    --color-background-secondary,
+    light-dark(rgb(255 255 255 / 96%), rgb(54 54 54 / 96%))
+  );
+  --secondary-foreground: var(
+    --color-text-primary,
+    light-dark(rgb(26 28 31), rgb(255 255 255))
+  );
+  --muted: color-mix(in srgb, var(--foreground) 10%, transparent);
+  --muted-foreground: var(
+    --color-text-secondary,
+    light-dark(rgb(26 28 31 / 49.4%), rgb(255 255 255 / 49.8%))
+  );
+  --accent: var(
+    --color-background-info,
+    light-dark(rgb(229 242 255), rgb(13 39 63))
+  );
+  --accent-foreground: var(
+    --color-text-info,
+    light-dark(rgb(51 156 255), rgb(131 195 255))
+  );
+  --destructive: var(
+    --color-text-warning,
+    light-dark(rgb(226 85 7), rgb(255 133 73))
+  );
+  --border: var(
+    --color-border-secondary,
+    light-dark(rgb(26 28 31 / 8%), rgb(255 255 255 / 8.2%))
+  );
+  --input: var(
+    --color-border-primary,
+    light-dark(
+      rgb(26 28 31 / 11.8%),
+      color-mix(in oklab, rgb(0 0 0) 10%, transparent)
+    )
+  );
+  --ring: var(
+    --color-ring-primary,
+    light-dark(rgb(51 156 255), rgb(131 195 255 / 76%))
+  );
+  --font-size-base: var(--font-text-md-size, 14px);
+  --blue: light-dark(rgb(51 156 255), rgb(51 156 255));
+  --orange: light-dark(rgb(226 85 7), rgb(251 106 34));
+  --green: light-dark(rgb(0 162 64), rgb(64 201 119));
+  --red: light-dark(rgb(224 46 42), rgb(255 103 100));
+  --purple: light-dark(rgb(146 79 247), rgb(173 123 249));
+  --yellow: light-dark(rgb(255 195 0), rgb(255 210 64));
+  --viz-series-1: var(--primary);
+  --viz-series-2: light-dark(rgb(243 136 59), rgb(245 154 86));
+  --viz-series-3: light-dark(rgb(93 201 119), rgb(116 213 139));
+  --viz-series-4: light-dark(rgb(235 119 177), rgb(240 143 192));
+  --viz-series-5: light-dark(rgb(155 121 236), rgb(170 145 239));
+  --viz-series-6: light-dark(rgb(58 185 177), rgb(90 203 194));
+
+  /* Internal implementation variables; not part of the agent contract. */
+  --font-sans: -apple-system, system-ui, &quot;Segoe UI&quot;, sans-serif;
+  --font-mono:
+    ui-monospace, SFMono-Regular, &quot;SF Mono&quot;, Menlo, Consolas, &quot;Liberation Mono&quot;,
+    monospace;
+  --font-size-normal: max(11px, var(--font-size-base));
+  --font-size-tooltip: calc(var(--font-size-base) - 1px);
+  --font-size-small: max(11px, calc(var(--font-size-base) - 2px));
+  --font-size-h1: calc(var(--font-size-normal) * 1.7142857143);
+  --font-size-h2: calc(var(--font-size-normal) * 1.4285714286);
+  --font-size-h3: calc(var(--font-size-normal) * 1.2857142857);
+  --font-weight-normal: 430;
+  --font-weight-medium: 500;
+  --line-height-normal: calc(var(--font-size-normal) * 1.5);
+  --line-height-tooltip: calc(var(--font-size-tooltip) * 1.4285714286);
+  --line-height-small: calc(var(--font-size-small) + 4px);
+  --radius: var(--border-radius-lg, 12.5px);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-2xl: calc(var(--radius) * 1.6);
+  --radius-full: 9999px;
+  --shadow-sm: 0 1px 2px -1px rgb(0 0 0 / 8%);
+  --checkmark-image: url(&quot;data:image/svg+xml,%3Csvg xmlns=&#x27;http://www.w3.org/2000/svg&#x27; viewBox=&#x27;0 0 17 17&#x27;%3E%3Cpath d=&#x27;M12.8961 3.64101C13.1297 3.41418 13.4984 3.37523 13.7779 3.56581C14.0571 3.75635 14.1554 4.11331 14.0299 4.41347L13.9615 4.53847L7.71151 13.7045C7.59411 13.8767 7.4063 13.9877 7.19881 14.0072C6.99136 14.0267 6.78564 13.9533 6.63826 13.806L2.88826 10.056L2.79842 9.9457C2.6192 9.67407 2.64927 9.30496 2.88826 9.06581C3.12738 8.82669 3.49647 8.79676 3.76815 8.97597L3.8785 9.06581L7.03084 12.2182L12.8053 3.74941L12.8961 3.64101Z&#x27;/%3E%3C/svg%3E&quot;);
+
+  /* Legacy aliases; not part of the current agent contract. */
+  --viz-bg: transparent;
+  --viz-panel: var(--card);
+  --viz-border: var(--border);
+  --viz-text: var(--foreground);
+  --viz-muted: var(--muted-foreground);
+  --viz-accent: var(--primary);
+  --viz-accent-text: var(--primary-foreground);
+  --viz-accent-bg: var(--accent);
+  --viz-font-size: var(--font-size-base);
+  --viz-warning: var(--destructive);
+}
+
+:root[data-theme=&quot;light&quot;] {
+  color-scheme: light;
+}
+
+:root[data-theme=&quot;dark&quot;] {
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html &gt; body {
+  /* Preserve MCP aliases for older inline renderers without creating :root cycles. */
+  --color-background-primary: var(
+    --background,
+    light-dark(rgb(255 255 255), rgb(24 24 24))
+  );
+  --color-text-primary: var(
+    --foreground,
+    light-dark(rgb(26 28 31), rgb(255 255 255))
+  );
+  --color-border-secondary: var(
+    --border,
+    light-dark(rgb(26 28 31 / 8%), rgb(255 255 255 / 8.2%))
+  );
+
+  margin: 0;
+  padding: 5px;
+  color: var(--foreground);
+  background: transparent !important;
+  font-family: var(--font-sans) !important;
+  font-size: var(--font-size-normal);
+  font-weight: var(--font-weight-normal);
+  line-height: var(--line-height-normal);
+}
+
+a {
+  color: color-mix(in srgb, var(--viz-accent) 80%, var(--viz-text) 20%);
+  cursor: pointer;
+  font-weight: var(--font-weight-medium, 500);
+  text-decoration: none;
+  text-underline-offset: 2px;
+}
+
+a:is(:hover, :focus-visible) {
+  text-decoration-line: underline;
+  text-decoration-style: dashed;
+  text-decoration-thickness: 0.5px;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+p {
+  margin-block: 0;
+}
+
+h1 {
+  font-size: var(--font-size-h1);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.25;
+}
+
+h2 {
+  font-size: var(--font-size-h2);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.25;
+}
+
+h3,
+h4,
+h5,
+h6 {
+  font-size: var(--font-size-h3);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.3;
+}
+
+b,
+strong,
+th {
+  font-weight: var(--font-weight-medium);
+}
+
+code:not(pre code) {
+  display: inline;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  corner-shape: superellipse(1.5);
+  background: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  overflow-wrap: anywhere;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  word-break: break-word;
+}
+
+.table-responsive {
+  width: 100%;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  color: var(--foreground);
+  font: inherit;
+  text-align: start;
+}
+
+.table :is(th, td) {
+  padding-block: 10px;
+  padding-inline: 0 24px;
+  overflow-wrap: anywhere;
+  border-bottom: 1px solid var(--border);
+  text-align: start;
+  vertical-align: top;
+}
+
+.table-responsive &gt; .table :is(th, td) {
+  overflow-wrap: break-word;
+}
+
+.table :is(th, td):last-child {
+  padding-inline-end: 0;
+}
+
+.table :is(caption, thead th) {
+  font-weight: 600;
+}
+
+.table thead th {
+  padding-block: 8px;
+  border-bottom-color: color-mix(in srgb, var(--foreground) 16%, transparent);
+}
+
+.table tbody tr:last-child :is(th, td) {
+  border-bottom: 0;
+}
+
+.table.table-sm :is(th, td) {
+  padding-block: 6px;
+}
+
+.table.table-sm :is(th, td):not(:last-child) {
+  padding-inline-end: 16px;
+}
+
+.table :is(.text-end, [align=&quot;right&quot;]) {
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+
+.table :is(.text-center, [align=&quot;center&quot;]) {
+  text-align: center;
+}
+
+.table .text-nowrap {
+  white-space: nowrap;
+}
+
+#widget {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  padding: 0;
+  background: transparent !important;
+}
+
+.card {
+  min-width: 0;
+  padding: 12px;
+  overflow: hidden;
+  overflow-wrap: break-word;
+  border-radius: var(--radius-2xl);
+  corner-shape: superellipse(1.5);
+  color: var(--card-foreground);
+  background: var(--card);
+}
+
+#widget &gt; :not(.card, .progress) {
+  width: 100% !important;
+  max-width: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.tooltip {
+  position: fixed;
+  z-index: 50;
+  top: 0;
+  left: 0;
+  width: max-content;
+  max-width: min(
+    20rem,
+    var(--tooltip-available-width, calc(100vw - 10px)),
+    calc(100vw - 10px)
+  );
+  max-height: min(
+    var(--tooltip-available-height, calc(100vh - 10px)),
+    calc(100vh - 10px)
+  );
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  corner-shape: superellipse(1.5);
+  color: var(--popover-foreground);
+  background: var(--popover);
+  box-shadow: none;
+  font-size: var(--font-size-tooltip);
+  line-height: var(--line-height-tooltip);
+  overflow-wrap: break-word;
+  white-space: normal;
+  pointer-events: none;
+  user-select: none;
+}
+
+.viz-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(max(180px, 24%), 1fr));
+  gap: 10px;
+}
+
+.viz-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.viz-stat-value {
+  font-size: var(--font-size-h2);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.25;
+}
+
+.viz-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.progress {
+  display: flex;
+  height: 6px;
+  margin-block: calc((var(--line-height-normal, 1.5em) - 6px) / 2);
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: var(--muted);
+}
+
+.progress-bar {
+  height: 100%;
+  flex-shrink: 0;
+  border: 0;
+  background: var(--viz-series-1);
+}
+
+.viz-badge {
+  padding: 3px 8px;
+  border-radius: var(--radius-full);
+  color: var(--accent-foreground);
+  background: var(--accent);
+  font-weight: var(--font-weight-medium);
+}
+
+small,
+.text-small,
+.viz-badge {
+  font-size: var(--font-size-small);
+  line-height: var(--line-height-small);
+}
+
+.text-muted {
+  color: var(--muted-foreground);
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.viz-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.viz-controls &gt; .form-label {
+  display: grid;
+  min-width: min(100%, 260px);
+  flex: 1 1 280px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 2px 12px;
+  margin-bottom: 0;
+}
+
+.viz-controls &gt; .form-label &gt; :is(.form-control, .form-range, .form-select) {
+  grid-column: 1 / -1;
+}
+
+.btn,
+.form-check-input,
+.form-control,
+.form-range,
+.form-select {
+  font: inherit;
+}
+
+.btn {
+  appearance: button;
+  display: inline-flex;
+  inline-size: fit-content;
+  max-inline-size: 100%;
+  min-height: 28px;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  margin: 0;
+  padding: 0 8px;
+  -webkit-app-region: no-drag;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-lg);
+  corner-shape: superellipse(1.5);
+  color: var(--secondary-foreground);
+  background: var(--secondary);
+  cursor: var(--cursor-interaction, pointer);
+  text-align: center;
+  text-decoration: none;
+  white-space: nowrap;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+.btn:is(.btn-block, .viz-tile) {
+  inline-size: 100%;
+}
+
+.btn.viz-tile {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+a.btn {
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.btn:not(:disabled):hover {
+  background: color-mix(in srgb, var(--foreground) 6%, var(--secondary));
+}
+
+.btn-primary {
+  border-color: transparent;
+  color: var(--primary-foreground);
+  background: var(--foreground);
+  background-clip: padding-box;
+}
+
+.btn-primary .text-muted {
+  color: color-mix(in srgb, var(--primary-foreground) 50%, transparent);
+}
+
+.btn-primary:not(:disabled):hover {
+  background: color-mix(in srgb, var(--foreground) 80%, transparent);
+  background-clip: padding-box;
+}
+
+.btn-ghost {
+  border-color: transparent;
+  color: var(--muted-foreground);
+  background: transparent;
+}
+
+.btn-ghost:not(:disabled):hover {
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--foreground) 6%, var(--secondary));
+}
+
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+[data-lucide] {
+  stroke-width: 1.6;
+}
+
+.form-label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--foreground);
+}
+
+.form-control {
+  display: block;
+  width: 100%;
+  min-height: 28px;
+  padding: 0 8px;
+  outline: none;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-lg);
+  corner-shape: superellipse(1.5);
+  color: var(--foreground);
+  background: var(--secondary);
+}
+
+.form-control::placeholder {
+  color: var(--muted-foreground);
+}
+
+.form-control[type=&quot;file&quot;] {
+  padding: 0;
+  overflow: hidden;
+  cursor: var(--cursor-interaction, pointer);
+}
+
+.form-control[type=&quot;file&quot;]::file-selector-button {
+  min-height: 26px;
+  margin-right: 8px;
+  padding: 0 8px;
+  border: 0;
+  border-right: 1px solid var(--input);
+  color: var(--secondary-foreground);
+  background: var(--secondary);
+  cursor: inherit;
+  font: inherit;
+}
+
+.form-control[type=&quot;file&quot;]:not(:disabled):hover::file-selector-button {
+  background: color-mix(in srgb, var(--foreground) 6%, var(--secondary));
+}
+
+.form-control-color[type=&quot;color&quot;] {
+  width: 40px;
+  height: 28px;
+  padding: 3px;
+  cursor: var(--cursor-interaction, pointer);
+}
+
+.form-control-color[type=&quot;color&quot;]::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.form-control-color[type=&quot;color&quot;]::-webkit-color-swatch {
+  border: 0;
+  border-radius: calc(var(--radius-lg) - 4px);
+  corner-shape: superellipse(1.5);
+}
+
+textarea.form-control {
+  height: auto;
+  min-height: 72px;
+  padding: 8px 10px;
+  resize: vertical;
+}
+
+.form-control:focus-visible {
+  border-color: var(--ring);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+
+.form-control:disabled,
+.form-select:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.form-select {
+  appearance: none;
+  display: block;
+  width: 100%;
+  min-height: 28px;
+  margin: 0;
+  padding: 0 32px 0 8px;
+  outline: none;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-lg);
+  corner-shape: superellipse(1.5);
+  color: var(--foreground);
+  background-color: var(--secondary);
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--muted-foreground) 50%),
+    linear-gradient(135deg, var(--muted-foreground) 50%, transparent 50%);
+  background-position:
+    calc(100% - 14px) 50%,
+    calc(100% - 10px) 50%;
+  background-repeat: no-repeat;
+  background-size: 4px 4px;
+  cursor: var(--cursor-interaction, default);
+}
+
+.form-select:not(:disabled):hover {
+  background-color: color-mix(in srgb, var(--foreground) 6%, var(--secondary));
+}
+
+.form-select:focus-visible {
+  border-color: var(--ring);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+
+.form-check {
+  display: flex;
+  min-height: 20px;
+  align-items: center;
+  gap: 6px;
+}
+
+.form-check-input {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  margin: 0;
+  border: 1px solid var(--input);
+  color: var(--primary-foreground);
+  background-color: transparent;
+  cursor: var(--cursor-interaction, default);
+  transition:
+    background-color 150ms,
+    border-color 150ms,
+    box-shadow 150ms;
+}
+
+.form-check:not(.form-switch) .form-check-input[type=&quot;checkbox&quot;] {
+  border-color: var(--input);
+  border-radius: var(--radius-sm);
+  corner-shape: superellipse(1.5);
+  background-color: var(--secondary);
+  box-shadow: var(--shadow-sm);
+}
+
+.form-check:not(.form-switch)
+  .form-check-input:not(:disabled):not(:checked):hover {
+  background-color: var(--card);
+}
+
+.form-check:not(.form-switch) .form-check-input[type=&quot;checkbox&quot;]:checked {
+  border-color: var(--primary);
+  background-color: var(--primary);
+}
+
+.form-check:not(.form-switch)
+  .form-check-input[type=&quot;checkbox&quot;]:checked::before {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: var(--primary-foreground);
+  content: &quot;&quot;;
+  mask: var(--checkmark-image) center / 12px 12px no-repeat;
+}
+
+.form-check-input[type=&quot;radio&quot;] {
+  width: 14px;
+  height: 14px;
+  border-radius: var(--radius-full);
+}
+
+.form-check-input[type=&quot;radio&quot;]:checked {
+  border: 2px solid var(--primary);
+  background:
+    radial-gradient(circle, var(--primary-foreground) 0 2.5px, transparent 3px),
+    var(--primary);
+}
+
+.form-check:not(.form-switch) .form-check-input:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.form-check:not(.form-switch) .form-check-input:disabled {
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.form-check:not(.form-switch) .form-check-input:disabled + .form-check-label {
+  cursor: not-allowed;
+}
+
+.form-switch .form-check-input:disabled,
+.form-switch .form-check-input:disabled + .form-check-label {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.form-check-label {
+  color: var(--foreground);
+  cursor: var(--cursor-interaction, default);
+}
+
+.form-switch .form-check-input {
+  position: relative;
+  width: 32px;
+  height: 20px;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: var(--muted);
+  box-shadow: none;
+  transition: background-color 200ms cubic-bezier(0, 0, 0.2, 1);
+}
+
+.form-switch .form-check-input::before {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 16px;
+  height: 16px;
+  box-sizing: border-box;
+  border: 1px solid light-dark(var(--primary-foreground), var(--foreground));
+  border-radius: var(--radius-full);
+  background: light-dark(var(--primary-foreground), var(--foreground));
+  box-shadow: var(--shadow-sm);
+  content: &quot;&quot;;
+  transform: translate(2px, -50%);
+  transition: transform 200ms cubic-bezier(0, 0, 0.2, 1);
+}
+
+.form-switch .form-check-input:checked {
+  background: var(--primary);
+}
+
+.form-switch .form-check-input:checked::before {
+  transform: translate(14px, -50%);
+}
+
+.form-switch .form-check-input:focus-visible {
+  box-shadow: 0 0 0 2px var(--ring);
+}
+
+.form-range {
+  appearance: none;
+  display: block;
+  width: 100%;
+  height: 28px;
+  flex: 1;
+  margin: 0;
+  padding: 0;
+  outline: none;
+  border: 0;
+  accent-color: var(--primary);
+  background: linear-gradient(
+      color-mix(in srgb, var(--foreground) 7%, transparent),
+      color-mix(in srgb, var(--foreground) 7%, transparent)
+    )
+    center / 100% 2px no-repeat;
+}
+
+.form-range::-webkit-slider-runnable-track {
+  height: 28px;
+  background: transparent;
+}
+
+.form-range::-webkit-slider-thumb {
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  margin-top: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: light-dark(var(--primary-foreground), var(--foreground));
+}
+
+.form-range:focus-visible::-webkit-slider-thumb {
+  border-color: var(--ring);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+
+.form-range::-moz-range-track {
+  height: 28px;
+  background: transparent;
+}
+
+.form-range::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: light-dark(var(--primary-foreground), var(--foreground));
+}
+
+.form-range:focus-visible::-moz-range-thumb {
+  border-color: var(--ring);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+
+.form-range:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.btn:not(.btn-primary, .viz-tile):is(
+  [aria-pressed=&quot;true&quot;],
+  [aria-selected=&quot;true&quot;],
+  .is-selected
+) {
+  border-color: var(--primary);
+  color: var(--primary-foreground);
+  background: var(--primary);
+}
+
+.btn.viz-tile:is([aria-pressed=&quot;true&quot;], [aria-selected=&quot;true&quot;], .is-selected) {
+  border-color: var(--primary);
+  box-shadow: inset 0 0 0 1px var(--primary);
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+@media (pointer: coarse) {
+  .btn,
+  .form-control,
+  .form-select {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .form-control,
+  .form-select {
+    font-size: max(16px, var(--font-size-normal));
+  }
+
+  .form-control[type=&quot;file&quot;]::file-selector-button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .form-control-color[type=&quot;color&quot;] {
+    width: 44px;
+    height: 44px;
+  }
+
+  .form-control:is(
+    [type=&quot;date&quot;],
+    [type=&quot;datetime-local&quot;],
+    [type=&quot;month&quot;],
+    [type=&quot;time&quot;],
+    [type=&quot;week&quot;]
+  ) {
+    min-width: 0;
+    max-width: 100%;
+    padding-block: 8px;
+  }
+
+  .form-check {
+    min-height: 44px;
+    padding-inline: 15px;
+  }
+
+  .form-check-input {
+    position: relative;
+  }
+
+  .form-check-input::after {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 44px;
+    height: 44px;
+    content: &quot;&quot;;
+    transform: translate(-50%, -50%);
+  }
+
+  .form-check-label {
+    display: inline-flex;
+    min-width: 44px;
+    min-height: 44px;
+    align-items: center;
+  }
+
+  .form-range {
+    height: 44px;
+    touch-action: pan-y;
+  }
+
+  .form-range::-webkit-slider-runnable-track {
+    height: 44px;
+  }
+
+  .form-range::-moz-range-track {
+    height: 44px;
+  }
+
+  .form-range::-webkit-slider-thumb {
+    margin-top: 12px;
+  }
+}
+
+svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+#widget &gt; svg {
+  width: 100%;
+}
+
+/* Model-authored chart rules can otherwise stretch icons after these styles load. */
+svg.lucide {
+  display: block;
+  width: 16px !important;
+  height: 16px !important;
+  flex: none;
+  margin: 0 !important;
+  stroke-width: 1.6;
+}
+
+.text-warning,
+.text-destructive {
+  color: var(--destructive);
+}
+
+html&gt;body{padding:0}&lt;/style&gt;
+&lt;/head&gt;
+&lt;body&gt;
+&lt;div id=&quot;remote-product-design&quot;&gt;
+  &lt;style&gt;
+    #remote-product-design{font-family:Inter,ui-sans-serif,system-ui,-apple-system,&quot;Segoe UI&quot;,sans-serif;color:#e8edf7;background:transparent}
+    #remote-product-design *{box-sizing:border-box}#remote-product-design button,#remote-product-design input,#remote-product-design select{font:inherit}
+    #remote-product-design .rpd-review{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 12px}
+    #remote-product-design .rpd-review button{border:1px solid #33415c;background:#171f2e;color:#cbd5e7;border-radius:8px;padding:8px 11px;cursor:pointer}
+    #remote-product-design .rpd-review button[aria-pressed=&quot;true&quot;]{background:#595bd9;border-color:#7779ee;color:#fff}
+    #remote-product-design .rpd-window{position:relative;height:700px;display:grid;grid-template:56px 1fr / 56px 238px minmax(340px,1fr) 278px;background:#0c111d;border:1px solid #34415a;border-radius:14px;overflow:hidden;box-shadow:0 24px 60px rgba(1,5,14,.35)}
+    #remote-product-design .rpd-window.left-collapsed{grid-template-columns:56px 0 minmax(340px,1fr) 278px}#remote-product-design .rpd-window.left-collapsed .rpd-tree{display:none}#remote-product-design .rpd-window.right-collapsed{grid-template-columns:56px 238px minmax(340px,1fr) 0}#remote-product-design .rpd-window.right-collapsed .rpd-inspector{display:none}#remote-product-design .rpd-window.left-collapsed.right-collapsed{grid-template-columns:56px 0 minmax(340px,1fr) 0}
+    #remote-product-design .rpd-edge-toggle{display:none;position:absolute;z-index:12;top:50%;width:22px;height:46px;padding:0;border:1px solid #4b5873;background:#222d42;color:#cfd8e8;cursor:pointer;font-size:18px}#remote-product-design .rpd-edge-toggle.left{left:55px;border-left:0;border-radius:0 24px 24px 0}#remote-product-design .rpd-edge-toggle.right{right:0;border-right:0;border-radius:24px 0 0 24px}#remote-product-design .rpd-window.left-collapsed .rpd-edge-toggle.left,#remote-product-design .rpd-window.right-collapsed .rpd-edge-toggle.right{display:block}
+    #remote-product-design .rpd-window.compact{grid-template-columns:52px 210px minmax(320px,1fr)}#remote-product-design .rpd-window.compact .rpd-inspector{display:none}
+    #remote-product-design .rpd-window.portrait{height:760px;grid-template:54px 1fr / 52px minmax(268px,1fr)}#remote-product-design .rpd-window.portrait .rpd-tree,#remote-product-design .rpd-window.portrait .rpd-inspector{display:none}#remote-product-design .rpd-window.portrait .rpd-header{grid-column:1/3}#remote-product-design .rpd-window.portrait .rpd-brand strong,#remote-product-design .rpd-window.portrait .rpd-vault-label{display:none}#remote-product-design .rpd-window.portrait .rpd-quick{font-size:0}#remote-product-design .rpd-window.portrait .rpd-quick:after{content:&#x27;快速連線&#x27;;font-size:12px}#remote-product-design .rpd-window.portrait .rpd-session-tools{overflow:auto}#remote-product-design .rpd-window.portrait .rpd-session{margin:8px}
+    #remote-product-design .rpd-header{grid-column:1/5;display:grid;grid-template-columns:auto minmax(180px,520px) auto;align-items:center;gap:20px;padding:0 14px;background:#151c2b;border-bottom:1px solid #28334a}
+    #remote-product-design .rpd-brand,#remote-product-design .rpd-head-actions,#remote-product-design .rpd-row{display:flex;align-items:center;gap:9px}.rpd-logo{display:grid;place-items:center;width:31px;height:31px;background:#5b5ce2;border-radius:9px;font-weight:700}.rpd-quick{height:35px;display:flex;align-items:center;padding:0 12px;color:#8290a7;background:#0f1624;border:1px solid #35405a;border-radius:8px}.rpd-head-actions{justify-self:end}.rpd-head-actions button,.rpd-primary,.rpd-secondary,.rpd-icon{border:0;border-radius:7px;padding:8px 11px;background:#202a3d;color:#e3e9f4;cursor:pointer}.rpd-head-actions .rpd-primary,.rpd-primary{background:#5b5ce2;color:white}#remote-product-design .rpd-primary.danger{background:#b54250;color:#fff}.rpd-icon{padding:8px;min-width:34px}
+    #remote-product-design .rpd-rail{grid-column:1;display:flex;flex-direction:column;align-items:center;gap:8px;padding:12px 7px;background:#111827;border-right:1px solid #28334a}.rpd-rail button{width:40px;height:40px;border:0;border-radius:9px;background:transparent;color:#8795ad;cursor:pointer}.rpd-rail button.active{background:#293451;color:#b5b7ff}.rpd-rail .rpd-spacer{flex:1}
+    #remote-product-design .rpd-tree{grid-column:2;padding:14px 12px;background:#161e2c;border-right:1px solid #28334a;overflow:hidden}.rpd-tree-head{display:flex;align-items:center;justify-content:space-between}.rpd-tree h2,.rpd-inspector h2{font-size:15px;font-weight:500;margin:0}.rpd-search{margin:12px 0;height:34px;padding:0 9px;display:flex;align-items:center;color:#8190a7;background:#101725;border:1px solid #34405a;border-radius:7px}.rpd-section-label{margin:14px 5px 7px;color:#728198;font-size:10px;text-transform:uppercase;letter-spacing:.08em}.rpd-folder{margin:3px 0}.rpd-folder-title,.rpd-connection{display:flex;align-items:center;gap:8px;padding:8px;border-radius:7px}.rpd-folder-title{color:#cbd5e7}.rpd-connection{margin-left:13px;color:#a9b5c9;cursor:pointer}.rpd-connection.active{background:#283451;color:#fff}.rpd-dot{width:7px;height:7px;border-radius:50%;background:#54c793}.rpd-dot.vnc{background:#e6af63}.rpd-dot.ssh{background:#8e91ff}.rpd-item-copy{min-width:0}.rpd-item-copy strong,.rpd-item-copy small{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.rpd-item-copy strong{font-size:12px;font-weight:500}.rpd-item-copy small{font-size:9px;color:#77869d;margin-top:2px}
+    #remote-product-design .rpd-work{grid-column:3;display:grid;grid-template-rows:40px minmax(0,1fr);min-width:0;background:#0b111c}.rpd-tabs{display:flex;align-items:end;background:#141b29;border-bottom:1px solid #28334a}.rpd-tab{height:40px;padding:0 14px;display:flex;align-items:center;gap:10px;border-bottom:2px solid #7778ef;background:#161f30;font-size:12px}.rpd-live{color:#76d0a2;font-size:10px;padding:7px 9px;background:#153427;border:1px solid #24513b;border-radius:7px;white-space:nowrap}.rpd-viewonly{padding:5px 7px;background:#493f78;color:#d9d7ff;border-radius:5px;font-size:9px;font-weight:600}.rpd-control-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px}.rpd-control-grid button{border:0;border-radius:6px;padding:8px;background:#202a3d;color:#dce4f2;cursor:pointer;font-size:11px}
+    #remote-product-design .rpd-session{position:relative;display:grid;place-items:center;min-height:0;margin:10px;background:#08101a;border:1px solid #334762;border-radius:9px;overflow:hidden}.rpd-remote-screen{position:relative;width:100%;height:100%;overflow:hidden;background:linear-gradient(145deg,#173c67,#366fa0 58%,#90c7df)}.rpd-remote-screen:before{content:&#x27;&#x27;;position:absolute;inset:15% 14%;border-radius:50%;background:radial-gradient(circle,#b4e3f4 0 20%,transparent 21%),linear-gradient(125deg,transparent 40%,rgba(255,255,255,.22));opacity:.6}.rpd-desktop-icons{position:absolute;left:18px;top:17px;display:grid;gap:13px;font-size:9px;text-shadow:0 1px 3px #000}.rpd-taskbar{position:absolute;left:0;right:0;bottom:0;height:34px;display:flex;align-items:center;justify-content:center;gap:8px;background:rgba(10,22,38,.88);backdrop-filter:blur(10px)}.rpd-taskbar span{width:19px;height:19px;border-radius:5px;background:#dfe9f5}.rpd-session-note{position:absolute;top:12px;left:50%;transform:translateX(-50%);padding:6px 9px;border-radius:7px;background:rgba(11,17,28,.84);font-size:10px}.rpd-remote-screen.portrait-remote{width:min(42%,285px);height:94%;border:1px solid #546b86;box-shadow:0 14px 40px rgba(0,0,0,.5)}.rpd-remote-screen.multi{width:96%;height:80%;display:grid;grid-template-columns:1fr 1fr;gap:5px;background:#080d15;padding:5px}.rpd-remote-screen.multi .rpd-monitor{position:relative;overflow:hidden;background:linear-gradient(140deg,#274d77,#73a9ca)}.rpd-monitor:nth-child(2){background:linear-gradient(140deg,#4e345f,#be7f95)}.rpd-monitor-label{position:absolute;left:9px;top:9px;padding:4px 6px;background:rgba(8,13,21,.75);border-radius:5px;font-size:9px}
+    #remote-product-design .rpd-inspector{grid-column:4;padding:16px;background:#161e2c;border-left:1px solid #28334a;overflow:auto}.rpd-inspector-head{display:flex;justify-content:space-between;align-items:start;margin-bottom:18px}.rpd-protocol{margin-top:3px;color:#818fa5;font-size:10px}.rpd-field{margin:13px 0}.rpd-field label{display:block;color:#7d8ba1;font-size:10px;margin-bottom:5px}.rpd-field-value{font-size:12px;color:#d7deeb}.rpd-idcard{padding:11px;background:#202a3c;border:1px solid #414d68;border-radius:9px}.rpd-idcard strong{font-size:12px;font-weight:500}.rpd-idcard small{display:block;margin-top:4px;color:#9eabc0}.rpd-chip{display:inline-block;margin-top:8px;padding:4px 6px;border-radius:5px;background:#493f78;color:#d2d0ff;font-size:9px}.rpd-switch{display:flex;align-items:center;gap:8px;font-size:12px}.rpd-switch span{width:33px;height:18px;border-radius:10px;background:#56627a;position:relative}.rpd-switch span:after{content:&#x27;&#x27;;position:absolute;left:3px;top:3px;width:12px;height:12px;border-radius:50%;background:white}.rpd-switch.on span{background:#5b5ce2}.rpd-switch.on span:after{left:18px}
+    #remote-product-design .rpd-overlay{position:absolute;inset:0;z-index:20;display:none;place-items:center;padding:20px;background:rgba(3,7,14,.72)}#remote-product-design .rpd-window.show-overlay{position:relative}#remote-product-design .rpd-window.show-overlay .rpd-overlay{display:grid}#remote-product-design .rpd-dialog{width:min(680px,94%);max-height:88%;overflow:auto;background:#171f2e;border:1px solid #4b5873;border-radius:14px;box-shadow:0 24px 80px rgba(0,0,0,.55)}#remote-product-design .rpd-dialog-head{display:flex;align-items:center;justify-content:space-between;padding:18px 20px;border-bottom:1px solid #2c3850}#remote-product-design .rpd-dialog-head h2{font-size:18px;font-weight:500;margin:0}#remote-product-design .rpd-dialog-body{padding:18px 20px}#remote-product-design .rpd-dialog-grid{display:grid;grid-template-columns:210px minmax(0,1fr);gap:18px}#remote-product-design .rpd-card-list{display:grid;gap:7px}#remote-product-design .rpd-card-option{padding:10px;border:1px solid #34415a;border-radius:8px;background:#1e283a}#remote-product-design .rpd-card-option.active{border-color:#7778ef;background:#282e50}#remote-product-design .rpd-card-option strong{display:block;font-size:12px;font-weight:500}#remote-product-design .rpd-card-option small{color:#8e9bb0}#remote-product-design .rpd-form{display:grid;gap:12px}#remote-product-design .rpd-form label{font-size:10px;color:#8795aa}#remote-product-design .rpd-form input,#remote-product-design .rpd-form select{width:100%;height:35px;margin-top:5px;padding:0 9px;color:#e1e8f3;background:#101725;border:1px solid #3a4761;border-radius:7px}#remote-product-design .rpd-two{display:grid;grid-template-columns:1fr 1fr;gap:10px}#remote-product-design .rpd-dialog-actions{display:flex;justify-content:flex-end;gap:8px;padding:14px 20px;border-top:1px solid #2c3850}#remote-product-design .rpd-target-proof{padding:10px;border-radius:8px;background:#153427;color:#8ce0b3;font-size:11px}#remote-product-design .rpd-import-zone{padding:30px 16px;text-align:center;border:1px dashed #53617b;border-radius:10px;background:#121a28}#remote-product-design .rpd-monitor-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}#remote-product-design .rpd-monitor-choice{position:relative;aspect-ratio:16/9;display:grid;place-items:center;border:1px solid #46546d;border-radius:8px;background:#111a28;color:#aeb9ca}#remote-product-design .rpd-monitor-choice.selected{border:2px solid #7778ef;background:#202746}#remote-product-design .rpd-monitor-choice.portrait{aspect-ratio:9/13}#remote-product-design .rpd-safety{padding:10px;border-radius:8px;background:#3c2e19;color:#ffd08b;font-size:11px}
+    @media(max-width:620px){#remote-product-design .rpd-window{height:740px;grid-template:54px 1fr/50px minmax(270px,1fr)}#remote-product-design .rpd-header{grid-column:1/3;grid-template-columns:auto 1fr auto;gap:8px;padding:0 8px}#remote-product-design .rpd-tree,#remote-product-design .rpd-inspector{display:none}#remote-product-design .rpd-brand strong,.rpd-vault-label{display:none}#remote-product-design .rpd-work{grid-column:2}.rpd-dialog-grid{grid-template-columns:1fr}.rpd-dialog{width:96%}.rpd-two{grid-template-columns:1fr}.rpd-review{overflow:auto;flex-wrap:nowrap}.rpd-head-actions .rpd-primary{font-size:0}.rpd-head-actions .rpd-primary:after{content:&#x27;＋&#x27;;font-size:15px}}
+  &lt;/style&gt;
+  &lt;div class=&quot;rpd-review&quot; aria-label=&quot;預覽尺寸切換&quot;&gt;
+    &lt;button type=&quot;button&quot; data-layout=&quot;desktop&quot; aria-pressed=&quot;true&quot;&gt;桌面預覽&lt;/button&gt;&lt;button type=&quot;button&quot; data-layout=&quot;compact&quot; aria-pressed=&quot;false&quot;&gt;窄視窗預覽&lt;/button&gt;&lt;button type=&quot;button&quot; data-layout=&quot;portrait&quot; aria-pressed=&quot;false&quot;&gt;直式視窗預覽&lt;/button&gt;
+  &lt;/div&gt;
+  &lt;section class=&quot;rpd-window desktop&quot; aria-label=&quot;Remote 現代化桌面應用程式設計稿&quot;&gt;
+    &lt;header class=&quot;rpd-header&quot;&gt;&lt;div class=&quot;rpd-brand&quot;&gt;&lt;span class=&quot;rpd-logo&quot;&gt;R&lt;/span&gt;&lt;strong&gt;Remote&lt;/strong&gt;&lt;/div&gt;&lt;div class=&quot;rpd-quick&quot;&gt;⌘ K　快速連線：主機名稱、IP 或網址&lt;/div&gt;&lt;div class=&quot;rpd-head-actions&quot;&gt;&lt;span class=&quot;rpd-live&quot;&gt;● 已連線&lt;/span&gt;&lt;button data-open=&quot;vault&quot;&gt;&lt;span class=&quot;rpd-vault-label&quot;&gt;🔒 Vault 已解鎖&lt;/span&gt;&lt;/button&gt;&lt;button class=&quot;rpd-primary&quot; data-open=&quot;connection&quot;&gt;＋ 新增連線&lt;/button&gt;&lt;/div&gt;&lt;/header&gt;
+    &lt;nav class=&quot;rpd-rail&quot; aria-label=&quot;主導覽&quot;&gt;&lt;button class=&quot;active&quot; aria-label=&quot;連線&quot;&gt;⌁&lt;/button&gt;&lt;button aria-label=&quot;Vault&quot; data-open=&quot;vault&quot;&gt;▣&lt;/button&gt;&lt;button aria-label=&quot;ID Card&quot; data-open=&quot;identity&quot;&gt;♙&lt;/button&gt;&lt;button aria-label=&quot;活動記錄&quot; data-open=&quot;audit&quot;&gt;☷&lt;/button&gt;&lt;span class=&quot;rpd-spacer&quot;&gt;&lt;/span&gt;&lt;button aria-label=&quot;設定&quot; data-open=&quot;settings&quot;&gt;⚙&lt;/button&gt;&lt;/nav&gt;
+    &lt;aside class=&quot;rpd-tree&quot;&gt;&lt;div class=&quot;rpd-tree-head&quot;&gt;&lt;h2&gt;連線&lt;/h2&gt;&lt;div class=&quot;rpd-row&quot;&gt;&lt;button class=&quot;rpd-icon&quot;&gt;＋&lt;/button&gt;&lt;button class=&quot;rpd-icon&quot; aria-label=&quot;折疊左側連線欄&quot; data-toggle-panel=&quot;left&quot;&gt;〈&lt;/button&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class=&quot;rpd-search&quot;&gt;⌕　搜尋連線、資料夾與標籤&lt;/div&gt;&lt;div class=&quot;rpd-section-label&quot;&gt;我的連線&lt;/div&gt;&lt;div class=&quot;rpd-folder&quot;&gt;&lt;div class=&quot;rpd-folder-title&quot;&gt;⌄　Production&lt;/div&gt;&lt;div class=&quot;rpd-connection active&quot;&gt;&lt;span class=&quot;rpd-dot&quot;&gt;&lt;/span&gt;&lt;div class=&quot;rpd-item-copy&quot;&gt;&lt;strong&gt;Windows Prod&lt;/strong&gt;&lt;small&gt;RDP · 10.20.0.24&lt;/small&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class=&quot;rpd-connection&quot;&gt;&lt;span class=&quot;rpd-dot vnc&quot;&gt;&lt;/span&gt;&lt;div class=&quot;rpd-item-copy&quot;&gt;&lt;strong&gt;Design Mac&lt;/strong&gt;&lt;small&gt;VNC · 雙螢幕&lt;/small&gt;&lt;/div&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class=&quot;rpd-folder&quot;&gt;&lt;div class=&quot;rpd-folder-title&quot;&gt;⌄　Lab&lt;/div&gt;&lt;div class=&quot;rpd-connection&quot;&gt;&lt;span class=&quot;rpd-dot ssh&quot;&gt;&lt;/span&gt;&lt;div class=&quot;rpd-item-copy&quot;&gt;&lt;strong&gt;Lab SSH&lt;/strong&gt;&lt;small&gt;SSH2 · 10.20.1.18&lt;/small&gt;&lt;/div&gt;&lt;/div&gt;&lt;/div&gt;&lt;/aside&gt;
+    &lt;main class=&quot;rpd-work&quot;&gt;&lt;div class=&quot;rpd-tabs&quot;&gt;&lt;div class=&quot;rpd-tab&quot;&gt;Windows Prod &lt;span&gt;×&lt;/span&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class=&quot;rpd-session&quot;&gt;&lt;div class=&quot;rpd-remote-screen&quot;&gt;&lt;div class=&quot;rpd-desktop-icons&quot;&gt;▣ 此電腦&lt;br&gt;▤ 文件&lt;/div&gt;&lt;div class=&quot;rpd-taskbar&quot;&gt;&lt;span&gt;&lt;/span&gt;&lt;span&gt;&lt;/span&gt;&lt;span&gt;&lt;/span&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class=&quot;rpd-session-note&quot;&gt;RDP · 螢幕 1 · 1920 × 1080&lt;/div&gt;&lt;/div&gt;&lt;/main&gt;
+    &lt;aside class=&quot;rpd-inspector&quot;&gt;&lt;div class=&quot;rpd-inspector-head&quot;&gt;&lt;div&gt;&lt;h2&gt;Windows Prod&lt;/h2&gt;&lt;div class=&quot;rpd-protocol&quot;&gt;RDP · 已儲存&lt;/div&gt;&lt;/div&gt;&lt;div class=&quot;rpd-row&quot;&gt;&lt;button class=&quot;rpd-icon&quot; aria-label=&quot;編輯連線&quot; data-open=&quot;connection&quot;&gt;✎&lt;/button&gt;&lt;button class=&quot;rpd-icon&quot; aria-label=&quot;刪除連線&quot; data-open=&quot;delete&quot;&gt;🗑&lt;/button&gt;&lt;button class=&quot;rpd-icon&quot; aria-label=&quot;折疊右側詳細欄&quot; data-toggle-panel=&quot;right&quot;&gt;〉&lt;/button&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class=&quot;rpd-field&quot;&gt;&lt;label&gt;工作階段控制&lt;/label&gt;&lt;div class=&quot;rpd-control-grid&quot;&gt;&lt;button&gt;重新整理&lt;/button&gt;&lt;button&gt;全螢幕&lt;/button&gt;&lt;button&gt;適應視窗&lt;/button&gt;&lt;button data-open=&quot;monitors&quot;&gt;螢幕 1&lt;/button&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class=&quot;rpd-field&quot;&gt;&lt;label&gt;主機&lt;/label&gt;&lt;div class=&quot;rpd-field-value&quot;&gt;10.20.0.24:3389&lt;/div&gt;&lt;/div&gt;&lt;div class=&quot;rpd-field&quot;&gt;&lt;label&gt;ID Card&lt;/label&gt;&lt;div class=&quot;rpd-idcard&quot;&gt;&lt;strong&gt;Windows Admin&lt;/strong&gt;&lt;small&gt;CORP\operator&lt;/small&gt;&lt;span class=&quot;rpd-chip&quot;&gt;從 Production 繼承&lt;/span&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class=&quot;rpd-field&quot;&gt;&lt;label&gt;權限&lt;/label&gt;&lt;div class=&quot;rpd-switch&quot;&gt;&lt;span&gt;&lt;/span&gt;互動模式&lt;/div&gt;&lt;/div&gt;&lt;div class=&quot;rpd-field&quot;&gt;&lt;label&gt;顯示&lt;/label&gt;&lt;div class=&quot;rpd-field-value&quot;&gt;指定螢幕 1 · 適應視窗&lt;/div&gt;&lt;/div&gt;&lt;div class=&quot;rpd-field&quot;&gt;&lt;label&gt;資料夾重新導向&lt;/label&gt;&lt;div class=&quot;rpd-field-value&quot;&gt;Downloads → 遠端 RemoteFiles&lt;/div&gt;&lt;/div&gt;&lt;/aside&gt;
+    &lt;button class=&quot;rpd-edge-toggle left&quot; aria-label=&quot;展開左側連線欄&quot; data-toggle-panel=&quot;left&quot;&gt;›&lt;/button&gt;&lt;button class=&quot;rpd-edge-toggle right&quot; aria-label=&quot;展開右側詳細欄&quot; data-toggle-panel=&quot;right&quot;&gt;‹&lt;/button&gt;
+    &lt;div class=&quot;rpd-overlay&quot; aria-live=&quot;polite&quot;&gt;&lt;div class=&quot;rpd-dialog&quot;&gt;&lt;div class=&quot;rpd-dialog-head&quot;&gt;&lt;h2 class=&quot;rpd-dialog-title&quot;&gt;ID Card&lt;/h2&gt;&lt;button class=&quot;rpd-icon&quot; data-close&gt;✕&lt;/button&gt;&lt;/div&gt;&lt;div class=&quot;rpd-dialog-body&quot;&gt;&lt;/div&gt;&lt;div class=&quot;rpd-dialog-actions&quot;&gt;&lt;button class=&quot;rpd-secondary&quot; data-close&gt;取消&lt;/button&gt;&lt;button class=&quot;rpd-primary rpd-dialog-primary&quot;&gt;儲存並套用&lt;/button&gt;&lt;/div&gt;&lt;/div&gt;&lt;/div&gt;
+  &lt;/section&gt;
+  &lt;script&gt;
+    (()=&gt;{const root=document.getElementById(&#x27;remote-product-design&#x27;),win=root.querySelector(&#x27;.rpd-window&#x27;),overlay=root.querySelector(&#x27;.rpd-overlay&#x27;),title=root.querySelector(&#x27;.rpd-dialog-title&#x27;),body=root.querySelector(&#x27;.rpd-dialog-body&#x27;),primary=root.querySelector(&#x27;.rpd-dialog-primary&#x27;),session=root.querySelector(&#x27;.rpd-session&#x27;);
+      const scenes={audit:{title:&#x27;活動記錄&#x27;,primary:&#x27;匯出記錄&#x27;,html:`&lt;div class=&quot;rpd-form&quot;&gt;&lt;div class=&quot;rpd-two&quot;&gt;&lt;label&gt;類型&lt;select&gt;&lt;option&gt;全部活動&lt;/option&gt;&lt;option&gt;連線&lt;/option&gt;&lt;option&gt;Vault&lt;/option&gt;&lt;option&gt;ID Card&lt;/option&gt;&lt;/select&gt;&lt;/label&gt;&lt;label&gt;期間&lt;select&gt;&lt;option&gt;最近 7 天&lt;/option&gt;&lt;option&gt;今天&lt;/option&gt;&lt;option&gt;最近 30 天&lt;/option&gt;&lt;/select&gt;&lt;/label&gt;&lt;/div&gt;&lt;div class=&quot;rpd-card-list&quot;&gt;&lt;div class=&quot;rpd-card-option&quot;&gt;&lt;strong&gt;RDP 連線成功 · Windows Prod&lt;/strong&gt;&lt;small&gt;今天 14:32 · 使用 Windows Admin · 未記錄密碼&lt;/small&gt;&lt;/div&gt;&lt;div class=&quot;rpd-card-option&quot;&gt;&lt;strong&gt;ID Card 已指派 · Production&lt;/strong&gt;&lt;small&gt;今天 14:29 · RDP · Windows Admin&lt;/small&gt;&lt;/div&gt;&lt;div class=&quot;rpd-card-option&quot;&gt;&lt;strong&gt;Vault 已透過生物辨識解鎖&lt;/strong&gt;&lt;small&gt;今天 14:28 · 本機裝置&lt;/small&gt;&lt;/div&gt;&lt;div class=&quot;rpd-card-option&quot;&gt;&lt;strong&gt;連線已刪除 · Staging VM&lt;/strong&gt;&lt;small&gt;昨天 18:04 · ID Card 保留&lt;/small&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class=&quot;rpd-safety&quot;&gt;活動記錄只保留操作、時間與結果，不儲存密碼、金鑰或剪貼簿內容。&lt;/div&gt;&lt;/div&gt;`},vault:{title:&#x27;Vault 安全性&#x27;,primary:&#x27;儲存安全設定&#x27;,html:`&lt;div class=&quot;rpd-form&quot;&gt;&lt;div class=&quot;rpd-target-proof&quot;&gt;✓ 主 Vault 已解鎖 · 本機加密 · 未啟用雲端同步&lt;/div&gt;&lt;label class=&quot;rpd-switch on&quot;&gt;&lt;span&gt;&lt;/span&gt; 使用生物辨識快速解鎖&lt;/label&gt;&lt;label&gt;閒置後鎖定&lt;select&gt;&lt;option&gt;1 分鐘&lt;/option&gt;&lt;option&gt;5 分鐘&lt;/option&gt;&lt;option selected&gt;15 分鐘&lt;/option&gt;&lt;option&gt;30 分鐘&lt;/option&gt;&lt;option&gt;永久停用&lt;/option&gt;&lt;/select&gt;&lt;/label&gt;&lt;label class=&quot;rpd-switch on&quot;&gt;&lt;span&gt;&lt;/span&gt; 系統睡眠時鎖定&lt;/label&gt;&lt;label class=&quot;rpd-switch on&quot;&gt;&lt;span&gt;&lt;/span&gt; 使用者登出時鎖定&lt;/label&gt;&lt;div class=&quot;rpd-two&quot;&gt;&lt;button class=&quot;rpd-secondary&quot;&gt;立即鎖定&lt;/button&gt;&lt;button class=&quot;rpd-secondary&quot;&gt;變更主密碼&lt;/button&gt;&lt;/div&gt;&lt;div class=&quot;rpd-two&quot;&gt;&lt;button class=&quot;rpd-secondary&quot;&gt;建立復原金鑰&lt;/button&gt;&lt;button class=&quot;rpd-secondary&quot;&gt;立即建立加密備份&lt;/button&gt;&lt;/div&gt;&lt;div class=&quot;rpd-safety&quot;&gt;自動備份目前關閉。停用閒置、睡眠或登出鎖定時會再次提示風險。&lt;/div&gt;&lt;/div&gt;`},identity:{title:&#x27;ID Card 管理&#x27;,primary:&#x27;指派並驗證&#x27;,html:`&lt;div class=&quot;rpd-dialog-grid&quot;&gt;&lt;div class=&quot;rpd-card-list&quot;&gt;&lt;div class=&quot;rpd-card-option active&quot;&gt;&lt;strong&gt;Windows Admin&lt;/strong&gt;&lt;small&gt;CORP\\operator · RDP&lt;/small&gt;&lt;/div&gt;&lt;div class=&quot;rpd-card-option&quot;&gt;&lt;strong&gt;VNC Viewer&lt;/strong&gt;&lt;small&gt;designer · VNC&lt;/small&gt;&lt;/div&gt;&lt;div class=&quot;rpd-card-option&quot;&gt;&lt;strong&gt;Lab Operator&lt;/strong&gt;&lt;small&gt;ops · SSH2&lt;/small&gt;&lt;/div&gt;&lt;button class=&quot;rpd-secondary&quot;&gt;＋ 新增 ID Card&lt;/button&gt;&lt;button class=&quot;rpd-secondary&quot; data-open=&quot;import&quot;&gt;從 mRemoteNG 匯入&lt;/button&gt;&lt;/div&gt;&lt;div class=&quot;rpd-form&quot;&gt;&lt;label&gt;套用目標&lt;select&gt;&lt;option&gt;連線 · Windows Prod · RDP&lt;/option&gt;&lt;option&gt;資料夾 · Production&lt;/option&gt;&lt;/select&gt;&lt;/label&gt;&lt;label&gt;使用方式&lt;select&gt;&lt;option&gt;直接套用到此連線&lt;/option&gt;&lt;option&gt;從資料夾繼承&lt;/option&gt;&lt;/select&gt;&lt;/label&gt;&lt;div class=&quot;rpd-target-proof&quot;&gt;✓ 已驗證：Windows Prod 連線時會自動使用 Windows Admin，不會再次詢問帳密。&lt;/div&gt;&lt;div class=&quot;rpd-safety&quot;&gt;密碼保持在加密 Vault；只有建立連線時短暫解密。&lt;/div&gt;&lt;/div&gt;&lt;/div&gt;`},connection:{title:&#x27;編輯連線&#x27;,primary:&#x27;儲存連線&#x27;,html:`&lt;div class=&quot;rpd-form&quot;&gt;&lt;div class=&quot;rpd-two&quot;&gt;&lt;label&gt;名稱&lt;input value=&quot;Windows Prod&quot;&gt;&lt;/label&gt;&lt;label&gt;協定&lt;select&gt;&lt;option&gt;RDP&lt;/option&gt;&lt;option&gt;VNC&lt;/option&gt;&lt;option&gt;SSH2&lt;/option&gt;&lt;/select&gt;&lt;/label&gt;&lt;/div&gt;&lt;div class=&quot;rpd-two&quot;&gt;&lt;label&gt;主機&lt;input value=&quot;10.20.0.24&quot;&gt;&lt;/label&gt;&lt;label&gt;連接埠&lt;input value=&quot;3389&quot;&gt;&lt;/label&gt;&lt;/div&gt;&lt;div class=&quot;rpd-two&quot;&gt;&lt;label&gt;資料夾&lt;select&gt;&lt;option&gt;Production&lt;/option&gt;&lt;/select&gt;&lt;/label&gt;&lt;label&gt;ID Card&lt;select&gt;&lt;option&gt;繼承 Production / Windows Admin&lt;/option&gt;&lt;/select&gt;&lt;/label&gt;&lt;/div&gt;&lt;label class=&quot;rpd-switch&quot;&gt;&lt;span&gt;&lt;/span&gt; View Only（協定允許時阻擋輸入）&lt;/label&gt;&lt;label class=&quot;rpd-switch on&quot;&gt;&lt;span&gt;&lt;/span&gt; 動態解析度&lt;/label&gt;&lt;label&gt;本機資料夾重新導向&lt;input value=&quot;Downloads&quot;&gt;&lt;/label&gt;&lt;button type=&quot;button&quot; class=&quot;rpd-secondary&quot; data-open=&quot;delete&quot;&gt;刪除此連線…&lt;/button&gt;&lt;/div&gt;`},monitors:{title:&#x27;遠端螢幕配置&#x27;,primary:&#x27;套用顯示設定&#x27;,html:`&lt;div class=&quot;rpd-form&quot;&gt;&lt;label&gt;連線時顯示方式&lt;select&gt;&lt;option&gt;指定單一螢幕&lt;/option&gt;&lt;option&gt;跨全部螢幕&lt;/option&gt;&lt;/select&gt;&lt;/label&gt;&lt;div class=&quot;rpd-monitor-grid&quot;&gt;&lt;button class=&quot;rpd-monitor-choice selected&quot; data-remote-display=&quot;landscape&quot;&gt;螢幕 1&lt;br&gt;1920 × 1080&lt;/button&gt;&lt;button class=&quot;rpd-monitor-choice portrait&quot; data-remote-display=&quot;portrait&quot;&gt;螢幕 2&lt;br&gt;1080 × 1920&lt;/button&gt;&lt;/div&gt;&lt;button class=&quot;rpd-secondary&quot; data-remote-display=&quot;multi&quot;&gt;跨全部螢幕預覽&lt;/button&gt;&lt;label class=&quot;rpd-switch on&quot;&gt;&lt;span&gt;&lt;/span&gt; 依中央工作區自動縮放&lt;/label&gt;&lt;div class=&quot;rpd-safety&quot;&gt;第一版支援指定單一螢幕與跨全部螢幕；後續每個遠端螢幕可獨立分頁或視窗。&lt;/div&gt;&lt;/div&gt;`},import:{title:&#x27;從 mRemoteNG 一次性匯入&#x27;,primary:&#x27;開始匯入&#x27;,html:`&lt;div class=&quot;rpd-form&quot;&gt;&lt;div class=&quot;rpd-import-zone&quot;&gt;&lt;strong&gt;選擇 confCons.xml 或拖放到這裡&lt;/strong&gt;&lt;div class=&quot;rpd-protocol&quot;&gt;保留資料夾、連線、協定、帳密與繼承關係&lt;/div&gt;&lt;/div&gt;&lt;label&gt;mRemoteNG 加密密碼&lt;input type=&quot;password&quot; value=&quot;password&quot;&gt;&lt;/label&gt;&lt;div class=&quot;rpd-two&quot;&gt;&lt;div class=&quot;rpd-idcard&quot;&gt;&lt;strong&gt;42 個連線&lt;/strong&gt;&lt;small&gt;RDP 24 · VNC 8 · SSH2 10&lt;/small&gt;&lt;/div&gt;&lt;div class=&quot;rpd-idcard&quot;&gt;&lt;strong&gt;7 張 ID Card&lt;/strong&gt;&lt;small&gt;重複帳密已自動合併&lt;/small&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class=&quot;rpd-target-proof&quot;&gt;✓ 預覽完成，未支援項目會在匯入前逐項列出。&lt;/div&gt;&lt;/div&gt;`},delete:{title:&#x27;刪除連線&#x27;,primary:&#x27;刪除 Windows Prod&#x27;,danger:true,html:`&lt;div class=&quot;rpd-form&quot;&gt;&lt;div class=&quot;rpd-safety&quot;&gt;確定要刪除連線「Windows Prod」嗎？此操作無法復原。&lt;/div&gt;&lt;div class=&quot;rpd-idcard&quot;&gt;&lt;strong&gt;會刪除&lt;/strong&gt;&lt;small&gt;連線設定、顯示設定與本機資料夾重新導向設定&lt;/small&gt;&lt;/div&gt;&lt;div class=&quot;rpd-idcard&quot;&gt;&lt;strong&gt;不會刪除&lt;/strong&gt;&lt;small&gt;Windows Admin ID Card、Production 資料夾及其他連線&lt;/small&gt;&lt;/div&gt;&lt;/div&gt;`}};
+      scenes.settings={title:&#x27;設定&#x27;,primary:&#x27;儲存設定&#x27;,html:`&lt;div class=&quot;rpd-form&quot;&gt;&lt;div class=&quot;rpd-two&quot;&gt;&lt;label&gt;介面語言&lt;select&gt;&lt;option&gt;繁體中文&lt;/option&gt;&lt;option&gt;English&lt;/option&gt;&lt;/select&gt;&lt;/label&gt;&lt;label&gt;外觀&lt;select&gt;&lt;option&gt;跟隨系統&lt;/option&gt;&lt;option&gt;深色&lt;/option&gt;&lt;option&gt;淺色&lt;/option&gt;&lt;/select&gt;&lt;/label&gt;&lt;/div&gt;&lt;label&gt;新連線預設權限&lt;select&gt;&lt;option&gt;互動模式&lt;/option&gt;&lt;option&gt;View Only&lt;/option&gt;&lt;/select&gt;&lt;/label&gt;&lt;div class=&quot;rpd-two&quot;&gt;&lt;label&gt;密碼顯示後重新遮罩&lt;select&gt;&lt;option&gt;10 秒&lt;/option&gt;&lt;option&gt;30 秒&lt;/option&gt;&lt;option&gt;永久顯示&lt;/option&gt;&lt;/select&gt;&lt;/label&gt;&lt;label&gt;預設顯示模式&lt;select&gt;&lt;option&gt;適應視窗&lt;/option&gt;&lt;option&gt;原始尺寸&lt;/option&gt;&lt;option&gt;填滿&lt;/option&gt;&lt;/select&gt;&lt;/label&gt;&lt;/div&gt;&lt;label class=&quot;rpd-switch on&quot;&gt;&lt;span&gt;&lt;/span&gt; 在截圖與最近使用畫面中隱藏敏感內容&lt;/label&gt;&lt;label class=&quot;rpd-switch&quot;&gt;&lt;span&gt;&lt;/span&gt; 複製後自動清除剪貼簿（預設關閉）&lt;/label&gt;&lt;label class=&quot;rpd-switch on&quot;&gt;&lt;span&gt;&lt;/span&gt; 自動檢查應用程式更新&lt;/label&gt;&lt;div class=&quot;rpd-safety&quot;&gt;Vault 的主密碼、生物辨識、閒置鎖定、備份與復原仍在 Vault 安全性頁面管理。&lt;/div&gt;&lt;/div&gt;`};
+      const openScene=name=&gt;{const scene=scenes[name];if(!scene)return;title.textContent=scene.title;body.innerHTML=scene.html;primary.textContent=scene.primary;primary.classList.toggle(&#x27;danger&#x27;,scene.danger===true);win.classList.add(&#x27;show-overlay&#x27;)};
+      root.addEventListener(&#x27;click&#x27;,event=&gt;{const trigger=event.target.closest(&#x27;[data-open]&#x27;);if(trigger)openScene(trigger.dataset.open)});
+      root.addEventListener(&#x27;click&#x27;,event=&gt;{const trigger=event.target.closest(&#x27;[data-toggle-panel]&#x27;);if(!trigger)return;const side=trigger.dataset.togglePanel;win.classList.toggle(side===&#x27;left&#x27;?&#x27;left-collapsed&#x27;:&#x27;right-collapsed&#x27;)});
+      root.querySelectorAll(&#x27;[data-close]&#x27;).forEach(btn=&gt;btn.addEventListener(&#x27;click&#x27;,()=&gt;win.classList.remove(&#x27;show-overlay&#x27;)));
+      root.querySelectorAll(&#x27;[data-layout]&#x27;).forEach(btn=&gt;btn.addEventListener(&#x27;click&#x27;,()=&gt;{root.querySelectorAll(&#x27;[data-layout]&#x27;).forEach(x=&gt;x.setAttribute(&#x27;aria-pressed&#x27;,&#x27;false&#x27;));btn.setAttribute(&#x27;aria-pressed&#x27;,&#x27;true&#x27;);win.classList.remove(&#x27;desktop&#x27;,&#x27;compact&#x27;,&#x27;portrait&#x27;);win.classList.add(btn.dataset.layout)}));
+      root.addEventListener(&#x27;click&#x27;,event=&gt;{const btn=event.target.closest(&#x27;[data-remote-display]&#x27;);if(!btn)return;const mode=btn.dataset.remoteDisplay,screen=session.querySelector(&#x27;.rpd-remote-screen&#x27;);screen.className=&#x27;rpd-remote-screen&#x27;;screen.innerHTML=&#x27;&#x27;;if(mode===&#x27;portrait&#x27;){screen.classList.add(&#x27;portrait-remote&#x27;);screen.innerHTML=&#x27;&lt;div class=&quot;rpd-taskbar&quot;&gt;&lt;span&gt;&lt;/span&gt;&lt;span&gt;&lt;/span&gt;&lt;span&gt;&lt;/span&gt;&lt;/div&gt;&#x27;;session.querySelector(&#x27;.rpd-session-note&#x27;).textContent=&#x27;RDP · 螢幕 2 · 1080 × 1920 · 直式&#x27;}else if(mode===&#x27;multi&#x27;){screen.classList.add(&#x27;multi&#x27;);screen.innerHTML=&#x27;&lt;div class=&quot;rpd-monitor&quot;&gt;&lt;span class=&quot;rpd-monitor-label&quot;&gt;螢幕 1 · 1920 × 1080&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;rpd-monitor&quot;&gt;&lt;span class=&quot;rpd-monitor-label&quot;&gt;螢幕 2 · 1080 × 1920&lt;/span&gt;&lt;/div&gt;&#x27;;session.querySelector(&#x27;.rpd-session-note&#x27;).textContent=&#x27;RDP · 跨全部螢幕&#x27;}else{screen.innerHTML=&#x27;&lt;div class=&quot;rpd-desktop-icons&quot;&gt;▣ 此電腦&lt;br&gt;▤ 文件&lt;/div&gt;&lt;div class=&quot;rpd-taskbar&quot;&gt;&lt;span&gt;&lt;/span&gt;&lt;span&gt;&lt;/span&gt;&lt;span&gt;&lt;/span&gt;&lt;/div&gt;&#x27;;session.querySelector(&#x27;.rpd-session-note&#x27;).textContent=&#x27;RDP · 螢幕 1 · 1920 × 1080&#x27;}win.classList.remove(&#x27;show-overlay&#x27;)});
+    })();
+  &lt;/script&gt;
+&lt;/div&gt;
+
+&lt;script src=&quot;https://unpkg.com/@floating-ui/core@1.7.3/dist/floating-ui.core.umd.min.js&quot;&gt;&lt;/script&gt;
+&lt;script src=&quot;https://unpkg.com/@floating-ui/dom@1.7.4/dist/floating-ui.dom.umd.min.js&quot;&gt;&lt;/script&gt;
+&lt;script&gt;
+(() =&gt; {
+  if (window.FloatingUIDOM == null) {
+    return;
+  }
+  const { autoUpdate, computePosition, flip, offset, shift, size } =
+    window.FloatingUIDOM;
+  const tooltipPlacements = new Set([&quot;top&quot;, &quot;right&quot;, &quot;bottom&quot;, &quot;left&quot;]);
+  const tooltipId = `codex-visualization-tooltip-${
+    window.crypto?.randomUUID?.() ?? Date.now().toString(36)
+  }`;
+  const tooltipGap = 5;
+  const hoverDelay = 700;
+  const skipDelay = 300;
+  let activeTrigger = null;
+  let pendingTrigger = null;
+  let tooltip = null;
+  let openTimeout = null;
+  let autoUpdateCleanup = null;
+  let positionRequest = 0;
+  let skipDelayUntil = 0;
+  let lastPointerWasTouch = false;
+  let pinnedByTouch = false;
+
+  const getTrigger = (target) =&gt;
+    target?.nodeType === Node.ELEMENT_NODE
+      ? target.closest(&quot;[data-tooltip]&quot;)
+      : null;
+  const containsTarget = (trigger, target) =&gt;
+    target?.nodeType != null &amp;&amp; trigger.contains(target);
+  const getContent = (trigger) =&gt;
+    trigger.getAttribute(&quot;data-tooltip&quot;)?.trim() ?? &quot;&quot;;
+  const getPlacement = (trigger) =&gt; {
+    const placement = trigger.getAttribute(&quot;data-tooltip-placement&quot;);
+    return tooltipPlacements.has(placement) ? placement : &quot;top&quot;;
+  };
+  const getTooltip = () =&gt; {
+    if (tooltip == null) {
+      tooltip = document.createElement(&quot;div&quot;);
+      tooltip.id = tooltipId;
+      tooltip.className = &quot;tooltip&quot;;
+      tooltip.setAttribute(&quot;role&quot;, &quot;tooltip&quot;);
+    }
+    return tooltip;
+  };
+  const setDescribedBy = (trigger, described) =&gt; {
+    const ids = new Set(
+      (trigger.getAttribute(&quot;aria-describedby&quot;) ?? &quot;&quot;)
+        .split(/\s+/)
+        .filter(Boolean),
+    );
+    if (described) {
+      ids.add(tooltipId);
+    } else {
+      ids.delete(tooltipId);
+    }
+    if (ids.size === 0) {
+      trigger.removeAttribute(&quot;aria-describedby&quot;);
+    } else {
+      trigger.setAttribute(&quot;aria-describedby&quot;, [...ids].join(&quot; &quot;));
+    }
+  };
+  const clearOpenTimeout = () =&gt; {
+    if (openTimeout != null) {
+      window.clearTimeout(openTimeout);
+      openTimeout = null;
+    }
+    pendingTrigger = null;
+  };
+  const closeTooltip = (activateSkipDelay = true) =&gt; {
+    clearOpenTimeout();
+    pinnedByTouch = false;
+    positionRequest += 1;
+    autoUpdateCleanup?.();
+    autoUpdateCleanup = null;
+    if (activeTrigger == null) {
+      return;
+    }
+    setDescribedBy(activeTrigger, false);
+    activeTrigger = null;
+    tooltip?.remove();
+    if (activateSkipDelay) {
+      skipDelayUntil = Date.now() + skipDelay;
+    }
+  };
+  const updatePosition = (trigger, floating) =&gt; {
+    const request = ++positionRequest;
+    void computePosition(trigger, floating, {
+      middleware: [
+        offset(tooltipGap),
+        flip({ padding: tooltipGap }),
+        shift({ padding: tooltipGap }),
+        size({
+          padding: tooltipGap,
+          apply({ availableHeight, availableWidth, elements }) {
+            elements.floating.style.setProperty(
+              &quot;--tooltip-available-width&quot;,
+              `${Math.max(0, availableWidth)}px`,
+            );
+            elements.floating.style.setProperty(
+              &quot;--tooltip-available-height&quot;,
+              `${Math.max(0, availableHeight)}px`,
+            );
+          },
+        }),
+      ],
+      placement: getPlacement(trigger),
+      strategy: &quot;fixed&quot;,
+    })
+      .then(({ x, y }) =&gt; {
+        if (activeTrigger !== trigger || request !== positionRequest) {
+          return;
+        }
+        const scale = window.devicePixelRatio || 1;
+        floating.style.transform = `translate(${Math.round(x * scale) / scale}px, ${Math.round(y * scale) / scale}px)`;
+        floating.style.visibility = &quot;visible&quot;;
+      })
+      .catch(() =&gt; {
+        if (activeTrigger === trigger &amp;&amp; request === positionRequest) {
+          closeTooltip(false);
+        }
+      });
+  };
+  const openTooltip = (trigger) =&gt; {
+    const content = getContent(trigger);
+    if (!trigger.isConnected || content.length === 0) {
+      return;
+    }
+    clearOpenTimeout();
+    if (activeTrigger === trigger) {
+      return;
+    }
+    closeTooltip();
+    const floating = getTooltip();
+    floating.textContent = content;
+    floating.style.visibility = &quot;hidden&quot;;
+    floating.style.transform = &quot;translate(0, 0)&quot;;
+    document.body.appendChild(floating);
+    activeTrigger = trigger;
+    setDescribedBy(trigger, true);
+    autoUpdateCleanup = autoUpdate(trigger, floating, () =&gt; {
+      updatePosition(trigger, floating);
+    });
+  };
+  const requestOpen = (trigger, immediate = false) =&gt; {
+    if (
+      getContent(trigger).length === 0 ||
+      activeTrigger === trigger ||
+      pendingTrigger === trigger
+    ) {
+      return;
+    }
+    clearOpenTimeout();
+    pendingTrigger = trigger;
+    const delay =
+      immediate || activeTrigger != null || Date.now() &lt; skipDelayUntil
+        ? 0
+        : hoverDelay;
+    if (delay === 0) {
+      openTooltip(trigger);
+      return;
+    }
+    openTimeout = window.setTimeout(() =&gt; {
+      openTimeout = null;
+      pendingTrigger = null;
+      openTooltip(trigger);
+    }, delay);
+  };
+  const handlePointerOpen = (event) =&gt; {
+    if (event.pointerType === &quot;touch&quot;) {
+      return;
+    }
+    const trigger = getTrigger(event.target);
+    if (trigger == null || containsTarget(trigger, event.relatedTarget)) {
+      return;
+    }
+    requestOpen(trigger);
+  };
+  const handlePointer = (event) =&gt; {
+    lastPointerWasTouch =
+      event.type === &quot;pointerdown&quot; &amp;&amp; event.pointerType === &quot;touch&quot;;
+  };
+  const handleTouchClick = (event) =&gt; {
+    const isTouch = event.pointerType === &quot;touch&quot; || lastPointerWasTouch;
+    lastPointerWasTouch = false;
+    if (!isTouch || event.detail === 0) {
+      return;
+    }
+    const trigger = getTrigger(event.target);
+    if (
+      trigger == null ||
+      !trigger.isConnected ||
+      getContent(trigger).length === 0 ||
+      (pinnedByTouch &amp;&amp; activeTrigger === trigger)
+    ) {
+      if (pinnedByTouch) {
+        closeTooltip();
+      }
+      return;
+    }
+    openTooltip(trigger);
+    pinnedByTouch = activeTrigger === trigger;
+    window.setTimeout(() =&gt; {
+      if (activeTrigger === trigger &amp;&amp; !trigger.isConnected) {
+        closeTooltip(false);
+      }
+    }, 0);
+  };
+  const handleLeave = (event) =&gt; {
+    if (pinnedByTouch) {
+      return;
+    }
+    const trigger = getTrigger(event.target);
+    if (trigger == null || containsTarget(trigger, event.relatedTarget)) {
+      return;
+    }
+    if (activeTrigger === trigger || pendingTrigger === trigger) {
+      closeTooltip();
+    }
+  };
+  const handleFocusIn = (event) =&gt; {
+    const trigger = getTrigger(event.target);
+    if (trigger?.matches(&quot;:focus-visible&quot;)) {
+      requestOpen(trigger, true);
+    }
+  };
+  const handleKeyDown = (event) =&gt; {
+    if (event.key === &quot;Escape&quot;) {
+      closeTooltip();
+    }
+  };
+  const handleContextMenu = (event) =&gt; {
+    lastPointerWasTouch = false;
+    const trigger = getTrigger(event.target);
+    if (activeTrigger === trigger || pendingTrigger === trigger) {
+      closeTooltip();
+    }
+  };
+  const destroy = () =&gt; {
+    closeTooltip(false);
+    lastPointerWasTouch = false;
+    document.removeEventListener(&quot;pointerover&quot;, handlePointerOpen);
+    document.removeEventListener(&quot;pointerdown&quot;, handlePointer);
+    document.removeEventListener(&quot;pointercancel&quot;, handlePointer);
+    document.removeEventListener(&quot;click&quot;, handleTouchClick);
+    document.removeEventListener(&quot;pointerout&quot;, handleLeave);
+    document.removeEventListener(&quot;focusin&quot;, handleFocusIn);
+    document.removeEventListener(&quot;focusout&quot;, handleLeave);
+    document.removeEventListener(&quot;keydown&quot;, handleKeyDown);
+    document.removeEventListener(&quot;contextmenu&quot;, handleContextMenu);
+    tooltip = null;
+  };
+
+  document.addEventListener(&quot;pointerover&quot;, handlePointerOpen);
+  document.addEventListener(&quot;pointerdown&quot;, handlePointer);
+  document.addEventListener(&quot;pointercancel&quot;, handlePointer);
+  document.addEventListener(&quot;click&quot;, handleTouchClick);
+  document.addEventListener(&quot;pointerout&quot;, handleLeave);
+  document.addEventListener(&quot;focusin&quot;, handleFocusIn);
+  document.addEventListener(&quot;focusout&quot;, handleLeave);
+  document.addEventListener(&quot;keydown&quot;, handleKeyDown);
+  document.addEventListener(&quot;contextmenu&quot;, handleContextMenu);
+  window.addEventListener(&quot;pagehide&quot;, destroy, { once: true });
+})();
+&lt;/script&gt;
+&lt;script id=&quot;codex-visualization-lucide&quot; async src=&quot;https://unpkg.com/lucide@1.17.0/dist/umd/lucide.js&quot;&gt;&lt;/script&gt;
+&lt;script&gt;
+(() =&gt; {
+  const initialize = () =&gt; {
+    globalThis.lucide?.createIcons({ attrs: { width: 16, height: 16 } });
+  };
+  if (globalThis.lucide != null) {
+    initialize();
+    return;
+  }
+  document
+    .getElementById(&quot;codex-visualization-lucide&quot;)
+    ?.addEventListener(&quot;load&quot;, initialize, { once: true });
+})();
+&lt;/script&gt;
+
+&lt;/body&gt;
+&lt;/html&gt;
+"></iframe>
+</body>
+</html>
