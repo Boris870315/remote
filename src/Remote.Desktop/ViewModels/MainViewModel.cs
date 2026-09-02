@@ -25,6 +25,7 @@ namespace Remote.Desktop.ViewModels;
 
 public sealed partial class MainViewModel : ViewModelBase
 {
+    private const string SshHostKeySetting = "ssh.host-key.sha256";
     private readonly IRemoteSessionService _sessionService;
     private readonly IRemoteProtocol _protocol;
     private readonly SessionLaunchPolicy _launchPolicy;
@@ -1053,6 +1054,8 @@ public sealed partial class MainViewModel : ViewModelBase
     partial void OnSelectedConnectionChanged(ConnectionListItem? value)
     {
         IsViewOnly = value?.Profile.DefaultAccessMode is SessionAccessMode.ViewOnly;
+        ExpectedHostKey = value?.Profile.ProtocolSettings.Get(SshHostKeySetting) ?? string.Empty;
+        TrustUnknownHostKey = false;
         SelectedMonitorOption = value?.Profile.Display.MonitorSelection is MonitorSelection.All
             ? "全部螢幕"
             : $"螢幕 {(value?.Profile.Display.MonitorIndex ?? 0) + 1}";
@@ -1765,6 +1768,11 @@ public sealed partial class MainViewModel : ViewModelBase
                 TrustUnknownHostKey = false;
             }
 
+            if (!string.IsNullOrWhiteSpace(ExpectedHostKey))
+            {
+                await PersistSshHostKeyAsync(connection.Id, ExpectedHostKey);
+            }
+
             TerminalText = string.Empty;
             _terminalOutputDecoder.Reset();
             IsTerminalActive = true;
@@ -1786,6 +1794,33 @@ public sealed partial class MainViewModel : ViewModelBase
                 System.Security.Cryptography.CryptographicOperations.ZeroMemory(vaultSecret);
             }
         }
+    }
+
+    private async Task PersistSshHostKeyAsync(ConnectionId connectionId, string fingerprint)
+    {
+        var item = Connections.FirstOrDefault(candidate => candidate.Profile.Id == connectionId);
+        if (item is null)
+        {
+            return;
+        }
+
+        var normalized = fingerprint.StartsWith("SHA256:", StringComparison.OrdinalIgnoreCase)
+            ? $"SHA256:{fingerprint[7..].Trim()}"
+            : $"SHA256:{fingerprint.Trim()}";
+        var updated = item with
+        {
+            Profile = item.Profile with
+            {
+                ProtocolSettings = item.Profile.ProtocolSettings.Set(SshHostKeySetting, normalized),
+            },
+        };
+        Connections[Connections.IndexOf(item)] = updated;
+        RebuildConnectionTree(updated.Profile.Id);
+        if (!IsVaultLocked)
+        {
+            await SaveWorkspaceAsync();
+        }
+        AddAuditEvent($"SSH Known Host 已保存：{updated.Profile.Endpoint.Host}");
     }
 
     [RelayCommand]
