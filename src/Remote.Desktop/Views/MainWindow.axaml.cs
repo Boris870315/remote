@@ -2,6 +2,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using System.ComponentModel;
+using Remote.Application.Layout;
 using Remote.Desktop.ViewModels;
 using Avalonia.Threading;
 
@@ -226,23 +227,25 @@ public partial class MainWindow : Window
             return;
         }
 
-        var isPortrait = Bounds.Height > Bounds.Width;
-        var isCompact = Bounds.Width < 820 || isPortrait;
-        var isMedium = !isCompact && Bounds.Width < 1120;
-
-        var showCompactEditor = isCompact && _viewModel?.IsEditingConnection is true;
-        ConnectionTree.IsVisible = !isCompact;
-        Inspector.IsVisible = showCompactEditor || (!isCompact && !isMedium);
+        var state = AdaptiveShellLayout.Calculate(
+            Bounds.Width,
+            Bounds.Height,
+            _viewModel?.IsEditingConnection is true);
+        var showCompactEditor = state.Mode is AdaptiveShellMode.Compact &&
+            _viewModel?.IsEditingConnection is true;
+        ConnectionTree.IsVisible = state.ShowConnectionTree;
+        Inspector.IsVisible = state.ShowInspector;
         Grid.SetColumn(Inspector, showCompactEditor ? 2 : 3);
         Inspector.HorizontalAlignment = showCompactEditor ? Avalonia.Layout.HorizontalAlignment.Right : Avalonia.Layout.HorizontalAlignment.Stretch;
-        Inspector.Width = showCompactEditor ? Math.Min(360, Math.Max(280, Bounds.Width - 52)) : double.NaN;
+        Inspector.Width = showCompactEditor ? state.CompactEditorWidth : double.NaN;
         NavigationRail.IsVisible = true;
-        QuickConnect.IsVisible = Bounds.Width >= 760;
+        QuickConnect.IsVisible = state.ShowQuickConnect;
 
-        ShellGrid.ColumnDefinitions = isCompact
-            ? new ColumnDefinitions("52,0,*,0")
-            : isMedium
-                ? new ColumnDefinitions("56,220,*,0")
-                : new ColumnDefinitions("56,240,*,260");
+        ShellGrid.ColumnDefinitions = state.Mode switch
+        {
+            AdaptiveShellMode.Compact => new ColumnDefinitions("52,0,*,0"),
+            AdaptiveShellMode.Medium => new ColumnDefinitions("56,220,*,0"),
+            _ => new ColumnDefinitions("56,240,*,260"),
+        };
     }
 }

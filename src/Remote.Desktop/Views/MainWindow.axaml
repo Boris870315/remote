@@ -129,10 +129,17 @@
                 <CheckBox IsChecked="{Binding LockOnSystemSleep}" Content="系統睡眠時鎖定"/>
                 <CheckBox IsChecked="{Binding LockOnSessionLogout}" Content="使用者登出時鎖定"/>
                 <Border Background="#4A341F" CornerRadius="7" Padding="8" IsVisible="{Binding RequiresReducedSecurityWarning}"><TextBlock Text="⚠ 已停用一項安全鎖定條件" Foreground="#FFD18A" FontSize="10"/></Border>
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                  <CheckBox Content="每次變更後自動建立本機加密備份（預設關閉）" IsChecked="{Binding AutomaticBackupEnabled}" VerticalAlignment="Center"/>
+                  <Button Grid.Column="1" Content="立即備份" Command="{Binding CreateBackupCommand}" Classes="tool"/>
+                </Grid>
                 <ListBox ItemsSource="{Binding VaultCredentials}" SelectedItem="{Binding SelectedVaultCredential}" Background="Transparent" BorderThickness="0" MaxHeight="180">
                   <ListBox.ItemTemplate><DataTemplate><Border Margin="0,3" Padding="10" Background="#20293B" CornerRadius="8"><Grid ColumnDefinitions="*,Auto"><StackPanel><TextBlock Text="{Binding Name}"/><TextBlock Text="{Binding Username}" FontSize="10" Foreground="#8290A7"/></StackPanel><TextBlock Grid.Column="1" Text="{Binding ProtocolScope}" Foreground="#9FA5FF"/></Grid></Border></DataTemplate></ListBox.ItemTemplate>
                 </ListBox>
-                <Button Content="指派給目前連線" Command="{Binding AssignIdentityCardCommand}" Classes="tool"/>
+                <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+                  <Button Content="指派給目前連線" Command="{Binding AssignIdentityCardCommand}" Classes="tool"/>
+                  <Button Grid.Column="1" Content="永久刪除" Command="{Binding DeleteIdentityCardCommand}" Background="#552B35" Foreground="#FFB2BE"/>
+                </Grid>
                 <TextBlock Text="新增身份卡" FontSize="13" FontWeight="SemiBold" Margin="0,8,0,0"/>
                 <TextBox Text="{Binding NewIdentityName}" PlaceholderText="名稱"/>
                 <ComboBox ItemsSource="{Binding IdentityProtocols}" SelectedItem="{Binding NewIdentityProtocol}"/>
@@ -145,6 +152,15 @@
           </ScrollViewer>
           <TextBlock Grid.Row="2" Text="{Binding VaultMessage}" Foreground="#A9B8CE" TextWrapping="Wrap" FontSize="11"/>
         </Grid>
+      </Border>
+    </Border>
+    <Border Grid.RowSpan="2" Background="#B3090D16" IsVisible="{Binding IsNotificationOpen}" ZIndex="40">
+      <Border Width="430" HorizontalAlignment="Center" VerticalAlignment="Center" Background="#20293B" BorderBrush="#667492" BorderThickness="1" CornerRadius="14" Padding="22">
+        <StackPanel Spacing="14">
+          <TextBlock Text="操作完成" FontSize="18" FontWeight="SemiBold"/>
+          <TextBlock Text="{Binding NotificationMessage}" Foreground="#C4CDDC" TextWrapping="Wrap"/>
+          <Button Content="知道了" Command="{Binding DismissNotificationCommand}" Background="#5B5CE2" Foreground="White" HorizontalAlignment="Right" Padding="18,9"/>
+        </StackPanel>
       </Border>
     </Border>
   </Grid>

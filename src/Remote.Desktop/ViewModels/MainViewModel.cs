@@ -39,7 +39,9 @@ public sealed partial class MainViewModel : ViewModelBase
     private readonly TerminalOutputDecoder _terminalOutputDecoder = new();
     private readonly EncryptedWorkspaceRepository _workspaceRepository;
     private readonly EncryptedVaultArchiveService _vaultArchiveService;
+    private readonly EncryptedWorkspaceBackupService _backupService = new();
     private readonly string _workspacePath;
+    private readonly string _backupDirectory;
     private readonly List<ConnectionFolder> _folders = [];
     private CredentialVault? _vault;
     private string _activeMasterPassword = string.Empty;
@@ -75,6 +77,7 @@ public sealed partial class MainViewModel : ViewModelBase
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "Remote",
             "workspace.rmtw");
+        _backupDirectory = Path.Combine(Path.GetDirectoryName(_workspacePath)!, "Backups");
         var productionFolder = new ConnectionFolder { Id = FolderId.New(), Name = "Production" };
         var labFolder = new ConnectionFolder { Id = FolderId.New(), Name = "Lab" };
         _folders.AddRange([productionFolder, labFolder]);
@@ -234,6 +237,15 @@ public sealed partial class MainViewModel : ViewModelBase
 
     [ObservableProperty]
     private CredentialDefinition? selectedVaultCredential;
+
+    [ObservableProperty]
+    private bool automaticBackupEnabled;
+
+    [ObservableProperty]
+    private bool isNotificationOpen;
+
+    [ObservableProperty]
+    private string notificationMessage = string.Empty;
 
     [ObservableProperty]
     private InactivityLockInterval selectedLockInterval = InactivityLockInterval.FiveMinutes;
@@ -478,6 +490,78 @@ public sealed partial class MainViewModel : ViewModelBase
         RebuildConnectionTree(updated.Profile.Id);
         await SaveWorkspaceAsync();
         VaultMessage = $"已將「{SelectedVaultCredential.Name}」指派給 {updated.Name}";
+    }
+
+    [RelayCommand]
+    private async Task DeleteIdentityCardAsync()
+    {
+        if (SelectedVaultCredential is not { } credential || _vault is null || IsVaultLocked)
+        {
+            VaultMessage = "請先選取要永久刪除的身份卡";
+            return;
+        }
+
+        var cleanup = new CredentialReferenceCleaner().Clear(
+            credential.VaultId,
+            credential.Id,
+            Connections.Select(item => item.Profile),
+            _folders);
+        if (!_vault.Delete(credential.Id))
+        {
+            VaultMessage = "身份卡已不存在";
+            return;
+        }
+
+        _folders.Clear();
+        _folders.AddRange(cleanup.Folders);
+        foreach (var profile in cleanup.Connections)
+        {
+            var existing = Connections.First(item => item.Profile.Id == profile.Id);
+            var index = Connections.IndexOf(existing);
+            Connections[index] = existing with
+            {
+                Profile = profile,
+                IdentityScope = profile.Credential.Kind is CredentialReferenceKind.None
+                    ? "No identity"
+                    : existing.IdentityScope,
+            };
+        }
+
+        if (SelectedConnection is { } selectedConnection)
+        {
+            RebuildConnectionTree(selectedConnection.Profile.Id);
+        }
+        SelectedVaultCredential = null;
+        RefreshVaultCredentials();
+        await SaveWorkspaceAsync();
+        NotificationMessage =
+            $"身份卡「{credential.Name}」及其歷史版本已永久刪除。已清除 " +
+            $"{cleanup.ClearedConnectionReferences} 個連線與 {cleanup.ClearedFolderReferences} 個群組引用。" +
+            "既有的加密備份仍可能保留舊資料。";
+        IsNotificationOpen = true;
+        VaultMessage = "永久刪除完成";
+    }
+
+    [RelayCommand]
+    private void DismissNotification() => IsNotificationOpen = false;
+
+    [RelayCommand]
+    private async Task CreateBackupAsync()
+    {
+        try
+        {
+            var backupPath = await _backupService.CreateAsync(
+                _workspacePath,
+                _backupDirectory,
+                DateTimeOffset.Now);
+            NotificationMessage = $"已建立本機加密備份：{backupPath}";
+            IsNotificationOpen = true;
+            VaultMessage = "手動備份完成";
+        }
+        catch (IOException exception)
+        {
+            VaultMessage = $"備份失敗：{exception.Message}";
+        }
     }
 
     partial void OnSelectedConnectionChanged(ConnectionListItem? value)
@@ -788,17 +872,19 @@ public sealed partial class MainViewModel : ViewModelBase
         byte[]? vaultSecret = null;
         var username = SessionUsername.Trim();
         var password = SessionPassword;
-        if (connection.Credential.Kind is CredentialReferenceKind.IdentityCard &&
-            connection.Credential.CredentialId is { } credentialId &&
-            _vault is not null && !IsVaultLocked)
+        try
         {
-            var definition = _vault.Credentials.FirstOrDefault(item => item.Id == credentialId);
-            if (definition is not null)
+            if (ResolveCredentialDefinition(connection) is { } definition)
             {
                 username = definition.Username ?? string.Empty;
-                vaultSecret = _vault.Reveal(credentialId);
+                vaultSecret = _vault!.Reveal(definition.Id);
                 password = Encoding.UTF8.GetString(vaultSecret);
             }
+        }
+        catch (InvalidOperationException exception)
+        {
+            SessionStatusLabel = $"SSH2 身份卡無法使用：{exception.Message}";
+            return;
         }
 
         if (string.IsNullOrWhiteSpace(username) || string.IsNullOrEmpty(password))
@@ -1071,6 +1157,13 @@ public sealed partial class MainViewModel : ViewModelBase
                 IdentityCards = identityCards,
                 EncryptedPrimaryVault = encryptedVault,
             }, _activeMasterPassword);
+            if (AutomaticBackupEnabled)
+            {
+                await _backupService.CreateAsync(
+                    _workspacePath,
+                    _backupDirectory,
+                    DateTimeOffset.Now);
+            }
         }
         finally
         {
@@ -1131,15 +1224,22 @@ public sealed partial class MainViewModel : ViewModelBase
 
     private async Task LaunchVncAsync(ConnectionProfile connection, SessionId sessionId)
     {
+        byte[]? vaultSecret = null;
         await StopVncAsync();
         _vncCancellation = new CancellationTokenSource();
         _vncFrameSink = new AvaloniaRfbFrameSink(frame => RemoteFrame = frame);
         _vncClient = new RfbClient(new TcpRfbTransportFactory(), _vncFrameSink);
         try
         {
+            if (ResolveCredentialDefinition(connection) is { } definition)
+            {
+                vaultSecret = _vault!.Reveal(definition.Id);
+            }
+
             var server = await _vncClient.ConnectAsync(new RfbConnectionOptions
             {
                 Endpoint = connection.Endpoint,
+                Password = vaultSecret,
                 AccessMode = connection.DefaultAccessMode,
             }, _vncCancellation.Token);
             _sessionWorkspace.SetState(sessionId, SessionState.Connected);
@@ -1153,6 +1253,80 @@ public sealed partial class MainViewModel : ViewModelBase
             SessionStatusLabel = $"VNC 連線失敗：{exception.Message}";
             await StopVncAsync();
         }
+        finally
+        {
+            if (vaultSecret is not null)
+            {
+                System.Security.Cryptography.CryptographicOperations.ZeroMemory(vaultSecret);
+            }
+        }
+    }
+
+    private CredentialDefinition? ResolveCredentialDefinition(ConnectionProfile connection)
+    {
+        if (!ConnectionUsesIdentityCard(connection))
+        {
+            return null;
+        }
+
+        if (_vault is null || IsVaultLocked)
+        {
+            throw new InvalidOperationException("此連線需要身份卡，請先解鎖 Vault。");
+        }
+
+        var definitions = _vault.Credentials;
+        var cards = definitions
+            .Where(credential => credential.Kind is CredentialKind.UsernamePassword)
+            .Select(credential => new IdentityCard
+            {
+                VaultId = credential.VaultId,
+                CredentialId = credential.Id,
+                Name = credential.Name,
+                ProtocolId = credential.ProtocolScope,
+                Username = credential.Username ?? string.Empty,
+                Domain = credential.Domain,
+            });
+        var card = new ConnectionCredentialResolver().ResolveIdentityCard(connection, _folders, cards);
+        if (card is null)
+        {
+            return null;
+        }
+
+        return definitions.First(credential =>
+            credential.VaultId == card.VaultId && credential.Id == card.CredentialId);
+    }
+
+    private bool ConnectionUsesIdentityCard(ConnectionProfile connection)
+    {
+        if (connection.Credential.Kind is CredentialReferenceKind.IdentityCard)
+        {
+            return true;
+        }
+
+        if (connection.Credential.Kind is not CredentialReferenceKind.Inherited)
+        {
+            return false;
+        }
+
+        var folderId = connection.FolderId;
+        var visited = new HashSet<FolderId>();
+        while (folderId is { } currentId && visited.Add(currentId))
+        {
+            var folder = _folders.FirstOrDefault(candidate => candidate.Id == currentId);
+            if (folder is null)
+            {
+                return false;
+            }
+
+            if (folder.Credential.Kind is CredentialReferenceKind.IdentityCard)
+            {
+                return true;
+            }
+
+            folderId = folder.ParentId;
+        }
+
+        return false;
     }
 
     private async Task ObserveVncAsync(RfbClient client, SessionId sessionId, CancellationToken cancellationToken)
