@@ -1,6 +1,8 @@
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.VisualTree;
 using System.ComponentModel;
 using Remote.Application.Layout;
 using Remote.Desktop.ViewModels;
@@ -106,6 +108,29 @@ public partial class MainWindow : Window
     {
         _isConnectionTreeCollapsed = !_isConnectionTreeCollapsed;
         ApplyAdaptiveLayout();
+    }
+
+    private void HandleConnectionTreePointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (e.Source is not Control source ||
+            !e.GetCurrentPoint(ConnectionTreeView).Properties.IsLeftButtonPressed)
+        {
+            return;
+        }
+
+        // The built-in expander already owns clicks on its arrow. Handle the rest
+        // of the folder row so its icon, label, detail and empty area all toggle it.
+        if (source is ToggleButton || source.GetVisualAncestors().Any(ancestor => ancestor is ToggleButton))
+        {
+            return;
+        }
+
+        var treeItem = source as TreeViewItem
+            ?? source.GetVisualAncestors().OfType<TreeViewItem>().FirstOrDefault();
+        if (treeItem?.DataContext is ConnectionTreeDisplayItem { IsFolder: true })
+        {
+            treeItem.IsExpanded = !treeItem.IsExpanded;
+        }
     }
 
     private void ToggleInspector(object? sender, RoutedEventArgs e)

@@ -35,7 +35,7 @@
           <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="4"><TextBox Text="{Binding NewFolderName}" PlaceholderText="新資料夾" MinWidth="80"/><Button Grid.Column="1" Content="＋資料夾" Classes="tool" Command="{Binding AddFolderCommand}"/><Button Grid.Column="2" Content="匯入" Classes="tool" ToolTip.Tip="匯入 mRemoteNG 連線資料" Command="{Binding OpenImportPanelCommand}"/><Button Grid.Column="3" Content="🗑" Background="Transparent" Foreground="#FF9AA9" Padding="6" ToolTip.Tip="刪除選取的連線" Command="{Binding RequestDeleteConnectionCommand}"/></Grid>
           <Border Grid.Row="1" Height="32" Margin="0,12,0,8" Background="#111827" BorderBrush="#35405A" BorderThickness="1" CornerRadius="7"><TextBlock Text="⌕ 搜尋連線與標籤" Margin="9,0" VerticalAlignment="Center" Foreground="#8795AD" FontSize="11"/></Border>
           <TextBlock Grid.Row="2" Text="我的連線" Margin="6,8,0,5" Foreground="#74829A" FontSize="10" FontWeight="SemiBold"/>
-          <TreeView Grid.Row="3" ItemsSource="{Binding ConnectionTree}" SelectedItem="{Binding SelectedTreeItem}" Background="Transparent" BorderThickness="0">
+          <TreeView x:Name="ConnectionTreeView" Grid.Row="3" ItemsSource="{Binding ConnectionTree}" SelectedItem="{Binding SelectedTreeItem}" Background="Transparent" BorderThickness="0" PointerPressed="HandleConnectionTreePointerPressed">
             <TreeView.ItemTemplate>
               <TreeDataTemplate x:DataType="vm:ConnectionTreeDisplayItem" ItemsSource="{Binding Children}">
                 <Grid ColumnDefinitions="Auto,*" Margin="2,6">
