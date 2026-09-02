@@ -32,7 +32,7 @@
       </Border>
       <Border x:Name="ConnectionTree" Grid.Column="1" Background="#171F2E" BorderBrush="#293248" BorderThickness="0,0,1,0" Padding="12,14">
         <Grid RowDefinitions="Auto,Auto,Auto,*">
-          <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="4"><TextBox Text="{Binding NewFolderName}" PlaceholderText="新資料夾" MinWidth="100"/><Button Grid.Column="1" Content="＋資料夾" Classes="tool" Command="{Binding AddFolderCommand}"/><Button Grid.Column="2" Content="🗑" Background="Transparent" Foreground="#FF9AA9" Padding="6" ToolTip.Tip="刪除選取的連線" Command="{Binding RequestDeleteConnectionCommand}"/></Grid>
+          <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="4"><TextBox Text="{Binding NewFolderName}" PlaceholderText="新資料夾" MinWidth="80"/><Button Grid.Column="1" Content="＋資料夾" Classes="tool" Command="{Binding AddFolderCommand}"/><Button Grid.Column="2" Content="匯入" Classes="tool" ToolTip.Tip="匯入 mRemoteNG 連線資料" Command="{Binding OpenImportPanelCommand}"/><Button Grid.Column="3" Content="🗑" Background="Transparent" Foreground="#FF9AA9" Padding="6" ToolTip.Tip="刪除選取的連線" Command="{Binding RequestDeleteConnectionCommand}"/></Grid>
           <Border Grid.Row="1" Height="32" Margin="0,12,0,8" Background="#111827" BorderBrush="#35405A" BorderThickness="1" CornerRadius="7"><TextBlock Text="⌕ 搜尋連線與標籤" Margin="9,0" VerticalAlignment="Center" Foreground="#8795AD" FontSize="11"/></Border>
           <TextBlock Grid.Row="2" Text="我的連線" Margin="6,8,0,5" Foreground="#74829A" FontSize="10" FontWeight="SemiBold"/>
           <TreeView Grid.Row="3" ItemsSource="{Binding ConnectionTree}" SelectedItem="{Binding SelectedTreeItem}" Background="Transparent" BorderThickness="0">
@@ -157,10 +157,37 @@
           <StackPanel Grid.Row="1" Margin="0,18,0,0" Spacing="12" IsVisible="{Binding IsVaultLocked}"><Border Background="#3C2E19" CornerRadius="9" Padding="12"><TextBlock Text="ID Card 儲存在 Vault 中；請先解鎖 Vault 才能查看或管理。" Foreground="#FFD08B" TextWrapping="Wrap"/></Border><Button HorizontalAlignment="Left" Content="前往解鎖 Vault" Background="#5B5CE2" Foreground="White" Command="{Binding UnlockVaultFromIdentityPanelCommand}"/></StackPanel>
           <Grid Grid.Row="1" Margin="0,18,0,0" ColumnDefinitions="230,*" ColumnSpacing="18" IsVisible="{Binding !IsVaultLocked}">
             <Grid RowDefinitions="*,Auto"><ListBox ItemsSource="{Binding VaultCredentials}" SelectedItem="{Binding SelectedVaultCredential}" Background="Transparent" BorderThickness="0"><ListBox.ItemTemplate><DataTemplate><Border Margin="0,3" Padding="10" Background="#20293B" CornerRadius="8"><Grid ColumnDefinitions="*,Auto"><StackPanel><TextBlock Text="{Binding Name}"/><TextBlock Text="{Binding Username}" FontSize="10" Foreground="#8290A7"/></StackPanel><TextBlock Grid.Column="1" Text="{Binding ProtocolScope}" Foreground="#9FA5FF"/></Grid></Border></DataTemplate></ListBox.ItemTemplate></ListBox><StackPanel Grid.Row="1" Spacing="7"><Button Content="編輯選取的 ID Card" Command="{Binding BeginEditIdentityCardCommand}" Classes="tool"/><Button Content="永久刪除" Command="{Binding DeleteIdentityCardCommand}" Background="#552B35" Foreground="#FFB2BE"/></StackPanel></Grid>
-            <ScrollViewer Grid.Column="1"><StackPanel Spacing="10"><Grid ColumnDefinitions="*,Auto"><TextBlock Text="{Binding IdentityEditorTitle}" FontSize="15" FontWeight="SemiBold"/><Button Grid.Column="1" Content="清除／取消編輯" Classes="tool" Command="{Binding CancelIdentityCardEditCommand}"/></Grid><TextBox Text="{Binding NewIdentityName}" PlaceholderText="名稱"/><ComboBox ItemsSource="{Binding IdentityProtocols}" SelectedItem="{Binding NewIdentityProtocol}" IsEnabled="{Binding !IsEditingIdentity}"/><TextBox Text="{Binding NewIdentityUsername}" PlaceholderText="使用者名稱（VNC 可選填）"/><TextBox Text="{Binding NewIdentityDomain}" PlaceholderText="網域（RDP 選填）"/><TextBox Text="{Binding NewIdentitySecret}" PasswordChar="●" PlaceholderText="密碼；編輯時留空代表保留原密碼"/><Button Content="{Binding IdentitySaveLabel}" Command="{Binding AddIdentityCardCommand}" Background="#5B5CE2" Foreground="White" Padding="14,9"/><Border Background="#20293B" CornerRadius="9" Padding="10"><StackPanel Spacing="6"><TextBlock Text="使用範圍" FontSize="12" FontWeight="SemiBold"/><ItemsControl ItemsSource="{Binding SelectedIdentityUsages}"><ItemsControl.ItemTemplate><DataTemplate><TextBlock Text="{Binding}" Margin="0,2" FontSize="10" Foreground="#A9B8CE" TextWrapping="Wrap"/></DataTemplate></ItemsControl.ItemTemplate></ItemsControl></StackPanel></Border><TextBlock Text="指派給 Connection 或 Folder" FontSize="12" FontWeight="SemiBold"/><ComboBox ItemsSource="{Binding IdentityAssignmentTargets}" SelectedItem="{Binding SelectedIdentityAssignmentTarget}" DisplayMemberBinding="{Binding DisplayName}" PlaceholderText="選擇資料夾或連線"/><Button Content="指派並驗證" Command="{Binding AssignIdentityCardCommand}" Classes="tool"/><Border Background="#20293B" CornerRadius="9" Padding="10"><StackPanel Spacing="7"><TextBlock Text="從 mRemoteNG 一次性匯入" FontSize="12" FontWeight="SemiBold"/><TextBox Text="{Binding LegacyImportPassword}" PasswordChar="●" PlaceholderText="mRemoteNG 加密密碼"/><Button Content="選擇 confCons.xml／XML" Click="ImportMRemoteNg" Classes="tool"/></StackPanel></Border></StackPanel></ScrollViewer>
+            <ScrollViewer Grid.Column="1"><StackPanel Spacing="10"><Grid ColumnDefinitions="*,Auto"><TextBlock Text="{Binding IdentityEditorTitle}" FontSize="15" FontWeight="SemiBold"/><Button Grid.Column="1" Content="清除／取消編輯" Classes="tool" Command="{Binding CancelIdentityCardEditCommand}"/></Grid><TextBox Text="{Binding NewIdentityName}" PlaceholderText="名稱"/><ComboBox ItemsSource="{Binding IdentityProtocols}" SelectedItem="{Binding NewIdentityProtocol}" IsEnabled="{Binding !IsEditingIdentity}"/><TextBox Text="{Binding NewIdentityUsername}" PlaceholderText="使用者名稱（VNC 可選填）"/><TextBox Text="{Binding NewIdentityDomain}" PlaceholderText="網域（RDP 選填）"/><TextBox Text="{Binding NewIdentitySecret}" PasswordChar="●" PlaceholderText="密碼；編輯時留空代表保留原密碼"/><Button Content="{Binding IdentitySaveLabel}" Command="{Binding AddIdentityCardCommand}" Background="#5B5CE2" Foreground="White" Padding="14,9"/><Border Background="#20293B" CornerRadius="9" Padding="10"><StackPanel Spacing="6"><TextBlock Text="使用範圍" FontSize="12" FontWeight="SemiBold"/><ItemsControl ItemsSource="{Binding SelectedIdentityUsages}"><ItemsControl.ItemTemplate><DataTemplate><TextBlock Text="{Binding}" Margin="0,2" FontSize="10" Foreground="#A9B8CE" TextWrapping="Wrap"/></DataTemplate></ItemsControl.ItemTemplate></ItemsControl></StackPanel></Border><TextBlock Text="指派給 Connection 或 Folder" FontSize="12" FontWeight="SemiBold"/><ComboBox ItemsSource="{Binding IdentityAssignmentTargets}" SelectedItem="{Binding SelectedIdentityAssignmentTarget}" DisplayMemberBinding="{Binding DisplayName}" PlaceholderText="選擇資料夾或連線"/><Button Content="指派並驗證" Command="{Binding AssignIdentityCardCommand}" Classes="tool"/></StackPanel></ScrollViewer>
           </Grid>
           <TextBlock Grid.Row="2" Margin="0,10,0,0" Text="{Binding VaultMessage}" Foreground="#A9B8CE" TextWrapping="Wrap" FontSize="11"/>
         </Grid>
+      </Border>
+    </Border>
+    <Border Grid.RowSpan="2" Background="#B3090D16" IsVisible="{Binding IsImportPanelOpen}" ZIndex="24">
+      <Border Width="560" MaxHeight="650" HorizontalAlignment="Center" VerticalAlignment="Center" Background="#171F2E" BorderBrush="#4A5874" BorderThickness="1" CornerRadius="14" Padding="22">
+        <StackPanel Spacing="14">
+          <Grid ColumnDefinitions="*,Auto">
+            <StackPanel>
+              <TextBlock Text="匯入連線資料" FontSize="20" FontWeight="SemiBold"/>
+              <TextBlock Text="mRemoteNG confCons.xml · 一次性移轉" FontSize="10" Foreground="#8290A7"/>
+            </StackPanel>
+            <Button Grid.Column="1" Content="✕" Classes="tool" Command="{Binding CloseImportPanelCommand}"/>
+          </Grid>
+          <Border Background="#20293B" CornerRadius="9" Padding="12">
+            <StackPanel Spacing="7">
+              <TextBlock Text="匯入內容" FontWeight="SemiBold"/>
+              <TextBlock Text="資料夾階層、連線名稱、主機、連接埠、協定與支援的連線設定。這不是 ID Card 匯入。" Foreground="#C4CDDC" TextWrapping="Wrap" FontSize="11"/>
+              <TextBlock Text="匯入連線不受 Vault 權限阻擋。Vault 已解鎖時，檔案內可解密的帳密會另外轉成 ID Card 並指派給連線；Vault 鎖定時仍匯入連線，但略過帳密。" Foreground="#76D0A2" TextWrapping="Wrap" FontSize="11"/>
+            </StackPanel>
+          </Border>
+          <StackPanel Spacing="6">
+            <TextBlock Text="mRemoteNG 加密密碼" FontSize="11" Foreground="#A9B8CE"/>
+            <TextBox Text="{Binding LegacyImportPassword}" PasswordChar="●" PlaceholderText="用於解密 confCons.xml"/>
+          </StackPanel>
+          <Button Content="選擇 confCons.xml 並匯入" Click="ImportMRemoteNg" Background="#5B5CE2" Foreground="White" Padding="14,9"/>
+          <TextBlock Text="目前支援 mRXML／confCons.xml；mRCSV 將在後續版本加入。" Foreground="#E5B96F" TextWrapping="Wrap" FontSize="10"/>
+          <TextBlock Text="{Binding ImportMessage}" Foreground="#A9B8CE" TextWrapping="Wrap" FontSize="11"/>
+        </StackPanel>
       </Border>
     </Border>
     <Border Grid.RowSpan="2" Background="#B3090D16" IsVisible="{Binding IsSettingsPanelOpen}" ZIndex="25">

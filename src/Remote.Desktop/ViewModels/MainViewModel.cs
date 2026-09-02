@@ -44,6 +44,8 @@ public sealed partial class MainViewModel : ViewModelBase
     private readonly string _workspacePath;
     private readonly string _backupDirectory;
     private readonly List<ConnectionFolder> _folders = [];
+    private readonly List<ConnectionFolder> _pendingImportedFolders = [];
+    private readonly List<ConnectionProfile> _pendingImportedConnections = [];
     private ConnectionId? _editingConnectionId;
     private CredentialVault? _vault;
     private CredentialId? _editingCredentialId;
@@ -286,6 +288,9 @@ public sealed partial class MainViewModel : ViewModelBase
     private bool isIdentityPanelOpen;
 
     [ObservableProperty]
+    private bool isImportPanelOpen;
+
+    [ObservableProperty]
     private bool isVaultLocked = true;
 
     [ObservableProperty]
@@ -296,6 +301,9 @@ public sealed partial class MainViewModel : ViewModelBase
 
     [ObservableProperty]
     private string legacyImportPassword = string.Empty;
+
+    [ObservableProperty]
+    private string importMessage = "選擇 mRemoteNG confCons.xml 連線檔";
 
     [ObservableProperty]
     private string newIdentityName = string.Empty;
@@ -493,6 +501,23 @@ public sealed partial class MainViewModel : ViewModelBase
     }
 
     [RelayCommand]
+    private void OpenImportPanel()
+    {
+        LegacyImportPassword = string.Empty;
+        ImportMessage = IsVaultLocked
+            ? "可以匯入連線與資料夾；Vault 鎖定時不匯入帳密"
+            : "將匯入連線、資料夾、繼承設定與可用帳密";
+        IsImportPanelOpen = true;
+    }
+
+    [RelayCommand]
+    private void CloseImportPanel()
+    {
+        LegacyImportPassword = string.Empty;
+        IsImportPanelOpen = false;
+    }
+
+    [RelayCommand]
     private void CloseIdentityPanel()
     {
         NewIdentitySecret = string.Empty;
@@ -526,7 +551,8 @@ public sealed partial class MainViewModel : ViewModelBase
         try
         {
             CredentialVault vault;
-            if (File.Exists(_workspacePath))
+            var workspaceExisted = File.Exists(_workspacePath);
+            if (workspaceExisted)
             {
                 var document = await _workspaceRepository.LoadAsync(_workspacePath, VaultMasterPassword);
                 if (document.EncryptedPrimaryVault is { Length: > 0 } archive)
@@ -545,6 +571,7 @@ public sealed partial class MainViewModel : ViewModelBase
                     vault = new CredentialVault();
                 }
                 LoadWorkspaceDocument(document);
+                ApplyPendingConnectionImport();
             }
             else
             {
@@ -559,10 +586,12 @@ public sealed partial class MainViewModel : ViewModelBase
             _autoLockController.RecordActivity();
             RefreshVaultCredentials();
             VaultMessage = File.Exists(_workspacePath) ? "Vault 已安全解鎖" : "已建立新的本機主 Vault";
-            if (!File.Exists(_workspacePath))
+            if (!workspaceExisted || _pendingImportedFolders.Count > 0 || _pendingImportedConnections.Count > 0)
             {
                 await SaveWorkspaceAsync();
             }
+            _pendingImportedFolders.Clear();
+            _pendingImportedConnections.Clear();
         }
         catch (Exception exception) when (exception is WorkspaceUnlockException or InvalidDataException or NotSupportedException)
         {
@@ -660,15 +689,9 @@ public sealed partial class MainViewModel : ViewModelBase
 
     public async Task ImportMRemoteNgAsync(string path)
     {
-        if (_vault is null || IsVaultLocked)
-        {
-            VaultMessage = "請先解鎖 Vault，再匯入 mRemoteNG";
-            return;
-        }
-
         if (string.IsNullOrWhiteSpace(LegacyImportPassword))
         {
-            VaultMessage = "請輸入 mRemoteNG 連線檔的加密密碼";
+            ImportMessage = "請輸入 mRemoteNG 連線檔的加密密碼";
             return;
         }
 
@@ -676,35 +699,54 @@ public sealed partial class MainViewModel : ViewModelBase
         {
             var xml = await File.ReadAllTextAsync(path);
             using var result = new MRemoteNgXmlImporter().Import(xml, LegacyImportPassword, _primaryVaultId);
-            foreach (var imported in result.IdentityCards)
+            var canImportCredentials = _vault is not null && !IsVaultLocked;
+            if (canImportCredentials)
             {
-                _vault.Add(imported.Definition, imported.Secret);
+                foreach (var imported in result.IdentityCards)
+                {
+                    _vault!.Add(imported.Definition, imported.Secret);
+                }
             }
 
-            _folders.AddRange(result.Folders);
-            foreach (var profile in result.Connections)
+            var importedFolders = canImportCredentials
+                ? result.Folders
+                : result.Folders.Select(folder => folder with
+                {
+                    Credential = ConnectionCredentialReference.None,
+                    ProtocolCredentials = new Dictionary<string, ConnectionCredentialReference>(StringComparer.OrdinalIgnoreCase),
+                }).ToArray();
+            var importedConnections = canImportCredentials
+                ? result.Connections
+                : result.Connections.Select(profile => profile with
+                {
+                    Credential = ConnectionCredentialReference.None,
+                }).ToArray();
+            ApplyConnectionImport(importedFolders, importedConnections);
+            if (!canImportCredentials)
             {
-                Connections.Add(new ConnectionListItem(
-                    profile,
-                    profile.Credential.Kind is CredentialReferenceKind.Inherited
-                        ? $"Inherited {profile.ProtocolId.ToUpperInvariant()} ID Card"
-                        : $"{profile.ProtocolId.ToUpperInvariant()} ID Card",
-                    false));
+                _pendingImportedFolders.AddRange(importedFolders);
+                _pendingImportedConnections.AddRange(importedConnections);
             }
 
             LegacyImportPassword = string.Empty;
-            RefreshFolderOptions();
             RefreshVaultCredentials();
-            RebuildConnectionTree(result.Connections.FirstOrDefault()?.Id ?? default);
-            await SaveWorkspaceAsync();
-            VaultMessage = result.Warnings.Count == 0
-                ? $"匯入完成：{result.Folders.Count} 個資料夾、{result.Connections.Count} 個連線、{result.IdentityCards.Count} 張 ID Card"
-                : $"匯入完成，但有 {result.Warnings.Count} 項不支援內容；已匯入 {result.Connections.Count} 個連線";
+            if (canImportCredentials)
+            {
+                await SaveWorkspaceAsync();
+            }
+            ImportMessage = canImportCredentials
+                ? $"匯入完成：{result.Folders.Count} 個資料夾、{result.Connections.Count} 個連線；已安全轉換 {result.IdentityCards.Count} 組帳密"
+                : $"已匯入 {result.Folders.Count} 個資料夾、{result.Connections.Count} 個連線。Vault 鎖定，帳密未匯入；解鎖後會儲存連線資料。";
+            if (result.Warnings.Count > 0)
+            {
+                ImportMessage += $"另有 {result.Warnings.Count} 項不支援設定。";
+            }
+            AddAuditEvent($"mRemoteNG 連線匯入：{result.Connections.Count} 個連線");
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or System.Xml.XmlException or System.Security.Cryptography.CryptographicException or FormatException)
         {
             LegacyImportPassword = string.Empty;
-            VaultMessage = $"mRemoteNG 匯入失敗：{exception.Message}";
+            ImportMessage = $"mRemoteNG 匯入失敗：{exception.Message}";
         }
     }
 
@@ -1900,6 +1942,54 @@ public sealed partial class MainViewModel : ViewModelBase
         }
 
         SelectedConnection = Connections.FirstOrDefault();
+        SelectedTreeItem = SelectedConnection is null
+            ? null
+            : FindConnectionTreeItem(ConnectionTree, SelectedConnection.Profile.Id);
+    }
+
+    private void ApplyPendingConnectionImport()
+    {
+        if (_pendingImportedFolders.Count == 0 && _pendingImportedConnections.Count == 0)
+        {
+            return;
+        }
+
+        ApplyConnectionImport(_pendingImportedFolders, _pendingImportedConnections);
+    }
+
+    private void ApplyConnectionImport(
+        IEnumerable<ConnectionFolder> folders,
+        IEnumerable<ConnectionProfile> connections)
+    {
+        var knownFolderIds = _folders.Select(folder => folder.Id).ToHashSet();
+        foreach (var folder in folders)
+        {
+            if (knownFolderIds.Add(folder.Id))
+            {
+                _folders.Add(folder);
+            }
+        }
+
+        var knownConnectionIds = Connections.Select(item => item.Profile.Id).ToHashSet();
+        foreach (var connection in connections)
+        {
+            if (knownConnectionIds.Add(connection.Id))
+            {
+                Connections.Add(new ConnectionListItem(
+                    connection,
+                    $"{connection.ProtocolId.ToUpperInvariant()} imported",
+                    false));
+            }
+        }
+
+        RefreshFolderOptions();
+        ConnectionTree.Clear();
+        foreach (var item in BuildConnectionTree(_folders, Connections))
+        {
+            ConnectionTree.Add(item);
+        }
+
+        SelectedConnection ??= Connections.FirstOrDefault();
         SelectedTreeItem = SelectedConnection is null
             ? null
             : FindConnectionTreeItem(ConnectionTree, SelectedConnection.Profile.Id);
