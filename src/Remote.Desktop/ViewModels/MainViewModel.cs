@@ -16,6 +16,7 @@ using Remote.Infrastructure.Security;
 using Remote.Infrastructure.Storage;
 using Remote.Infrastructure.Vaults;
 using Remote.Infrastructure.Import;
+using Remote.Infrastructure.Diagnostics;
 using Remote.Application.Vaults;
 using Remote.Application.Credentials;
 using Remote.Desktop.Protocols.Vnc;
@@ -44,6 +45,7 @@ public sealed partial class MainViewModel : ViewModelBase
     private readonly EncryptedWorkspaceBackupService _backupService = new();
     private readonly string _workspacePath;
     private readonly string _recoveryPath;
+    private readonly LocalErrorLog _errorLog;
     private readonly string _backupDirectory;
     private readonly List<ConnectionFolder> _folders = [];
     private readonly List<ConnectionFolder> _pendingImportedFolders = [];
@@ -89,6 +91,7 @@ public sealed partial class MainViewModel : ViewModelBase
             "Remote",
             "workspace.rmtw");
         _recoveryPath = $"{_workspacePath}.recovery";
+        _errorLog = new LocalErrorLog(Path.Combine(Path.GetDirectoryName(_workspacePath)!, "Logs", "errors.jsonl"));
         _backupDirectory = Path.Combine(Path.GetDirectoryName(_workspacePath)!, "Backups");
         var productionFolder = new ConnectionFolder { Id = FolderId.New(), Name = "Production" };
         var labFolder = new ConnectionFolder { Id = FolderId.New(), Name = "Lab" };
@@ -377,6 +380,17 @@ public sealed partial class MainViewModel : ViewModelBase
     private string notificationMessage = string.Empty;
 
     [ObservableProperty]
+    private bool isErrorDialogOpen;
+
+    [ObservableProperty]
+    private string errorDialogTitle = "發生重大錯誤";
+
+    [ObservableProperty]
+    private string errorDialogMessage = string.Empty;
+
+    public string ErrorLogPath => _errorLog.Path;
+
+    [ObservableProperty]
     private InactivityLockInterval selectedLockInterval = InactivityLockInterval.FiveMinutes;
 
     [ObservableProperty]
@@ -648,6 +662,7 @@ public sealed partial class MainViewModel : ViewModelBase
         {
             VaultMasterPassword = string.Empty;
             VaultMessage = exception.Message;
+            await ReportMajorErrorAsync("Vault", "unlock-failed", $"Vault 解鎖失敗：{exception.Message}", exception);
         }
     }
 
@@ -932,6 +947,9 @@ public sealed partial class MainViewModel : ViewModelBase
 
     [RelayCommand]
     private void DismissNotification() => IsNotificationOpen = false;
+
+    [RelayCommand]
+    private void DismissErrorDialog() => IsErrorDialogOpen = false;
 
     [RelayCommand]
     private void OpenSettingsPanel() => IsSettingsPanelOpen = true;
@@ -1830,11 +1848,13 @@ public sealed partial class MainViewModel : ViewModelBase
             }
         }
         catch (Exception exception) when (
-            exception is NotSupportedException or InvalidOperationException or System.ComponentModel.Win32Exception)
+            exception is NotSupportedException or InvalidOperationException or System.ComponentModel.Win32Exception
+                or TimeoutException or System.Net.Sockets.SocketException)
         {
             _sessionWorkspace.SetState(session.Id, SessionState.Faulted, exception.Message);
             IsRdpSessionActive = false;
             SessionStatusLabel = exception.Message;
+            await ReportMajorErrorAsync("RDP", "session-launch-failed", $"無法連線到 {connection.Endpoint.Host}:{connection.Endpoint.Port}。{exception.Message}", exception);
         }
         finally
         {
@@ -1891,6 +1911,7 @@ public sealed partial class MainViewModel : ViewModelBase
         catch (InvalidOperationException exception)
         {
             SessionStatusLabel = $"SSH2 身份卡無法使用：{exception.Message}";
+            await ReportMajorErrorAsync("SSH2", "credential-unavailable", SessionStatusLabel, exception);
             return;
         }
 
@@ -1940,11 +1961,17 @@ public sealed partial class MainViewModel : ViewModelBase
             SessionStatusLabel = $"SSH2 已連線 · {connection.Endpoint.Host} · {AccessModeLabel}";
             _ = ObserveSshAsync(_sshSession, sessionId, _sshCancellation.Token);
         }
-        catch (Exception exception) when (exception is IOException or InvalidOperationException or Renci.SshNet.Common.SshException)
+        catch (Exception exception) when (
+            exception is IOException or InvalidOperationException or Renci.SshNet.Common.SshException
+                or TimeoutException or System.Net.Sockets.SocketException)
         {
             _sessionWorkspace.SetState(sessionId, SessionState.Faulted, exception.Message);
             SessionStatusLabel = $"SSH2 連線失敗：{exception.Message}";
             SessionPassword = string.Empty;
+            var code = exception is Renci.SshNet.Common.SshAuthenticationException
+                ? "authentication-failed"
+                : exception is TimeoutException ? "connection-timeout" : "connection-failed";
+            await ReportMajorErrorAsync("SSH2", code, $"無法連線到 {connection.Endpoint.Host}:{connection.Endpoint.Port}。{exception.Message}", exception);
             await StopSshAsync();
         }
         finally
@@ -2039,7 +2066,9 @@ public sealed partial class MainViewModel : ViewModelBase
         catch (Exception exception) when (exception is IOException or Renci.SshNet.Common.SshException)
         {
             _sessionWorkspace.SetState(sessionId, SessionState.Faulted, exception.Message);
-            await Dispatcher.UIThread.InvokeAsync(() => SessionStatusLabel = $"SSH2 工作階段中斷：{exception.Message}");
+            var message = $"SSH2 工作階段中斷：{exception.Message}";
+            await Dispatcher.UIThread.InvokeAsync(() => SessionStatusLabel = message);
+            await ReportMajorErrorAsync("SSH2", "session-interrupted", message, exception);
         }
         finally
         {
@@ -2084,6 +2113,7 @@ public sealed partial class MainViewModel : ViewModelBase
         {
             _sessionWorkspace.SetState(sessionId, SessionState.Faulted, exception.Message);
             SessionStatusLabel = $"Terminal 啟動失敗：{exception.Message}";
+            await ReportMajorErrorAsync("Terminal", "launch-failed", SessionStatusLabel, exception);
             await StopLocalTerminalAsync();
         }
     }
@@ -2115,7 +2145,9 @@ public sealed partial class MainViewModel : ViewModelBase
         catch (Exception exception) when (exception is IOException or InvalidOperationException)
         {
             _sessionWorkspace.SetState(sessionId, SessionState.Faulted, exception.Message);
-            await Dispatcher.UIThread.InvokeAsync(() => SessionStatusLabel = $"Terminal 中斷：{exception.Message}");
+            var message = $"Terminal 中斷：{exception.Message}";
+            await Dispatcher.UIThread.InvokeAsync(() => SessionStatusLabel = message);
+            await ReportMajorErrorAsync("Terminal", "session-interrupted", message, exception);
         }
         finally
         {
@@ -2366,10 +2398,16 @@ public sealed partial class MainViewModel : ViewModelBase
             SessionStatusLabel = $"VNC 已連線 · {server.Name} · {server.Width} × {server.Height}";
             _ = ObserveVncAsync(_vncClient, sessionId, _vncCancellation.Token);
         }
-        catch (Exception exception) when (exception is IOException or InvalidOperationException or NotSupportedException)
+        catch (Exception exception) when (
+            exception is IOException or InvalidOperationException or NotSupportedException
+                or TimeoutException or System.Net.Sockets.SocketException)
         {
             _sessionWorkspace.SetState(sessionId, SessionState.Faulted, exception.Message);
             SessionStatusLabel = $"VNC 連線失敗：{exception.Message}";
+            var code = exception is RfbAuthenticationException
+                ? "authentication-failed"
+                : exception is TimeoutException ? "connection-timeout" : "connection-failed";
+            await ReportMajorErrorAsync("VNC", code, $"無法連線到 {connection.Endpoint.Host}:{connection.Endpoint.Port}。{exception.Message}", exception);
             await StopVncAsync();
         }
         finally
@@ -2478,7 +2516,9 @@ public sealed partial class MainViewModel : ViewModelBase
         catch (Exception exception) when (exception is IOException or InvalidDataException or NotSupportedException)
         {
             _sessionWorkspace.SetState(sessionId, SessionState.Faulted, exception.Message);
-            SessionStatusLabel = $"VNC 工作階段中斷：{exception.Message}";
+            var message = $"VNC 工作階段中斷：{exception.Message}";
+            await Dispatcher.UIThread.InvokeAsync(() => SessionStatusLabel = message);
+            await ReportMajorErrorAsync("VNC", "session-interrupted", message, exception);
         }
     }
 
@@ -2683,6 +2723,19 @@ public sealed partial class MainViewModel : ViewModelBase
         {
             AuditEvents.RemoveAt(AuditEvents.Count - 1);
         }
+    }
+
+    private async Task ReportMajorErrorAsync(string category, string code, string message, Exception exception)
+    {
+        // Raw exception text is intentionally kept out of the persistent log because
+        // protocol libraries may include user names, paths, or credential-related input.
+        await _errorLog.WriteAsync(category, code, $"{category} operation failed.", exception.GetType().Name);
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            ErrorDialogTitle = $"{category} 錯誤";
+            ErrorDialogMessage = message;
+            IsErrorDialogOpen = true;
+        });
     }
 
     private static ConnectionTreeDisplayItem? FindFolderTreeItem(
