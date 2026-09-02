@@ -39,7 +39,9 @@ public sealed partial class MainViewModel : ViewModelBase
     private readonly TerminalOutputDecoder _terminalOutputDecoder = new();
     private readonly EncryptedWorkspaceRepository _workspaceRepository;
     private readonly EncryptedVaultArchiveService _vaultArchiveService;
+    private readonly EncryptedWorkspaceBackupService _backupService = new();
     private readonly string _workspacePath;
+    private readonly string _backupDirectory;
     private readonly List<ConnectionFolder> _folders = [];
     private CredentialVault? _vault;
     private string _activeMasterPassword = string.Empty;
@@ -75,6 +77,7 @@ public sealed partial class MainViewModel : ViewModelBase
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "Remote",
             "workspace.rmtw");
+        _backupDirectory = Path.Combine(Path.GetDirectoryName(_workspacePath)!, "Backups");
         var productionFolder = new ConnectionFolder { Id = FolderId.New(), Name = "Production" };
         var labFolder = new ConnectionFolder { Id = FolderId.New(), Name = "Lab" };
         _folders.AddRange([productionFolder, labFolder]);
@@ -234,6 +237,9 @@ public sealed partial class MainViewModel : ViewModelBase
 
     [ObservableProperty]
     private CredentialDefinition? selectedVaultCredential;
+
+    [ObservableProperty]
+    private bool automaticBackupEnabled;
 
     [ObservableProperty]
     private bool isNotificationOpen;
@@ -538,6 +544,25 @@ public sealed partial class MainViewModel : ViewModelBase
 
     [RelayCommand]
     private void DismissNotification() => IsNotificationOpen = false;
+
+    [RelayCommand]
+    private async Task CreateBackupAsync()
+    {
+        try
+        {
+            var backupPath = await _backupService.CreateAsync(
+                _workspacePath,
+                _backupDirectory,
+                DateTimeOffset.Now);
+            NotificationMessage = $"已建立本機加密備份：{backupPath}";
+            IsNotificationOpen = true;
+            VaultMessage = "手動備份完成";
+        }
+        catch (IOException exception)
+        {
+            VaultMessage = $"備份失敗：{exception.Message}";
+        }
+    }
 
     partial void OnSelectedConnectionChanged(ConnectionListItem? value)
     {
@@ -1132,6 +1157,13 @@ public sealed partial class MainViewModel : ViewModelBase
                 IdentityCards = identityCards,
                 EncryptedPrimaryVault = encryptedVault,
             }, _activeMasterPassword);
+            if (AutomaticBackupEnabled)
+            {
+                await _backupService.CreateAsync(
+                    _workspacePath,
+                    _backupDirectory,
+                    DateTimeOffset.Now);
+            }
         }
         finally
         {
