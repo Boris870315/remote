@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using Microsoft.CSharp.RuntimeBinder;
 using Avalonia.Controls;
 using Avalonia.Platform;
 using Avalonia.Threading;
@@ -49,7 +50,7 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
             _disconnectRequested = false;
             _hasConnected = false;
             _connectingTicks = 0;
-            try { client.Disconnect(); } catch (COMException) { }
+            TryDisconnect(clientObject);
             client.Server = request.Endpoint.Host;
             client.UserName = ParseUsername(request.Username).Username;
             var domain = ParseUsername(request.Username).Domain;
@@ -88,7 +89,7 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
             EnableWindow(_window, permissions.AcceptsInput);
             return;
         }
-        catch (COMException exception)
+        catch (Exception exception) when (exception is COMException or RuntimeBinderException)
         {
             throw new InvalidOperationException($"內嵌 RDP 啟動失敗：{exception.Message}", exception);
         }
@@ -101,7 +102,7 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
         _resizeTimer?.Stop();
         if (_rdpClient is not null)
         {
-            try { ((dynamic)_rdpClient).Disconnect(); } catch (COMException) { }
+            TryDisconnect(_rdpClient);
         }
         return Task.CompletedTask;
     }
@@ -135,7 +136,7 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
                 catch (COMException) { reason = "RDP 連線非預期中斷"; }
                 UnexpectedlyDisconnected?.Invoke(reason);
             }
-            catch (COMException exception)
+            catch (Exception exception) when (exception is COMException or RuntimeBinderException)
             {
                 _connectionMonitor?.Stop();
                 UnexpectedlyDisconnected?.Invoke($"無法讀取 RDP 連線狀態：{exception.Message}");
@@ -154,7 +155,10 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
             var width = (uint)Math.Clamp((int)Bounds.Width, 200, 8192);
             var height = (uint)Math.Clamp((int)Bounds.Height, 200, 8192);
             try { ((dynamic)_rdpClient).Reconnect(width, height); }
-            catch (COMException) { /* SmartSizing remains the safe fallback. */ }
+            catch (Exception exception) when (exception is COMException or RuntimeBinderException)
+            {
+                /* SmartSizing remains the safe fallback. */
+            }
         });
         _resizeTimer.Stop();
         _resizeTimer.Start();
@@ -220,7 +224,7 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
             _resizeTimer?.Stop();
             if (_rdpClient is not null)
             {
-                try { ((dynamic)_rdpClient).Disconnect(); } catch (COMException) { }
+                TryDisconnect(_rdpClient);
                 if (Marshal.IsComObject(_rdpClient))
                 {
                     Marshal.FinalReleaseComObject(_rdpClient);
@@ -245,6 +249,19 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
         return separator > 0
             ? (value[..separator], value[(separator + 1)..])
             : (null, value);
+    }
+
+    private static void TryDisconnect(object client)
+    {
+        try
+        {
+            ((dynamic)client).Disconnect();
+        }
+        catch (Exception exception) when (exception is COMException or RuntimeBinderException)
+        {
+            // Some installed RDP ActiveX revisions do not expose Disconnect through
+            // IDispatch until a connection has been initialized. Cleanup is best effort.
+        }
     }
 
     [DllImport("atl.dll", ExactSpelling = true)]
