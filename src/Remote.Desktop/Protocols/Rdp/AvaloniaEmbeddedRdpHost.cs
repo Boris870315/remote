@@ -56,11 +56,10 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
             TryDisconnect(clientObject);
             stage = "set-endpoint";
             client.Server = request.Endpoint.Host;
-            client.UserName = ParseUsername(request.Username).Username ?? string.Empty;
-            var domain = ParseUsername(request.Username).Domain;
-            if (!string.IsNullOrWhiteSpace(domain))
+            client.UserName = request.Username ?? string.Empty;
+            if (!string.IsNullOrWhiteSpace(request.Domain))
             {
-                client.Domain = domain;
+                client.Domain = request.Domain;
             }
             stage = "set-display";
             client.DesktopWidth = Math.Max(640, (int)Bounds.Width);
@@ -264,18 +263,6 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
             return;
         }
         base.DestroyNativeControlCore(control);
-    }
-
-    private static (string? Domain, string? Username) ParseUsername(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return (null, null);
-        }
-        var separator = value.IndexOf('\\');
-        return separator > 0
-            ? (value[..separator], value[(separator + 1)..])
-            : (null, value);
     }
 
     private static void TryDisconnect(object client)

@@ -1890,9 +1890,11 @@ public sealed partial class MainViewModel : ViewModelBase
         try
         {
             string? username = null;
+            string? domain = null;
             if (ResolveCredentialDefinition(connection) is { } definition)
             {
-                username = RdpLoginName.Format(definition.Username, definition.Domain);
+                username = string.IsNullOrWhiteSpace(definition.Username) ? null : definition.Username.Trim();
+                domain = string.IsNullOrWhiteSpace(definition.Domain) ? null : definition.Domain.Trim();
                 rdpSecret = _vault!.Reveal(definition.Id);
             }
             else
@@ -1907,6 +1909,7 @@ public sealed partial class MainViewModel : ViewModelBase
             {
                 Endpoint = connection.Endpoint,
                 Username = username,
+                Domain = domain,
                 PasswordUtf8 = rdpSecret,
                 AccessMode = connection.DefaultAccessMode,
                 Display = connection.Display,
