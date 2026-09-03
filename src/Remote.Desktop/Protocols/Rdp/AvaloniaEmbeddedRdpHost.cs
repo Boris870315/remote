@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
-using Microsoft.CSharp.RuntimeBinder;
+using System.Globalization;
+using System.Reflection;
 using Avalonia.Controls;
 using Avalonia.Platform;
 using Avalonia.Threading;
@@ -44,7 +45,6 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
 
         var clientObject = _rdpClient
             ?? throw new InvalidOperationException("The embedded RDP surface did not initialize correctly.");
-        dynamic client = clientObject;
         var stage = "initialize";
         try
         {
@@ -53,57 +53,58 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
             _connectingTicks = 0;
             TryDisconnect(clientObject);
             stage = "set-endpoint";
-            client.Server = request.Endpoint.Host;
-            client.UserName = ParseUsername(request.Username).Username;
+            SetComProperty(clientObject, "Server", request.Endpoint.Host);
+            SetComProperty(clientObject, "UserName", ParseUsername(request.Username).Username ?? string.Empty);
             var domain = ParseUsername(request.Username).Domain;
             if (!string.IsNullOrWhiteSpace(domain))
             {
-                client.Domain = domain;
+                SetComProperty(clientObject, "Domain", domain);
             }
             stage = "set-display";
-            client.DesktopWidth = Math.Max(640, (int)Bounds.Width);
-            client.DesktopHeight = Math.Max(480, (int)Bounds.Height);
+            SetComProperty(clientObject, "DesktopWidth", Math.Max(640, (int)Bounds.Width));
+            SetComProperty(clientObject, "DesktopHeight", Math.Max(480, (int)Bounds.Height));
             _useMultimon = request.Display.MonitorSelection is Remote.Application.Connections.MonitorSelection.All;
-            client.UseMultimon = _useMultimon;
-            client.FullScreen = false;
+            SetComProperty(clientObject, "UseMultimon", _useMultimon);
+            SetComProperty(clientObject, "FullScreen", false);
             stage = "open-advanced-settings";
-            dynamic advanced = client.AdvancedSettings9;
+            var advanced = GetComProperty(clientObject, "AdvancedSettings9");
             var permissions = RdpSessionPermissionPolicy.Resolve(request.AccessMode, request.Settings);
             stage = "set-security-and-redirection";
-            advanced.RDPPort = request.Endpoint.IsDefaultPort ? 3389 : request.Endpoint.Port;
-            advanced.EnableCredSspSupport = true;
-            advanced.SmartSizing = true;
-            advanced.ConnectToServerConsole = request.Settings.ConnectAsAdministrator;
-            advanced.RedirectClipboard = permissions.RedirectClipboard;
-            advanced.RedirectPrinters = permissions.RedirectPrinters;
-            advanced.RedirectDrives = permissions.RedirectDrives;
-            advanced.AudioRedirectionMode = (uint)request.Settings.AudioMode;
+            SetComProperty(advanced, "RDPPort", request.Endpoint.IsDefaultPort ? 3389 : request.Endpoint.Port);
+            SetComProperty(advanced, "EnableCredSspSupport", true);
+            SetComProperty(advanced, "SmartSizing", true);
+            SetComProperty(advanced, "ConnectToServerConsole", request.Settings.ConnectAsAdministrator);
+            SetComProperty(advanced, "RedirectClipboard", permissions.RedirectClipboard);
+            SetComProperty(advanced, "RedirectPrinters", permissions.RedirectPrinters);
+            SetComProperty(advanced, "RedirectDrives", permissions.RedirectDrives);
+            SetComProperty(advanced, "AudioRedirectionMode", (uint)request.Settings.AudioMode);
             if (!string.IsNullOrWhiteSpace(request.Settings.GatewayHost))
             {
                 stage = "set-gateway";
-                dynamic transport = client.TransportSettings4;
-                transport.GatewayHostname = request.Settings.GatewayHost;
-                transport.GatewayUsageMethod = 1u;
-                transport.GatewayProfileUsageMethod = 1u;
+                var transport = GetComProperty(clientObject, "TransportSettings4");
+                SetComProperty(transport, "GatewayHostname", request.Settings.GatewayHost);
+                SetComProperty(transport, "GatewayUsageMethod", 1u);
+                SetComProperty(transport, "GatewayProfileUsageMethod", 1u);
             }
             if (request.PasswordUtf8 is { Length: > 0 })
             {
                 stage = "set-credential";
-                advanced.ClearTextPassword = System.Text.Encoding.UTF8.GetString(request.PasswordUtf8.Span);
+                SetComProperty(advanced, "ClearTextPassword", System.Text.Encoding.UTF8.GetString(request.PasswordUtf8.Span));
             }
             stage = "connect";
-            client.Connect();
+            InvokeComMethod(clientObject, "Connect");
             StartConnectionMonitor();
             EnableWindow(_window, permissions.AcceptsInput);
             return;
         }
-        catch (Exception exception) when (exception is COMException or RuntimeBinderException)
+        catch (Exception exception) when (IsComInvocationException(exception))
         {
+            var root = exception is TargetInvocationException { InnerException: { } inner } ? inner : exception;
             var wrapped = new InvalidOperationException(
-                $"內嵌 RDP 啟動失敗（{stage}）：{exception.Message}", exception);
-            wrapped.Data["SafeDiagnostic"] = exception is COMException com
+                $"內嵌 RDP 啟動失敗（{stage}）：{root.Message}", exception);
+            wrapped.Data["SafeDiagnostic"] = root is COMException com
                 ? $"Embedded RDP failed at {stage}; HRESULT=0x{com.HResult:X8}."
-                : $"Embedded RDP ActiveX member unavailable at {stage}.";
+                : $"Embedded RDP late-bound invocation failed at {stage} ({root.GetType().Name}).";
             throw wrapped;
         }
     }
@@ -128,8 +129,7 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
             if (_disconnectRequested || _rdpClient is null) return;
             try
             {
-                dynamic client = _rdpClient;
-                var connected = (short)client.Connected;
+                var connected = Convert.ToInt16(GetComProperty(_rdpClient, "Connected"), CultureInfo.InvariantCulture);
                 if (connected != 0)
                 {
                     _hasConnected = true;
@@ -145,11 +145,18 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
                 }
                 _connectionMonitor?.Stop();
                 string reason;
-                try { reason = $"RDP 連線已中斷（原因代碼 {(int)client.ExtendedDisconnectReason}）"; }
-                catch (COMException) { reason = "RDP 連線非預期中斷"; }
+                try
+                {
+                    var code = Convert.ToInt32(GetComProperty(_rdpClient, "ExtendedDisconnectReason"), CultureInfo.InvariantCulture);
+                    reason = $"RDP 連線已中斷（原因代碼 {code}）";
+                }
+                catch (Exception exception) when (IsComInvocationException(exception))
+                {
+                    reason = "RDP 連線非預期中斷";
+                }
                 UnexpectedlyDisconnected?.Invoke(reason);
             }
-            catch (Exception exception) when (exception is COMException or RuntimeBinderException)
+            catch (Exception exception) when (IsComInvocationException(exception))
             {
                 _connectionMonitor?.Stop();
                 UnexpectedlyDisconnected?.Invoke($"無法讀取 RDP 連線狀態：{exception.Message}");
@@ -167,8 +174,8 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
             if (_rdpClient is null || !_hasConnected || _disconnectRequested) return;
             var width = (uint)Math.Clamp((int)Bounds.Width, 200, 8192);
             var height = (uint)Math.Clamp((int)Bounds.Height, 200, 8192);
-            try { ((dynamic)_rdpClient).Reconnect(width, height); }
-            catch (Exception exception) when (exception is COMException or RuntimeBinderException)
+            try { InvokeComMethod(_rdpClient, "Reconnect", width, height); }
+            catch (Exception exception) when (IsComInvocationException(exception))
             {
                 /* SmartSizing remains the safe fallback. */
             }
@@ -268,14 +275,46 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
     {
         try
         {
-            ((dynamic)client).Disconnect();
+            InvokeComMethod(client, "Disconnect");
         }
-        catch (Exception exception) when (exception is COMException or RuntimeBinderException)
+        catch (Exception exception) when (IsComInvocationException(exception))
         {
             // Some installed RDP ActiveX revisions do not expose Disconnect through
             // IDispatch until a connection has been initialized. Cleanup is best effort.
         }
     }
+
+    private static void SetComProperty(object target, string name, object? value) =>
+        target.GetType().InvokeMember(
+            name,
+            BindingFlags.Instance | BindingFlags.Public | BindingFlags.SetProperty,
+            null,
+            target,
+            [value],
+            CultureInfo.InvariantCulture);
+
+    private static object GetComProperty(object target, string name) =>
+        target.GetType().InvokeMember(
+            name,
+            BindingFlags.Instance | BindingFlags.Public | BindingFlags.GetProperty,
+            null,
+            target,
+            null,
+            CultureInfo.InvariantCulture)
+        ?? throw new InvalidOperationException($"RDP ActiveX property '{name}' returned null.");
+
+    private static object? InvokeComMethod(object target, string name, params object[] arguments) =>
+        target.GetType().InvokeMember(
+            name,
+            BindingFlags.Instance | BindingFlags.Public | BindingFlags.InvokeMethod,
+            null,
+            target,
+            arguments,
+            CultureInfo.InvariantCulture);
+
+    private static bool IsComInvocationException(Exception exception) =>
+        exception is COMException or MissingMethodException or TargetException or TargetParameterCountException or ArgumentException ||
+        exception is TargetInvocationException { InnerException: COMException };
 
     [DllImport("atl.dll", ExactSpelling = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
