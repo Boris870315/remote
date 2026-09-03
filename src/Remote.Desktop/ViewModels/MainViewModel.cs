@@ -1892,9 +1892,7 @@ public sealed partial class MainViewModel : ViewModelBase
             string? username = null;
             if (ResolveCredentialDefinition(connection) is { } definition)
             {
-                username = string.IsNullOrWhiteSpace(definition.Domain)
-                    ? definition.Username
-                    : $"{definition.Domain}\\{definition.Username}";
+                username = RdpLoginName.Format(definition.Username, definition.Domain);
                 rdpSecret = _vault!.Reveal(definition.Id);
             }
             else

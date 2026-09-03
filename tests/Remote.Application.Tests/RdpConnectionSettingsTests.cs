@@ -33,4 +33,17 @@ public sealed class RdpConnectionSettingsTests
 
         Assert.Throws<ArgumentException>(() => settings.Validate());
     }
+
+    [Theory]
+    [InlineData("operator", "CONTOSO", "CONTOSO\\operator")]
+    [InlineData("CONTOSO\\operator", "CONTOSO", "CONTOSO\\operator")]
+    [InlineData("operator@example.com", "CONTOSO", "operator@example.com")]
+    [InlineData(" operator ", " ", "operator")]
+    public void RdpLoginName_DoesNotDuplicateAnExistingDomain(
+        string username,
+        string domain,
+        string expected)
+    {
+        Assert.Equal(expected, RdpLoginName.Format(username, domain));
+    }
 }
