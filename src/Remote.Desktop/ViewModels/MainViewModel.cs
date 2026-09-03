@@ -487,7 +487,22 @@ public sealed partial class MainViewModel : ViewModelBase
     public bool IsSessionConnected =>
         RemoteFrame is not null || IsTerminalActive || IsWebSessionActive || IsRdpSessionActive;
 
-    public IReadOnlyList<string> MonitorOptions { get; } = ["目前視窗所在螢幕", "全部本機螢幕"];
+    public ObservableCollection<string> MonitorOptions { get; } = ["螢幕 1（主螢幕）", "全部本機螢幕"];
+
+    public void SetAvailableMonitorCount(int count)
+    {
+        count = Math.Max(1, count);
+        var selectedIndex = SelectedConnection?.Profile.Display.MonitorIndex ?? 0;
+        MonitorOptions.Clear();
+        for (var index = 0; index < count; index++)
+        {
+            MonitorOptions.Add(index == 0 ? "螢幕 1（主螢幕）" : $"螢幕 {index + 1}");
+        }
+        MonitorOptions.Add("全部本機螢幕");
+        SelectedMonitorOption = SelectedConnection?.Profile.Display.MonitorSelection is MonitorSelection.All
+            ? "全部本機螢幕"
+            : MonitorOptions[Math.Clamp(selectedIndex, 0, count - 1)];
+    }
 
     public string IdentityEditorTitle => _editingCredentialId is null ? "新增身份卡" : "編輯身份卡";
 
@@ -1041,7 +1056,7 @@ public sealed partial class MainViewModel : ViewModelBase
         }
 
         var all = SelectedMonitorOption == "全部本機螢幕";
-        const int monitorIndex = 0;
+        var monitorIndex = all ? 0 : Math.Max(0, MonitorOptions.IndexOf(SelectedMonitorOption));
         var updated = selected with
         {
             Profile = selected.Profile with
@@ -1062,6 +1077,12 @@ public sealed partial class MainViewModel : ViewModelBase
         }
         SessionStatusLabel = $"顯示範圍已設定為 {SelectedMonitorOption}";
         AddAuditEvent($"變更顯示範圍：{updated.Name} · {SelectedMonitorOption}");
+        if (IsRdpSessionActive && SelectedSessionTab is { } activeTab &&
+            activeTab.Connection.Id == updated.Profile.Id)
+        {
+            await CloseSessionTabAsync(activeTab);
+            await LaunchNewConnectionAsync(updated.Profile);
+        }
     }
 
     [RelayCommand]
@@ -1261,7 +1282,7 @@ public sealed partial class MainViewModel : ViewModelBase
         TrustUnknownHostKey = false;
         SelectedMonitorOption = value?.Profile.Display.MonitorSelection is MonitorSelection.All
             ? "全部本機螢幕"
-            : "目前視窗所在螢幕";
+            : MonitorOptions[Math.Clamp(value?.Profile.Display.MonitorIndex ?? 0, 0, Math.Max(0, MonitorOptions.Count - 2))];
         OnPropertyChanged(nameof(IsSshSelected));
         OnPropertyChanged(nameof(IsVncSelected));
         OnPropertyChanged(nameof(IsRdpSelected));

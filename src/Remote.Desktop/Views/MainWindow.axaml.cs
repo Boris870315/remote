@@ -28,7 +28,11 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         SizeChanged += (_, _) => ApplyAdaptiveLayout();
-        Opened += (_, _) => ApplyAdaptiveLayout();
+        Opened += (_, _) =>
+        {
+            RefreshMonitorOptions();
+            ApplyAdaptiveLayout();
+        };
         Closed += HandleClosed;
         KeyDown += HandleWindowKeyDown;
         PointerPressed += (_, _) => _viewModel?.RecordUserActivity();
@@ -144,6 +148,15 @@ public partial class MainWindow : Window
         {
             pair.Value.IsVisible = pair.Key == selected;
         }
+    }
+
+    private void RefreshMonitorOptions()
+    {
+        if (_viewModel is null) return;
+        var screens = Screens.All
+            .OrderByDescending(screen => screen.IsPrimary)
+            .ToArray();
+        _viewModel.SetAvailableMonitorCount(screens.Length);
     }
 
     private void ToggleFullScreen(object? sender, RoutedEventArgs e)
