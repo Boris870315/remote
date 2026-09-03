@@ -1930,6 +1930,7 @@ public sealed partial class MainViewModel : ViewModelBase
         }
 
         SelectedSessionTab = tab;
+        IsViewOnly = tab.Connection.DefaultAccessMode is SessionAccessMode.ViewOnly;
         RemoteFrame = null;
         IsTerminalActive = false;
         IsWebSessionActive = false;
