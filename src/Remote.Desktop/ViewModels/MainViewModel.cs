@@ -2787,9 +2787,9 @@ public sealed partial class MainViewModel : ViewModelBase
             _vncClient = null;
             _vncFrameSink = null;
             _vncCancellation = null;
+            RemoteFrame = null;
+            OnPropertyChanged(nameof(IsVncSessionActive));
         }
-        RemoteFrame = null;
-        OnPropertyChanged(nameof(IsVncSessionActive));
     }
 
     private sealed class VncSessionRuntime(
