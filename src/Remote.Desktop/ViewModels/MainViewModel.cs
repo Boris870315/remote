@@ -63,6 +63,7 @@ public sealed partial class MainViewModel : ViewModelBase
     private string _activeMasterPassword = string.Empty;
     private VaultId _primaryVaultId = new(Guid.NewGuid());
     private VaultAutoLockController _autoLockController = new(new VaultLockSettings());
+    private CancellationTokenSource? _secretRevealCancellation;
 
     public event Func<SessionId, RdpExternalLaunchRequest, Task>? EmbeddedRdpRequested;
     public event Func<SessionId, Task>? EmbeddedRdpCloseRequested;
@@ -154,6 +155,7 @@ public sealed partial class MainViewModel : ViewModelBase
     public ObservableCollection<string> SelectedIdentityUsages { get; } = [];
 
     public IReadOnlyList<string> IdentityProtocols { get; } = ["rdp", "vnc", "ssh2", "http", "https"];
+    public IReadOnlyList<string> PasswordVisibilityOptions { get; } = ["5 秒", "10 秒", "永久顯示"];
 
     public ObservableCollection<ConnectionTreeDisplayItem> ConnectionTree { get; }
 
@@ -300,6 +302,14 @@ public sealed partial class MainViewModel : ViewModelBase
 
     [ObservableProperty]
     private string sessionPassword = string.Empty;
+
+    [ObservableProperty]
+    private string selectedPasswordVisibility = "10 秒";
+
+    [ObservableProperty]
+    private bool areEditableSecretsVisible;
+
+    public char EditableSecretMask => AreEditableSecretsVisible ? '\0' : '●';
 
     [ObservableProperty]
     private string expectedHostKey = string.Empty;
@@ -694,6 +704,8 @@ public sealed partial class MainViewModel : ViewModelBase
     [RelayCommand]
     private void LockVault()
     {
+        _secretRevealCancellation?.Cancel();
+        AreEditableSecretsVisible = false;
         _vault?.Dispose();
         _vault = null;
         _activeMasterPassword = string.Empty;
@@ -708,6 +720,29 @@ public sealed partial class MainViewModel : ViewModelBase
         IsVaultLocked = true;
         VaultMessage = "Vault 已鎖定；敏感內容已從執行階段清除";
     }
+
+    [RelayCommand]
+    private async Task RevealEditableSecretsAsync()
+    {
+        _secretRevealCancellation?.Cancel();
+        _secretRevealCancellation?.Dispose();
+        _secretRevealCancellation = new CancellationTokenSource();
+        AreEditableSecretsVisible = true;
+        if (SelectedPasswordVisibility == "永久顯示") return;
+
+        var delay = SelectedPasswordVisibility == "5 秒" ? TimeSpan.FromSeconds(5) : TimeSpan.FromSeconds(10);
+        try
+        {
+            await Task.Delay(delay, _secretRevealCancellation.Token);
+            AreEditableSecretsVisible = false;
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    partial void OnAreEditableSecretsVisibleChanged(bool value) =>
+        OnPropertyChanged(nameof(EditableSecretMask));
 
     [RelayCommand]
     private async Task AddIdentityCardAsync()
