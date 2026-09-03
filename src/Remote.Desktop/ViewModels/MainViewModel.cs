@@ -39,6 +39,7 @@ public sealed partial class MainViewModel : ViewModelBase
     private SshTerminalSession? _sshSession;
     private CancellationTokenSource? _sshCancellation;
     private readonly Dictionary<SessionId, SshSessionRuntime> _sshSessions = [];
+    private readonly Dictionary<SessionId, WebSessionRuntime> _webSessions = [];
     private LocalTerminalSession? _localTerminal;
     private CancellationTokenSource? _localTerminalCancellation;
     private readonly Dictionary<SessionId, LocalTerminalRuntime> _localTerminalSessions = [];
@@ -65,6 +66,9 @@ public sealed partial class MainViewModel : ViewModelBase
 
     public event Func<SessionId, RdpExternalLaunchRequest, Task>? EmbeddedRdpRequested;
     public event Func<SessionId, Task>? EmbeddedRdpCloseRequested;
+    public event Func<SessionId, Uri, bool, Task>? EmbeddedWebRequested;
+    public event Func<SessionId, Uri, Task>? EmbeddedWebNavigateRequested;
+    public event Func<SessionId, Task>? EmbeddedWebCloseRequested;
 
     public ObservableCollection<SessionTabViewModel> SessionTabs { get; } = [];
 
@@ -1797,11 +1801,11 @@ public sealed partial class MainViewModel : ViewModelBase
 
         if (connection.ProtocolId is "http" or "https")
         {
-            await StopVncAsync();
-            await StopSshAsync();
-            await StopLocalTerminalAsync();
             WebSource = WebNavigationPolicy.ParseHttpEndpoint(connection.Endpoint.ToString());
             WebAddress = WebSource.ToString();
+            _webSessions.Add(session.Id, new WebSessionRuntime(WebSource, connection.DefaultAccessMode is SessionAccessMode.ViewOnly));
+            if (EmbeddedWebRequested is { } openWeb)
+                await openWeb(session.Id, WebSource, connection.DefaultAccessMode is SessionAccessMode.ViewOnly);
             IsWebSessionActive = true;
             SetSessionState(session.Id, SessionState.Connected);
             SessionStatusLabel = $"{connection.ProtocolId.ToUpperInvariant()} 已載入 · {connection.Endpoint.Host}";
@@ -1952,6 +1956,12 @@ public sealed partial class MainViewModel : ViewModelBase
             TerminalText = terminal.TerminalText;
             IsTerminalActive = true;
         }
+        if (_webSessions.TryGetValue(tab.SessionId, out var web))
+        {
+            WebSource = web.Source;
+            WebAddress = web.Source.ToString();
+            IsWebSessionActive = true;
+        }
     }
 
     [RelayCommand]
@@ -1975,7 +1985,10 @@ public sealed partial class MainViewModel : ViewModelBase
         if (string.Equals(session.ProtocolId, "terminal", StringComparison.OrdinalIgnoreCase))
             await StopLocalTerminalSessionAsync(tab.SessionId);
         if (session.ProtocolId is "http" or "https")
-            CloseWebSession();
+        {
+            _webSessions.Remove(tab.SessionId);
+            if (EmbeddedWebCloseRequested is { } closeWeb) await closeWeb(tab.SessionId);
+        }
 
         if (_sessionWorkspace.Get(tab.SessionId).State is SessionState.Disconnecting)
             SetSessionState(tab.SessionId, SessionState.Disconnected);
@@ -2030,7 +2043,7 @@ public sealed partial class MainViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    private void NavigateWeb()
+    private async Task NavigateWebAsync()
     {
         if (IsViewOnly)
         {
@@ -2042,6 +2055,12 @@ public sealed partial class MainViewModel : ViewModelBase
         {
             WebSource = WebNavigationPolicy.ParseHttpEndpoint(WebAddress);
             WebAddress = WebSource.ToString();
+            if (SelectedSessionTab is { } tab && _webSessions.TryGetValue(tab.SessionId, out var runtime))
+            {
+                runtime.Source = WebSource;
+                if (EmbeddedWebNavigateRequested is { } navigateWeb)
+                    await navigateWeb(tab.SessionId, WebSource);
+            }
             SessionStatusLabel = $"正在載入 {WebSource.Host}";
         }
         catch (ArgumentException exception)
@@ -2055,6 +2074,12 @@ public sealed partial class MainViewModel : ViewModelBase
         IsWebSessionActive = false;
         WebSource = null;
         WebAddress = string.Empty;
+    }
+
+    private sealed class WebSessionRuntime(Uri source, bool viewOnly)
+    {
+        public Uri Source { get; set; } = source;
+        public bool ViewOnly { get; } = viewOnly;
     }
 
     private async Task LaunchSshAsync(ConnectionProfile connection, SessionId sessionId)

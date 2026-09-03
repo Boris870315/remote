@@ -85,7 +85,7 @@
                 <TextBox Grid.Column="2" Text="{Binding WebAddress}" PlaceholderText="https://example.com"/>
                 <Button Grid.Column="3" Content="前往" Command="{Binding NavigateWebCommand}" Classes="tool"/>
               </Grid>
-              <NativeWebView x:Name="WebSessionView" Grid.Row="1" Source="{Binding WebSource}" IsHitTestVisible="{Binding !IsViewOnly}"/>
+              <Grid x:Name="WebSessionSurfaces" Grid.Row="1"/>
             </Grid>
             <Grid IsVisible="{Binding IsTerminalActive}" RowDefinitions="*,Auto" Margin="8">
               <TextBox Text="{Binding TerminalText}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap" FontFamily="Menlo,Consolas,monospace" FontSize="12" Background="#090D14" Foreground="#D6E2F0" BorderThickness="0" Padding="12" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Auto"/>

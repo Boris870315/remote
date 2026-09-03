@@ -21,6 +21,7 @@ public partial class MainWindow : Window
     private byte _vncButtonMask;
     private MainViewModel? _viewModel;
     private readonly Dictionary<SessionId, AvaloniaEmbeddedRdpHost> _rdpHosts = [];
+    private readonly Dictionary<SessionId, NativeWebView> _webViews = [];
     private readonly DispatcherTimer _vaultTimer;
 
     public MainWindow()
@@ -52,6 +53,9 @@ public partial class MainWindow : Window
             _viewModel.PropertyChanged -= HandleViewModelPropertyChanged;
             _viewModel.EmbeddedRdpRequested -= ConnectEmbeddedRdpAsync;
             _viewModel.EmbeddedRdpCloseRequested -= CloseEmbeddedRdpAsync;
+            _viewModel.EmbeddedWebRequested -= OpenEmbeddedWebAsync;
+            _viewModel.EmbeddedWebNavigateRequested -= NavigateEmbeddedWebAsync;
+            _viewModel.EmbeddedWebCloseRequested -= CloseEmbeddedWebAsync;
         }
 
         base.OnDataContextChanged(e);
@@ -61,6 +65,9 @@ public partial class MainWindow : Window
             _viewModel.PropertyChanged += HandleViewModelPropertyChanged;
             _viewModel.EmbeddedRdpRequested += ConnectEmbeddedRdpAsync;
             _viewModel.EmbeddedRdpCloseRequested += CloseEmbeddedRdpAsync;
+            _viewModel.EmbeddedWebRequested += OpenEmbeddedWebAsync;
+            _viewModel.EmbeddedWebNavigateRequested += NavigateEmbeddedWebAsync;
+            _viewModel.EmbeddedWebCloseRequested += CloseEmbeddedWebAsync;
         }
 
         ApplyAdaptiveLayout();
@@ -90,6 +97,27 @@ public partial class MainWindow : Window
         EmbeddedRdpSurfaces.Children.Remove(host);
     }
 
+    private Task OpenEmbeddedWebAsync(SessionId sessionId, Uri source, bool viewOnly)
+    {
+        var webView = new NativeWebView { Source = source, IsHitTestVisible = !viewOnly };
+        _webViews.Add(sessionId, webView);
+        WebSessionSurfaces.Children.Add(webView);
+        ShowSelectedWebView();
+        return Task.CompletedTask;
+    }
+
+    private Task NavigateEmbeddedWebAsync(SessionId sessionId, Uri source)
+    {
+        if (_webViews.TryGetValue(sessionId, out var webView)) webView.Source = source;
+        return Task.CompletedTask;
+    }
+
+    private Task CloseEmbeddedWebAsync(SessionId sessionId)
+    {
+        if (_webViews.Remove(sessionId, out var webView)) WebSessionSurfaces.Children.Remove(webView);
+        return Task.CompletedTask;
+    }
+
     private void HandleViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(MainViewModel.IsEditingConnection))
@@ -99,7 +127,14 @@ public partial class MainWindow : Window
         else if (e.PropertyName == nameof(MainViewModel.SelectedSessionTab))
         {
             ShowSelectedRdpHost();
+            ShowSelectedWebView();
         }
+    }
+
+    private void ShowSelectedWebView()
+    {
+        var selected = _viewModel?.SelectedSessionTab?.SessionId;
+        foreach (var pair in _webViews) pair.Value.IsVisible = pair.Key == selected;
     }
 
     private void ShowSelectedRdpHost()
@@ -118,19 +153,19 @@ public partial class MainWindow : Window
 
     private void GoWebBack(object? sender, RoutedEventArgs e)
     {
-        if (WebSessionView.CanGoBack)
+        if (GetSelectedWebView() is { CanGoBack: true } webView)
         {
-            WebSessionView.GoBack();
+            webView.GoBack();
         }
     }
 
-    private void RefreshWeb(object? sender, RoutedEventArgs e) => WebSessionView.Refresh();
+    private void RefreshWeb(object? sender, RoutedEventArgs e) => GetSelectedWebView()?.Refresh();
 
     private async void RefreshSession(object? sender, RoutedEventArgs e)
     {
         if (_viewModel?.IsWebSessionActive is true)
         {
-            WebSessionView.Refresh();
+            GetSelectedWebView()?.Refresh();
             return;
         }
 
@@ -139,6 +174,11 @@ public partial class MainWindow : Window
             await _viewModel.OpenSelectedSessionCommand.ExecuteAsync(null);
         }
     }
+
+    private NativeWebView? GetSelectedWebView() =>
+        _viewModel?.SelectedSessionTab is { } tab && _webViews.TryGetValue(tab.SessionId, out var webView)
+            ? webView
+            : null;
 
     private async void ApplyMonitorSelection(object? sender, SelectionChangedEventArgs e)
     {
