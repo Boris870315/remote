@@ -19,8 +19,18 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
     private bool _hasConnected;
     private bool _disconnectRequested;
     private int _connectingTicks;
+    private DispatcherTimer? _resizeTimer;
+    private bool _useMultimon;
 
     public event Action<string>? UnexpectedlyDisconnected;
+
+    public AvaloniaEmbeddedRdpHost()
+    {
+        PropertyChanged += (_, args) =>
+        {
+            if (args.Property == BoundsProperty) ScheduleDisplayResize();
+        };
+    }
 
     public async Task ConnectAsync(RdpExternalLaunchRequest request)
     {
@@ -49,7 +59,8 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
             }
             client.DesktopWidth = Math.Max(640, (int)Bounds.Width);
             client.DesktopHeight = Math.Max(480, (int)Bounds.Height);
-            client.UseMultimon = request.Display.MonitorSelection is Remote.Application.Connections.MonitorSelection.All;
+            _useMultimon = request.Display.MonitorSelection is Remote.Application.Connections.MonitorSelection.All;
+            client.UseMultimon = _useMultimon;
             client.FullScreen = false;
             dynamic advanced = client.AdvancedSettings9;
             advanced.RDPPort = request.Endpoint.IsDefaultPort ? 3389 : request.Endpoint.Port;
@@ -86,6 +97,7 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
     {
         _disconnectRequested = true;
         _connectionMonitor?.Stop();
+        _resizeTimer?.Stop();
         if (_rdpClient is not null)
         {
             try { ((dynamic)_rdpClient).Disconnect(); } catch (COMException) { }
@@ -129,6 +141,22 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
             }
         });
         _connectionMonitor.Start();
+    }
+
+    private void ScheduleDisplayResize()
+    {
+        if (!_hasConnected || _useMultimon || _disconnectRequested) return;
+        _resizeTimer ??= new DispatcherTimer(TimeSpan.FromMilliseconds(350), DispatcherPriority.Background, (_, _) =>
+        {
+            _resizeTimer?.Stop();
+            if (_rdpClient is null || !_hasConnected || _disconnectRequested) return;
+            var width = (uint)Math.Clamp((int)Bounds.Width, 200, 8192);
+            var height = (uint)Math.Clamp((int)Bounds.Height, 200, 8192);
+            try { ((dynamic)_rdpClient).Reconnect(width, height); }
+            catch (COMException) { /* SmartSizing remains the safe fallback. */ }
+        });
+        _resizeTimer.Stop();
+        _resizeTimer.Start();
     }
 
     protected override IPlatformHandle CreateNativeControlCore(IPlatformHandle parent)
@@ -188,6 +216,7 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
         {
             _disconnectRequested = true;
             _connectionMonitor?.Stop();
+            _resizeTimer?.Stop();
             if (_rdpClient is not null)
             {
                 try { ((dynamic)_rdpClient).Disconnect(); } catch (COMException) { }
