@@ -1784,7 +1784,7 @@ public sealed partial class MainViewModel : ViewModelBase
     {
 
         var session = _sessionWorkspace.OpenNew(connection);
-        var tab = new SessionTabViewModel(session.Id, connection.Name, connection.ProtocolId);
+        var tab = new SessionTabViewModel(session.Id, connection);
         SessionTabs.Add(tab);
         SelectSessionTab(tab);
         if (string.Equals(connection.ProtocolId, "vnc", StringComparison.OrdinalIgnoreCase))
@@ -2010,6 +2010,15 @@ public sealed partial class MainViewModel : ViewModelBase
                 IsRdpSessionActive = false;
             }
         }
+    }
+
+    [RelayCommand]
+    private async Task ReconnectSelectedSessionAsync()
+    {
+        if (SelectedSessionTab is not { } tab) return;
+        var connection = tab.Connection;
+        await CloseSessionTabAsync(tab);
+        await LaunchNewConnectionAsync(connection);
     }
 
     private void UpdateSessionTab(SessionId sessionId, SessionState state)

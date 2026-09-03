@@ -1,16 +1,17 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using Remote.Application.Sessions;
+using Remote.Application.Connections;
 
 namespace Remote.Desktop.ViewModels;
 
 public sealed partial class SessionTabViewModel(
     SessionId sessionId,
-    string connectionName,
-    string protocolId) : ViewModelBase
+    ConnectionProfile connection) : ViewModelBase
 {
     public SessionId SessionId { get; } = sessionId;
-    public string ConnectionName { get; } = connectionName;
-    public string ProtocolLabel { get; } = protocolId.ToUpperInvariant();
+    public ConnectionProfile Connection { get; } = connection;
+    public string ConnectionName => Connection.Name;
+    public string ProtocolLabel => Connection.ProtocolId.ToUpperInvariant();
 
     [ObservableProperty]
     private string stateLabel = "連線中";

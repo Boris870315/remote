@@ -171,7 +171,7 @@ public partial class MainWindow : Window
 
         if (_viewModel is not null)
         {
-            await _viewModel.OpenSelectedSessionCommand.ExecuteAsync(null);
+            await _viewModel.ReconnectSelectedSessionCommand.ExecuteAsync(null);
         }
     }
 
