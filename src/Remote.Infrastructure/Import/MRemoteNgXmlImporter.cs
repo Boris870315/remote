@@ -22,13 +22,12 @@ public sealed class MRemoteNgXmlImporter
     public MRemoteNgImportResult Import(string xml, string password, VaultId vaultId)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(xml);
-        ArgumentException.ThrowIfNullOrWhiteSpace(password);
 
         var document = XDocument.Parse(xml, LoadOptions.None);
         var root = document.Root ?? throw new InvalidDataException("The mRemoteNG document has no root node.");
         var iterations = ReadInteger(root, "KdfIterations", 1000);
         var protectedMarker = Attribute(root, "Protected");
-        if (!string.IsNullOrWhiteSpace(protectedMarker))
+        if (!string.IsNullOrWhiteSpace(protectedMarker) && !string.IsNullOrWhiteSpace(password))
         {
             _ = _decryptor.Decrypt(protectedMarker, password, iterations);
         }
@@ -210,7 +209,9 @@ public sealed class MRemoteNgXmlImporter
         var encryptedPassword = IsInherited(node, "Password") ? null : Attribute(node, "Password");
         var clearPassword = encryptedPassword is null
             ? parent.Password
-            : _decryptor.Decrypt(encryptedPassword, password, iterations);
+            : string.IsNullOrWhiteSpace(password)
+                ? null
+                : _decryptor.Decrypt(encryptedPassword, password, iterations);
         var protocol = IsInherited(node, "Protocol") ? parent.Protocol : Attribute(node, "Protocol");
         var port = IsInherited(node, "Port") ? parent.Port : ReadInteger(node, "Port", parent.Port);
         return new(username, domain, clearPassword, protocol, port);

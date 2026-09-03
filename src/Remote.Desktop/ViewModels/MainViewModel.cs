@@ -782,12 +782,6 @@ public sealed partial class MainViewModel : ViewModelBase
 
     public async Task ImportMRemoteNgAsync(string path)
     {
-        if (string.IsNullOrWhiteSpace(LegacyImportPassword))
-        {
-            ImportMessage = "請輸入 mRemoteNG 連線檔的加密密碼";
-            return;
-        }
-
         try
         {
             var xml = await File.ReadAllTextAsync(path);

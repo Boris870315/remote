@@ -62,6 +62,24 @@ public sealed class MRemoteNgXmlImporterTests
     }
 
     [Fact]
+    public void Import_WithoutPassword_PreservesConnectionsAndSkipsEncryptedCredentials()
+    {
+        var xml = $$"""
+            <Connections KdfIterations="1000" Protected="{{EncryptedValue}}">
+              <Node Type="Connection" Name="Windows" Hostname="10.0.0.8" Protocol="RDP"
+                    Username="operator" Password="{{EncryptedValue}}" />
+            </Connections>
+            """;
+
+        using var result = new MRemoteNgXmlImporter().Import(xml, string.Empty, new VaultId(Guid.NewGuid()));
+
+        var connection = Assert.Single(result.Connections);
+        Assert.Equal("Windows", connection.Name);
+        Assert.Equal(CredentialReferenceKind.None, connection.Credential.Kind);
+        Assert.Empty(result.IdentityCards);
+    }
+
+    [Fact]
     public void Import_MapsCommonRdpGatewayAndRedirectionSettings()
     {
         var xml = $$"""

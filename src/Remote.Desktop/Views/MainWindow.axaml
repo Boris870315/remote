@@ -257,8 +257,8 @@
             </StackPanel>
           </Border>
           <StackPanel Spacing="6">
-            <TextBlock Text="mRemoteNG 加密密碼" FontSize="11" Foreground="#A9B8CE"/>
-            <TextBox Text="{Binding LegacyImportPassword}" PasswordChar="●" PlaceholderText="用於解密 confCons.xml"/>
+            <TextBlock Text="mRemoteNG 加密密碼（選填）" FontSize="11" Foreground="#A9B8CE"/>
+            <TextBox Text="{Binding LegacyImportPassword}" PasswordChar="●" PlaceholderText="留空仍會匯入連線；只有帳密會略過"/>
           </StackPanel>
           <Button Content="選擇 confCons.xml 並匯入" Click="ImportMRemoteNg" Background="#5B5CE2" Foreground="White" Padding="14,9"/>
           <TextBlock Text="目前支援 mRXML／confCons.xml；mRCSV 將在後續版本加入。" Foreground="#E5B96F" TextWrapping="Wrap" FontSize="10"/>
