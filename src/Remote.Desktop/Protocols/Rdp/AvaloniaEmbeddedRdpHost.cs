@@ -14,6 +14,7 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
     private const uint WsChild = 0x40000000;
     private const uint WsVisible = 0x10000000;
     private const uint WsClipSiblings = 0x04000000;
+    private const string MsRdpClient10NotSafeForScripting = "{A0C63C30-F08D-4AB4-907C-34905D770C7D}";
     private nint _window;
     private object? _rdpClient;
     private readonly TaskCompletionSource _hostReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -45,10 +46,10 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
 
         var clientObject = _rdpClient
             ?? throw new InvalidOperationException("The embedded RDP surface did not initialize correctly.");
-        var client = (IMsTscAxDispatch)clientObject;
-        var stage = "initialize";
+        var stage = "query-client-interface";
         try
         {
+            var client = (IMsTscAxDispatch)clientObject;
             _disconnectRequested = false;
             _hasConnected = false;
             _connectingTicks = 0;
@@ -206,7 +207,7 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
         _window = CreateWindowExW(
             0,
             "AtlAxWin",
-            "MsRdpClient11NotSafeForScripting",
+            MsRdpClient10NotSafeForScripting,
             WsChild | WsVisible | WsClipSiblings,
             0,
             0,
