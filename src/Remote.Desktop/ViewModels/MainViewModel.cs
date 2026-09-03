@@ -3083,9 +3083,11 @@ public sealed partial class MainViewModel : ViewModelBase
 
     private async Task ReportMajorErrorAsync(string category, string code, string message, Exception exception)
     {
-        // Raw exception text is intentionally kept out of the persistent log because
-        // protocol libraries may include user names, paths, or credential-related input.
-        await _errorLog.WriteAsync(category, code, $"{category} operation failed.", exception.GetType().Name);
+        // Protocol exception text can contain credentials or paths. RDP hosts attach a
+        // deliberately secret-free stage/HRESULT diagnostic when one is available.
+        var safeDiagnostic = exception.Data["SafeDiagnostic"] as string
+            ?? $"{category} operation failed ({exception.GetType().Name}).";
+        await _errorLog.WriteAsync(category, code, safeDiagnostic, exception.GetType().Name);
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
             ErrorDialogTitle = $"{category} 錯誤";

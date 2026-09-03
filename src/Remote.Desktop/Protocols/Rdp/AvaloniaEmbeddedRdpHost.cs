@@ -45,12 +45,14 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
         var clientObject = _rdpClient
             ?? throw new InvalidOperationException("The embedded RDP surface did not initialize correctly.");
         dynamic client = clientObject;
+        var stage = "initialize";
         try
         {
             _disconnectRequested = false;
             _hasConnected = false;
             _connectingTicks = 0;
             TryDisconnect(clientObject);
+            stage = "set-endpoint";
             client.Server = request.Endpoint.Host;
             client.UserName = ParseUsername(request.Username).Username;
             var domain = ParseUsername(request.Username).Domain;
@@ -58,13 +60,16 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
             {
                 client.Domain = domain;
             }
+            stage = "set-display";
             client.DesktopWidth = Math.Max(640, (int)Bounds.Width);
             client.DesktopHeight = Math.Max(480, (int)Bounds.Height);
             _useMultimon = request.Display.MonitorSelection is Remote.Application.Connections.MonitorSelection.All;
             client.UseMultimon = _useMultimon;
             client.FullScreen = false;
+            stage = "open-advanced-settings";
             dynamic advanced = client.AdvancedSettings9;
             var permissions = RdpSessionPermissionPolicy.Resolve(request.AccessMode, request.Settings);
+            stage = "set-security-and-redirection";
             advanced.RDPPort = request.Endpoint.IsDefaultPort ? 3389 : request.Endpoint.Port;
             advanced.EnableCredSspSupport = true;
             advanced.SmartSizing = true;
@@ -75,6 +80,7 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
             advanced.AudioRedirectionMode = (uint)request.Settings.AudioMode;
             if (!string.IsNullOrWhiteSpace(request.Settings.GatewayHost))
             {
+                stage = "set-gateway";
                 dynamic transport = client.TransportSettings4;
                 transport.GatewayHostname = request.Settings.GatewayHost;
                 transport.GatewayUsageMethod = 1u;
@@ -82,8 +88,10 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
             }
             if (request.PasswordUtf8 is { Length: > 0 })
             {
+                stage = "set-credential";
                 advanced.ClearTextPassword = System.Text.Encoding.UTF8.GetString(request.PasswordUtf8.Span);
             }
+            stage = "connect";
             client.Connect();
             StartConnectionMonitor();
             EnableWindow(_window, permissions.AcceptsInput);
@@ -91,7 +99,12 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
         }
         catch (Exception exception) when (exception is COMException or RuntimeBinderException)
         {
-            throw new InvalidOperationException($"內嵌 RDP 啟動失敗：{exception.Message}", exception);
+            var wrapped = new InvalidOperationException(
+                $"內嵌 RDP 啟動失敗（{stage}）：{exception.Message}", exception);
+            wrapped.Data["SafeDiagnostic"] = exception is COMException com
+                ? $"Embedded RDP failed at {stage}; HRESULT=0x{com.HResult:X8}."
+                : $"Embedded RDP ActiveX member unavailable at {stage}.";
+            throw wrapped;
         }
     }
 
