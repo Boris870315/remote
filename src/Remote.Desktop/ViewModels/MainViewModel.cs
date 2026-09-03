@@ -384,6 +384,12 @@ public sealed partial class MainViewModel : ViewModelBase
     private bool automaticBackupEnabled;
 
     [ObservableProperty]
+    private bool hideSensitiveContentFromCapture = true;
+
+    [ObservableProperty]
+    private bool clearClipboardAfterUse;
+
+    [ObservableProperty]
     private bool isNotificationOpen;
 
     [ObservableProperty]
@@ -1009,10 +1015,15 @@ public sealed partial class MainViewModel : ViewModelBase
     private void OpenSettingsPanel() => IsSettingsPanelOpen = true;
 
     [RelayCommand]
-    private void CloseSettingsPanel()
+    private async Task CloseSettingsPanelAsync()
     {
         RecoveryKey = string.Empty;
         IsSettingsPanelOpen = false;
+        if (!IsVaultLocked && _activeMasterPassword.Length > 0)
+        {
+            await SaveWorkspaceAsync();
+            VaultMessage = "設定已儲存到加密 Workspace";
+        }
     }
 
     [RelayCommand]
@@ -2523,6 +2534,19 @@ public sealed partial class MainViewModel : ViewModelBase
                 Connections = Connections.Select(item => item.Profile).ToArray(),
                 IdentityCards = identityCards,
                 EncryptedPrimaryVault = encryptedVault,
+                Preferences = new WorkspacePreferences
+                {
+                    VaultLock = CurrentLockSettings,
+                    AutomaticBackupEnabled = AutomaticBackupEnabled,
+                    HideSensitiveContentFromCapture = HideSensitiveContentFromCapture,
+                    ClearClipboardAfterUse = ClearClipboardAfterUse,
+                    PasswordReveal = SelectedPasswordVisibility switch
+                    {
+                        "5 秒" => PasswordRevealMode.FiveSeconds,
+                        "永久顯示" => PasswordRevealMode.Permanent,
+                        _ => PasswordRevealMode.TenSeconds,
+                    },
+                },
             }, _activeMasterPassword);
             if (AutomaticBackupEnabled)
             {
@@ -2540,6 +2564,18 @@ public sealed partial class MainViewModel : ViewModelBase
 
     private void LoadWorkspaceDocument(WorkspaceDocument document)
     {
+        SelectedLockInterval = document.Preferences.VaultLock.InactivityInterval;
+        LockOnSystemSleep = document.Preferences.VaultLock.LockOnSystemSleep;
+        LockOnSessionLogout = document.Preferences.VaultLock.LockOnSessionLogout;
+        AutomaticBackupEnabled = document.Preferences.AutomaticBackupEnabled;
+        HideSensitiveContentFromCapture = document.Preferences.HideSensitiveContentFromCapture;
+        ClearClipboardAfterUse = document.Preferences.ClearClipboardAfterUse;
+        SelectedPasswordVisibility = document.Preferences.PasswordReveal switch
+        {
+            PasswordRevealMode.FiveSeconds => "5 秒",
+            PasswordRevealMode.Permanent => "永久顯示",
+            _ => "10 秒",
+        };
         _folders.Clear();
         _folders.AddRange(document.Folders);
         RefreshFolderOptions();

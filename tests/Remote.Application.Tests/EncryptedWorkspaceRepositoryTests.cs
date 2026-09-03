@@ -3,6 +3,7 @@ using Remote.Application.Credentials;
 using Remote.Infrastructure.Security;
 using Remote.Infrastructure.Storage;
 using Remote.Protocols;
+using Remote.Application.Vaults;
 using System.Text;
 
 namespace Remote.Application.Tests;
@@ -61,6 +62,18 @@ public sealed class EncryptedWorkspaceRepositoryTests
                         Username = "operator",
                     },
                 ],
+                Preferences = new WorkspacePreferences
+                {
+                    VaultLock = new VaultLockSettings
+                    {
+                        InactivityInterval = InactivityLockInterval.ThirtyMinutes,
+                        LockOnSystemSleep = false,
+                    },
+                    AutomaticBackupEnabled = true,
+                    PasswordReveal = PasswordRevealMode.Permanent,
+                    HideSensitiveContentFromCapture = false,
+                    ClearClipboardAfterUse = true,
+                },
             };
 
             await repository.SaveAsync(path, document, "correct horse battery staple");
@@ -76,6 +89,12 @@ public sealed class EncryptedWorkspaceRepositoryTests
             Assert.True(connection.IsFavorite);
             Assert.Equal(["production", "linux"], connection.Tags);
             Assert.Equal("operator", Assert.Single(loaded.IdentityCards).Username);
+            Assert.Equal(InactivityLockInterval.ThirtyMinutes, loaded.Preferences.VaultLock.InactivityInterval);
+            Assert.False(loaded.Preferences.VaultLock.LockOnSystemSleep);
+            Assert.True(loaded.Preferences.AutomaticBackupEnabled);
+            Assert.Equal(PasswordRevealMode.Permanent, loaded.Preferences.PasswordReveal);
+            Assert.False(loaded.Preferences.HideSensitiveContentFromCapture);
+            Assert.True(loaded.Preferences.ClearClipboardAfterUse);
             Assert.DoesNotContain("operator", Encoding.UTF8.GetString(await File.ReadAllBytesAsync(path)), StringComparison.Ordinal);
         }
         finally
