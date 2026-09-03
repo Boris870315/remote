@@ -45,6 +45,7 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
 
         var clientObject = _rdpClient
             ?? throw new InvalidOperationException("The embedded RDP surface did not initialize correctly.");
+        var client = (IMsTscAxDispatch)clientObject;
         var stage = "initialize";
         try
         {
@@ -53,25 +54,22 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
             _connectingTicks = 0;
             TryDisconnect(clientObject);
             stage = "set-endpoint";
-            SetComProperty(clientObject, "Server", request.Endpoint.Host);
-            SetComProperty(clientObject, "UserName", ParseUsername(request.Username).Username ?? string.Empty);
+            client.Server = request.Endpoint.Host;
+            client.UserName = ParseUsername(request.Username).Username ?? string.Empty;
             var domain = ParseUsername(request.Username).Domain;
             if (!string.IsNullOrWhiteSpace(domain))
             {
-                SetComProperty(clientObject, "Domain", domain);
+                client.Domain = domain;
             }
             stage = "set-display";
-            SetComProperty(clientObject, "DesktopWidth", Math.Max(640, (int)Bounds.Width));
-            SetComProperty(clientObject, "DesktopHeight", Math.Max(480, (int)Bounds.Height));
+            client.DesktopWidth = Math.Max(640, (int)Bounds.Width);
+            client.DesktopHeight = Math.Max(480, (int)Bounds.Height);
             _useMultimon = request.Display.MonitorSelection is Remote.Application.Connections.MonitorSelection.All;
-            SetComProperty(clientObject, "UseMultimon", _useMultimon);
-            SetComProperty(clientObject, "FullScreen", false);
             stage = "open-advanced-settings";
-            var advanced = GetComProperty(clientObject, "AdvancedSettings9");
+            var advanced = client.AdvancedSettings;
             var permissions = RdpSessionPermissionPolicy.Resolve(request.AccessMode, request.Settings);
             stage = "set-security-and-redirection";
             SetComProperty(advanced, "RDPPort", request.Endpoint.IsDefaultPort ? 3389 : request.Endpoint.Port);
-            SetComProperty(advanced, "EnableCredSspSupport", true);
             SetComProperty(advanced, "SmartSizing", true);
             SetComProperty(advanced, "ConnectToServerConsole", request.Settings.ConnectAsAdministrator);
             SetComProperty(advanced, "RedirectClipboard", permissions.RedirectClipboard);
@@ -89,10 +87,13 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
             if (request.PasswordUtf8 is { Length: > 0 })
             {
                 stage = "set-credential";
-                SetComProperty(advanced, "ClearTextPassword", System.Text.Encoding.UTF8.GetString(request.PasswordUtf8.Span));
+                var passwordProvider = (IMsTscNonScriptable)clientObject;
+                var passwordResult = passwordProvider.SetClearTextPassword(
+                    System.Text.Encoding.UTF8.GetString(request.PasswordUtf8.Span));
+                Marshal.ThrowExceptionForHR(passwordResult);
             }
             stage = "connect";
-            InvokeComMethod(clientObject, "Connect");
+            client.Connect();
             StartConnectionMonitor();
             EnableWindow(_window, permissions.AcceptsInput);
             return;
@@ -129,7 +130,8 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
             if (_disconnectRequested || _rdpClient is null) return;
             try
             {
-                var connected = Convert.ToInt16(GetComProperty(_rdpClient, "Connected"), CultureInfo.InvariantCulture);
+                var client = (IMsTscAxDispatch)_rdpClient;
+                var connected = client.Connected;
                 if (connected != 0)
                 {
                     _hasConnected = true;
@@ -147,8 +149,7 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
                 string reason;
                 try
                 {
-                    var code = Convert.ToInt32(GetComProperty(_rdpClient, "ExtendedDisconnectReason"), CultureInfo.InvariantCulture);
-                    reason = $"RDP 連線已中斷（原因代碼 {code}）";
+                    reason = "RDP 連線已中斷";
                 }
                 catch (Exception exception) when (IsComInvocationException(exception))
                 {
@@ -174,7 +175,12 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
             if (_rdpClient is null || !_hasConnected || _disconnectRequested) return;
             var width = (uint)Math.Clamp((int)Bounds.Width, 200, 8192);
             var height = (uint)Math.Clamp((int)Bounds.Height, 200, 8192);
-            try { InvokeComMethod(_rdpClient, "Reconnect", width, height); }
+            try
+            {
+                var client = (IMsTscAxDispatch)_rdpClient;
+                client.DesktopWidth = (int)width;
+                client.DesktopHeight = (int)height;
+            }
             catch (Exception exception) when (IsComInvocationException(exception))
             {
                 /* SmartSizing remains the safe fallback. */
@@ -275,7 +281,7 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
     {
         try
         {
-            InvokeComMethod(client, "Disconnect");
+            ((IMsTscAxDispatch)client).Disconnect();
         }
         catch (Exception exception) when (IsComInvocationException(exception))
         {
@@ -313,8 +319,38 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
             CultureInfo.InvariantCulture);
 
     private static bool IsComInvocationException(Exception exception) =>
-        exception is COMException or MissingMethodException or TargetException or TargetParameterCountException or ArgumentException ||
+        exception is COMException or InvalidCastException or MissingMethodException or TargetException or TargetParameterCountException or ArgumentException ||
         exception is TargetInvocationException { InnerException: COMException };
+
+    [ComImport]
+    [Guid("8C11EFAE-92C3-11D1-BC1E-00C04FA31489")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIDispatch)]
+    private interface IMsTscAxDispatch
+    {
+        [DispId(1)] string Server { get; set; }
+        [DispId(2)] string Domain { get; set; }
+        [DispId(3)] string UserName { get; set; }
+        [DispId(6)] short Connected { get; }
+        [DispId(12)] int DesktopWidth { get; set; }
+        [DispId(13)] int DesktopHeight { get; set; }
+        [DispId(98)]
+        object AdvancedSettings
+        {
+            [return: MarshalAs(UnmanagedType.IDispatch)]
+            get;
+        }
+        [DispId(30)] void Connect();
+        [DispId(31)] void Disconnect();
+    }
+
+    [ComImport]
+    [Guid("C1E6743A-41C1-4A74-832A-0DD06C1C7A0E")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IMsTscNonScriptable
+    {
+        [PreserveSig]
+        int SetClearTextPassword([MarshalAs(UnmanagedType.BStr)] string password);
+    }
 
     [DllImport("atl.dll", ExactSpelling = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
