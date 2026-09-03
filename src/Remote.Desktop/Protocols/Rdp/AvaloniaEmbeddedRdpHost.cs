@@ -20,6 +20,7 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
     private object? _rdpClient;
     private readonly TaskCompletionSource _hostReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private DispatcherTimer? _connectionMonitor;
+    private TaskCompletionSource? _connectionReady;
     private bool _hasConnected;
     private bool _disconnectRequested;
     private int _connectingTicks;
@@ -54,6 +55,7 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
             _disconnectRequested = false;
             _hasConnected = false;
             _connectingTicks = 0;
+            _connectionReady = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             TryDisconnect(clientObject);
             stage = "set-endpoint";
             client.Server = request.Endpoint.Host;
@@ -94,6 +96,8 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
             client.Connect();
             StartConnectionMonitor();
             EnableWindow(_window, permissions.AcceptsInput);
+            stage = "wait-for-connected-state";
+            await _connectionReady.Task;
             return;
         }
         catch (Exception exception) when (IsComInvocationException(exception))
@@ -113,6 +117,7 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
         _disconnectRequested = true;
         _connectionMonitor?.Stop();
         _resizeTimer?.Stop();
+        _connectionReady?.TrySetCanceled();
         if (_rdpClient is not null)
         {
             TryDisconnect(_rdpClient);
@@ -133,6 +138,7 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
                 if (connected != 0)
                 {
                     _hasConnected = true;
+                    _connectionReady?.TrySetResult();
                     return;
                 }
                 if (!_hasConnected)
@@ -140,7 +146,9 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
                     _connectingTicks++;
                     if (_connectingTicks < 30) return;
                     _connectionMonitor?.Stop();
-                    UnexpectedlyDisconnected?.Invoke("RDP 連線逾時，請檢查主機、防火牆與帳號密碼");
+                    var timeout = new TimeoutException("RDP 連線逾時，請檢查主機、防火牆與帳號密碼");
+                    timeout.Data["SafeDiagnostic"] = "Embedded RDP did not reach Connected state within 30 seconds.";
+                    _connectionReady?.TrySetException(timeout);
                     return;
                 }
                 _connectionMonitor?.Stop();
@@ -158,7 +166,15 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
             catch (Exception exception) when (IsComInvocationException(exception))
             {
                 _connectionMonitor?.Stop();
-                UnexpectedlyDisconnected?.Invoke($"無法讀取 RDP 連線狀態：{exception.Message}");
+                if (!_hasConnected)
+                {
+                    _connectionReady?.TrySetException(new InvalidOperationException(
+                        $"無法讀取 RDP 連線狀態：{exception.Message}", exception));
+                }
+                else
+                {
+                    UnexpectedlyDisconnected?.Invoke($"無法讀取 RDP 連線狀態：{exception.Message}");
+                }
             }
         });
         _connectionMonitor.Start();
