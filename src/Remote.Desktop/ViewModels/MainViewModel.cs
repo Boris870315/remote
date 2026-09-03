@@ -477,8 +477,9 @@ public sealed partial class MainViewModel : ViewModelBase
         : new RdpConnectionSettings();
 
     public bool RequiresSessionCredentialInput =>
-        SelectedConnection?.Profile.Credential.Kind is CredentialReferenceKind.None &&
-        SelectedConnection.Profile.ProtocolId is "rdp" or "vnc" or "ssh2" or "http" or "https";
+        SelectedConnection is { } selected &&
+        !ConnectionUsesIdentityCard(selected.Profile) &&
+        selected.Profile.ProtocolId is "rdp" or "vnc" or "ssh2" or "http" or "https";
 
     public bool ShowSessionPlaceholder => RemoteFrame is null && !IsTerminalActive && !IsWebSessionActive && !IsRdpSessionActive;
 
@@ -1896,7 +1897,7 @@ public sealed partial class MainViewModel : ViewModelBase
                     : $"{definition.Domain}\\{definition.Username}";
                 rdpSecret = _vault!.Reveal(definition.Id);
             }
-            else if (connection.Credential.Kind is CredentialReferenceKind.None)
+            else
             {
                 username = string.IsNullOrWhiteSpace(SessionUsername) ? null : SessionUsername.Trim();
                 rdpSecret = string.IsNullOrEmpty(SessionPassword)
@@ -2718,8 +2719,7 @@ public sealed partial class MainViewModel : ViewModelBase
             {
                 vaultSecret = _vault!.Reveal(definition.Id);
             }
-            else if (connection.Credential.Kind is CredentialReferenceKind.None &&
-                     !string.IsNullOrEmpty(SessionPassword))
+            else if (!string.IsNullOrEmpty(SessionPassword))
             {
                 vaultSecret = Encoding.UTF8.GetBytes(SessionPassword);
             }
