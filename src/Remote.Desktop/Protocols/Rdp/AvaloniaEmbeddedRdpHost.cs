@@ -63,14 +63,14 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
             client.UseMultimon = _useMultimon;
             client.FullScreen = false;
             dynamic advanced = client.AdvancedSettings9;
-            var interactive = request.AccessMode is Remote.Protocols.SessionAccessMode.Interactive;
+            var permissions = RdpSessionPermissionPolicy.Resolve(request.AccessMode, request.Settings);
             advanced.RDPPort = request.Endpoint.IsDefaultPort ? 3389 : request.Endpoint.Port;
             advanced.EnableCredSspSupport = true;
             advanced.SmartSizing = true;
             advanced.ConnectToServerConsole = request.Settings.ConnectAsAdministrator;
-            advanced.RedirectClipboard = interactive && request.Settings.RedirectClipboard;
-            advanced.RedirectPrinters = interactive && request.Settings.RedirectPrinters;
-            advanced.RedirectDrives = interactive && request.Settings.RedirectDrives;
+            advanced.RedirectClipboard = permissions.RedirectClipboard;
+            advanced.RedirectPrinters = permissions.RedirectPrinters;
+            advanced.RedirectDrives = permissions.RedirectDrives;
             advanced.AudioRedirectionMode = (uint)request.Settings.AudioMode;
             if (!string.IsNullOrWhiteSpace(request.Settings.GatewayHost))
             {
@@ -85,7 +85,7 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
             }
             client.Connect();
             StartConnectionMonitor();
-            EnableWindow(_window, interactive);
+            EnableWindow(_window, permissions.AcceptsInput);
             return;
         }
         catch (COMException exception)
