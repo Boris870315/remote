@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using System.Globalization;
 using System.Reflection;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Platform;
 using Avalonia.Threading;
@@ -57,10 +58,7 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
             stage = "set-endpoint";
             client.Server = request.Endpoint.Host;
             client.UserName = request.Username ?? string.Empty;
-            if (!string.IsNullOrWhiteSpace(request.Domain))
-            {
-                client.Domain = request.Domain;
-            }
+            client.Domain = string.Empty;
             stage = "set-display";
             client.DesktopWidth = Math.Max(640, (int)Bounds.Width);
             client.DesktopHeight = Math.Max(480, (int)Bounds.Height);
@@ -241,6 +239,30 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
         return new PlatformHandle(_window, "HWND");
     }
 
+    protected override Size ArrangeOverride(Size finalSize)
+    {
+        var arranged = base.ArrangeOverride(finalSize);
+        ResizeNativeSurface(finalSize);
+        return arranged;
+    }
+
+    private void ResizeNativeSurface(Size size)
+    {
+        if (!OperatingSystem.IsWindows() || _window == nint.Zero) return;
+        var width = Math.Max(1, (int)Math.Ceiling(size.Width));
+        var height = Math.Max(1, (int)Math.Ceiling(size.Height));
+        _ = SetWindowPos(
+            _window,
+            nint.Zero,
+            0,
+            0,
+            width,
+            height,
+            SwpNoZOrder | SwpNoActivate | SwpShowWindow);
+        _ = InvalidateRect(_window, nint.Zero, false);
+        _ = UpdateWindow(_window);
+    }
+
     protected override void DestroyNativeControlCore(IPlatformHandle control)
     {
         if (OperatingSystem.IsWindows() && _window != nint.Zero)
@@ -350,6 +372,29 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
     [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern nint CreateWindowExW(uint exStyle, string className, string windowName, uint style,
         int x, int y, int width, int height, nint parent, nint menu, nint instance, nint parameter);
+
+    private const uint SwpNoZOrder = 0x0004;
+    private const uint SwpNoActivate = 0x0010;
+    private const uint SwpShowWindow = 0x0040;
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetWindowPos(
+        nint window,
+        nint insertAfter,
+        int x,
+        int y,
+        int width,
+        int height,
+        uint flags);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool InvalidateRect(nint window, nint rectangle, [MarshalAs(UnmanagedType.Bool)] bool erase);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool UpdateWindow(nint window);
 
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
