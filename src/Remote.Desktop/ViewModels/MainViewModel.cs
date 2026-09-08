@@ -1851,6 +1851,16 @@ public sealed partial class MainViewModel : ViewModelBase
         await LaunchConnectionAsync(connection);
     }
 
+    public Task OpenConnectionInNewTabAsync(ConnectionProfile connection)
+    {
+        ArgumentNullException.ThrowIfNull(connection);
+        var sessionConnection = connection with
+        {
+            DefaultAccessMode = IsViewOnly ? SessionAccessMode.ViewOnly : SessionAccessMode.Interactive,
+        };
+        return LaunchNewConnectionAsync(sessionConnection);
+    }
+
     [RelayCommand(AllowConcurrentExecutions = true)]
     private async Task QuickConnectAsync()
     {

@@ -302,6 +302,24 @@ public partial class MainWindow : Window
         }
     }
 
+    private async void HandleConnectionTreeDoubleTapped(object? sender, TappedEventArgs e)
+    {
+        if (_viewModel is null || e.Source is not Control source)
+        {
+            return;
+        }
+
+        var treeItem = source as TreeViewItem
+            ?? source.GetVisualAncestors().OfType<TreeViewItem>().FirstOrDefault();
+        if (treeItem?.DataContext is not ConnectionTreeDisplayItem { Connection: { } connection })
+        {
+            return;
+        }
+
+        e.Handled = true;
+        await _viewModel.OpenConnectionInNewTabAsync(connection);
+    }
+
     private void ToggleInspector(object? sender, RoutedEventArgs e)
     {
         _isInspectorCollapsed = !_isInspectorCollapsed;
