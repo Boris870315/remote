@@ -44,7 +44,7 @@ public sealed class RfbClientTests
     }
 
     [Fact]
-    public async Task ViewOnly_BlocksKeyboardAndPointerBeforeTransportWrite()
+    public async Task ViewOnly_BlocksKeyboardPointerAndClipboardBeforeTransportWrite()
     {
         var stream = new ScriptedDuplexStream(BuildServerScript());
         await using var client = new RfbClient(new ScriptedTransportFactory(stream), new RecordingFrameSink());
@@ -57,9 +57,11 @@ public sealed class RfbClientTests
 
         var keySent = await client.SendKeyAsync(0x41, true);
         var pointerSent = await client.SendPointerAsync(1, 20, 30);
+        var clipboardSent = await client.SendClipboardTextAsync("secret");
 
         Assert.False(keySent);
         Assert.False(pointerSent);
+        Assert.False(clipboardSent);
         Assert.Equal(bytesBeforeInput, stream.Written.Length);
     }
 
@@ -164,6 +166,34 @@ public sealed class RfbClientTests
 
         Assert.Equal([4, 1, 0, 0, 0, 0, 0, 0x41], stream.Written[inputOffset..(inputOffset + 8)]);
         Assert.Equal([5, 1, 0, 20, 0, 30], stream.Written[(inputOffset + 8)..]);
+    }
+
+    [Fact]
+    public async Task InteractiveMode_WritesClientClipboardText()
+    {
+        var stream = new ScriptedDuplexStream(BuildServerScript());
+        await using var client = new RfbClient(new ScriptedTransportFactory(stream), new RecordingFrameSink());
+        await client.ConnectAsync(new RfbConnectionOptions { Endpoint = new Uri("vnc://server.example") });
+        var inputOffset = stream.Written.Length;
+
+        Assert.True(await client.SendClipboardTextAsync("café"));
+
+        Assert.Equal([6, 0, 0, 0, 0, 0, 0, 4, 99, 97, 102, 233], stream.Written[inputOffset..]);
+    }
+
+    [Fact]
+    public async Task ReceiveServerClipboardText_RaisesDecodedText()
+    {
+        var serverCutText = new byte[] { 3, 0, 0, 0, 0, 0, 0, 4, 99, 97, 102, 233 };
+        var stream = new ScriptedDuplexStream(BuildServerScript(serverCutText));
+        await using var client = new RfbClient(new ScriptedTransportFactory(stream), new RecordingFrameSink());
+        string? received = null;
+        client.ServerClipboardTextReceived += text => received = text;
+        await client.ConnectAsync(new RfbConnectionOptions { Endpoint = new Uri("vnc://server.example") });
+
+        await client.ReceiveNextServerMessageAsync();
+
+        Assert.Equal("café", received);
     }
 
     private static byte[] BuildServerScript(

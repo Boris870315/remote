@@ -10,6 +10,7 @@ public sealed class RfbClient(
     IRfbTransportFactory transportFactory,
     IRfbFrameSink frameSink) : IAsyncDisposable
 {
+    private const int MaximumClipboardBytes = 16 * 1024 * 1024;
     private const int RawEncoding = 0;
     private const int CopyRectEncoding = 1;
     private const int DesktopSizeEncoding = -223;
@@ -20,6 +21,8 @@ public sealed class RfbClient(
     private ushort _height;
 
     public bool IsConnected => _transport is not null;
+
+    public event Action<string>? ServerClipboardTextReceived;
 
     public async Task<RfbServerInfo> ConnectAsync(
         RfbConnectionOptions options,
@@ -122,6 +125,32 @@ public sealed class RfbClient(
         message[1] = buttonMask;
         RfbBinary.WriteUInt16(message.AsSpan(2), x);
         RfbBinary.WriteUInt16(message.AsSpan(4), y);
+        await WriteAsync(message, cancellationToken).ConfigureAwait(false);
+        return true;
+    }
+
+    public async Task<bool> SendClipboardTextAsync(
+        string text,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        if (_accessMode is SessionAccessMode.ViewOnly)
+        {
+            return false;
+        }
+
+        // Classic RFB ClientCutText is ISO-8859-1. Characters outside that
+        // repertoire are replaced instead of emitting an invalid wire payload.
+        var payload = Encoding.Latin1.GetBytes(text);
+        if (payload.Length > MaximumClipboardBytes)
+        {
+            throw new ArgumentOutOfRangeException(nameof(text), "The VNC clipboard payload is too large.");
+        }
+
+        var message = new byte[checked(8 + payload.Length)];
+        message[0] = 6;
+        RfbBinary.WriteUInt32(message.AsSpan(4), (uint)payload.Length);
+        payload.CopyTo(message.AsSpan(8));
         await WriteAsync(message, cancellationToken).ConfigureAwait(false);
         return true;
     }
@@ -264,7 +293,7 @@ public sealed class RfbClient(
             case 2:
                 break;
             case 3:
-                await SkipServerCutTextAsync(stream, cancellationToken).ConfigureAwait(false);
+                await ProcessServerCutTextAsync(stream, cancellationToken).ConfigureAwait(false);
                 break;
             default:
                 throw new InvalidDataException($"Unsupported RFB server message type {messageType}.");
@@ -401,18 +430,19 @@ public sealed class RfbClient(
         await RfbBinary.ReadExactlyAsync(stream, colors, cancellationToken).ConfigureAwait(false);
     }
 
-    private static async Task SkipServerCutTextAsync(Stream stream, CancellationToken cancellationToken)
+    private async Task ProcessServerCutTextAsync(Stream stream, CancellationToken cancellationToken)
     {
         var header = new byte[7];
         await RfbBinary.ReadExactlyAsync(stream, header, cancellationToken).ConfigureAwait(false);
         var length = BinaryPrimitives.ReadUInt32BigEndian(header.AsSpan(3));
-        if (length > 16 * 1024 * 1024)
+        if (length > MaximumClipboardBytes)
         {
             throw new InvalidDataException("The VNC clipboard payload is unreasonably large.");
         }
 
         var payload = new byte[checked((int)length)];
         await RfbBinary.ReadExactlyAsync(stream, payload, cancellationToken).ConfigureAwait(false);
+        ServerClipboardTextReceived?.Invoke(Encoding.Latin1.GetString(payload));
     }
 
     private static void ValidateEndpoint(Uri endpoint)
