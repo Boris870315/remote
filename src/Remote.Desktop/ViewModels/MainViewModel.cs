@@ -1930,6 +1930,10 @@ public sealed partial class MainViewModel : ViewModelBase
                     : "已使用 ID Card 啟動 RDP 自動登入";
             }
         }
+        catch (OperationCanceledException)
+        {
+            SessionStatusLabel = "RDP 連線已取消";
+        }
         catch (Exception exception) when (
             exception is NotSupportedException or InvalidOperationException or System.ComponentModel.Win32Exception
                 or TimeoutException or System.Net.Sockets.SocketException)

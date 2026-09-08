@@ -91,7 +91,19 @@ public partial class MainWindow : Window
         }
 
         ShowSelectedRdpHost();
-        await host.ConnectAsync(request);
+        try
+        {
+            await host.ConnectAsync(request);
+        }
+        catch
+        {
+            if (_rdpHosts.Remove(sessionId, out var failedHost))
+            {
+                await failedHost.DisconnectAsync();
+                EmbeddedRdpSurfaces.Children.Remove(failedHost);
+            }
+            throw;
+        }
     }
 
     private async Task CloseEmbeddedRdpAsync(SessionId sessionId)

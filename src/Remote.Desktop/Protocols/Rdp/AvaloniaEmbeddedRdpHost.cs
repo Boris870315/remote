@@ -152,16 +152,7 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
                     return;
                 }
                 _connectionMonitor?.Stop();
-                string reason;
-                try
-                {
-                    reason = "RDP 連線已中斷";
-                }
-                catch (Exception exception) when (IsComInvocationException(exception))
-                {
-                    reason = "RDP 連線非預期中斷";
-                }
-                UnexpectedlyDisconnected?.Invoke(reason);
+                UnexpectedlyDisconnected?.Invoke("RDP 連線已中斷");
             }
             catch (Exception exception) when (IsComInvocationException(exception))
             {
