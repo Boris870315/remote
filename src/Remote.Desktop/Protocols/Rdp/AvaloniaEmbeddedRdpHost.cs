@@ -190,8 +190,11 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
             try
             {
                 var client = (IMsTscAxDispatch)_rdpClient;
-                client.DesktopWidth = (int)width;
-                client.DesktopHeight = (int)height;
+                if (!TryReconnectDisplay(_rdpClient, width, height))
+                {
+                    client.DesktopWidth = (int)width;
+                    client.DesktopHeight = (int)height;
+                }
             }
             catch (Exception exception) when (IsComInvocationException(exception))
             {
@@ -200,6 +203,22 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
         });
         _resizeTimer.Stop();
         _resizeTimer.Start();
+    }
+
+    private static bool TryReconnectDisplay(object client, uint width, uint height)
+    {
+        try
+        {
+            // IMsRdpClient8.Reconnect asks the server to recreate the remote
+            // desktop at the new size. A non-zero status means the control did
+            // not accept the resize; SmartSizing remains the visual fallback.
+            var status = InvokeComMethod(client, "Reconnect", width, height);
+            return status is not null && Convert.ToInt32(status, CultureInfo.InvariantCulture) == 0;
+        }
+        catch (Exception exception) when (IsComInvocationException(exception))
+        {
+            return false;
+        }
     }
 
     protected override IPlatformHandle CreateNativeControlCore(IPlatformHandle parent)
