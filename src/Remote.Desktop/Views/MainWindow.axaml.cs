@@ -11,6 +11,7 @@ using Avalonia.Threading;
 using Avalonia.Platform.Storage;
 using Remote.Application.Sessions;
 using Remote.Desktop.Protocols.Rdp;
+using Remote.Desktop.Protocols.Vnc;
 
 namespace Remote.Desktop.Views;
 
@@ -394,7 +395,7 @@ public partial class MainWindow : Window
 
     private async Task SendRemoteKeyAsync(KeyEventArgs e, bool isDown)
     {
-        var keySym = ToRfbKeySym(e.Key);
+        var keySym = RfbKeySymMapper.Map(e.Key);
         if (keySym is not null && _viewModel is not null)
         {
             e.Handled = await _viewModel.SendVncKeyAsync(keySym.Value, isDown);
@@ -425,38 +426,6 @@ public partial class MainWindow : Window
         x = (ushort)remoteX;
         y = (ushort)remoteY;
         return true;
-    }
-
-    private static uint? ToRfbKeySym(Key key)
-    {
-        if (key is >= Key.A and <= Key.Z)
-        {
-            return (uint)('a' + (key - Key.A));
-        }
-
-        if (key is >= Key.D0 and <= Key.D9)
-        {
-            return (uint)('0' + (key - Key.D0));
-        }
-
-        return key switch
-        {
-            Key.Enter => 0xFF0D,
-            Key.Back => 0xFF08,
-            Key.Tab => 0xFF09,
-            Key.Escape => 0xFF1B,
-            Key.Delete => 0xFFFF,
-            Key.Left => 0xFF51,
-            Key.Up => 0xFF52,
-            Key.Right => 0xFF53,
-            Key.Down => 0xFF54,
-            Key.LeftShift or Key.RightShift => 0xFFE1,
-            Key.LeftCtrl or Key.RightCtrl => 0xFFE3,
-            Key.LWin or Key.RWin => 0xFFEB,
-            Key.LeftAlt or Key.RightAlt => 0xFFE9,
-            Key.Space => 0x20,
-            _ => null,
-        };
     }
 
     private void SetSessionFullScreen(bool value)

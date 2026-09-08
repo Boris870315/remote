@@ -12,6 +12,7 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+    <PackageReference Include="Avalonia" Version="12.1.1" />
   </ItemGroup>
 
   <ItemGroup>
@@ -22,6 +23,7 @@
     <ProjectReference Include="..\..\src\Remote.Application\Remote.Application.csproj" />
     <ProjectReference Include="..\..\src\Remote.Infrastructure\Remote.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\Remote.Protocols\Remote.Protocols.csproj" />
+    <ProjectReference Include="..\..\src\Remote.Desktop\Remote.Desktop.csproj" />
   </ItemGroup>
 
 </Project>
