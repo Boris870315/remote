@@ -2358,6 +2358,12 @@ public sealed partial class MainViewModel : ViewModelBase
                 var read = await runtime.Session.ReadAsync(buffer, cancellationToken);
                 if (read == 0)
                 {
+                    SetEndedSessionState(sessionId);
+                    if (SelectedSessionTab?.SessionId == sessionId)
+                    {
+                        await Dispatcher.UIThread.InvokeAsync(() =>
+                            SessionStatusLabel = "SSH2 工作階段已由遠端結束");
+                    }
                     break;
                 }
 
@@ -2380,6 +2386,7 @@ public sealed partial class MainViewModel : ViewModelBase
         finally
         {
             System.Security.Cryptography.CryptographicOperations.ZeroMemory(buffer);
+            await StopSshSessionAsync(sessionId);
         }
     }
 
@@ -2457,7 +2464,11 @@ public sealed partial class MainViewModel : ViewModelBase
                 var read = await runtime.Session.ReadAsync(buffer, cancellationToken);
                 if (read == 0)
                 {
-                    await Dispatcher.UIThread.InvokeAsync(() => SessionStatusLabel = "本機 Terminal 已結束");
+                    SetEndedSessionState(sessionId);
+                    if (SelectedSessionTab?.SessionId == sessionId)
+                    {
+                        await Dispatcher.UIThread.InvokeAsync(() => SessionStatusLabel = "本機 Terminal 已結束");
+                    }
                     break;
                 }
 
@@ -2479,7 +2490,16 @@ public sealed partial class MainViewModel : ViewModelBase
         finally
         {
             System.Security.Cryptography.CryptographicOperations.ZeroMemory(buffer);
+            await StopLocalTerminalSessionAsync(sessionId);
         }
+    }
+
+    private void SetEndedSessionState(SessionId sessionId)
+    {
+        var session = _sessionWorkspace.Get(sessionId);
+        if (session.State is not SessionState.Connected) return;
+        SetSessionState(sessionId, SessionState.Disconnecting);
+        SetSessionState(sessionId, SessionState.Disconnected);
     }
 
     private async Task StopLocalTerminalAsync()
