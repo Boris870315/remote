@@ -66,10 +66,16 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
             stage = "set-display";
             client.DesktopWidth = Math.Max(640, (int)Bounds.Width);
             client.DesktopHeight = Math.Max(480, (int)Bounds.Height);
-            _useMultimon = request.Display.MonitorSelection is Remote.Application.Connections.MonitorSelection.All;
+            var selectedMonitorIndex = Math.Max(0, request.Display.MonitorIndex ?? 0);
+            _useMultimon = request.Display.MonitorSelection is Remote.Application.Connections.MonitorSelection.All ||
+                selectedMonitorIndex > 0;
             if (_useMultimon)
             {
                 stage = "enable-multiple-monitors";
+                if (request.Display.MonitorSelection is Remote.Application.Connections.MonitorSelection.Single)
+                {
+                    RdpActiveXNativeSettings.SetSelectedMonitors(clientObject, selectedMonitorIndex);
+                }
                 RdpActiveXNativeSettings.SetUseMultimon(clientObject, true);
             }
             stage = "open-advanced-settings";
@@ -454,6 +460,13 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
         private const int RegkindNone = 2;
         private static readonly Guid NonScriptable5Id = new("4F6996D5-D7B1-412C-B0FF-063718566907");
 
+        public static void SetSelectedMonitors(object client, int monitorIndex)
+        {
+            var extendedSettings = (IMsRdpExtendedSettings)client;
+            object value = monitorIndex.ToString(CultureInfo.InvariantCulture);
+            Marshal.ThrowExceptionForHR(extendedSettings.SetProperty("SelectedMonitors", ref value));
+        }
+
         public static void SetUseMultimon(object client, bool enabled)
         {
             var typeLibraryPath = Path.Combine(
@@ -525,6 +538,22 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
 
         [UnmanagedFunctionPointer(CallingConvention.StdCall)]
         private delegate int PutVariantBool(nint self, short enabled);
+
+        [ComImport]
+        [Guid("302D8188-0052-4807-806A-362B628F9AC5")]
+        [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        private interface IMsRdpExtendedSettings
+        {
+            [PreserveSig]
+            int SetProperty(
+                [MarshalAs(UnmanagedType.BStr)] string propertyName,
+                [In, MarshalAs(UnmanagedType.Struct)] ref object value);
+
+            [PreserveSig]
+            int GetProperty(
+                [MarshalAs(UnmanagedType.BStr)] string propertyName,
+                [MarshalAs(UnmanagedType.Struct)] out object value);
+        }
 
         [DllImport("oleaut32.dll", CharSet = CharSet.Unicode)]
         private static extern int LoadTypeLibEx(
