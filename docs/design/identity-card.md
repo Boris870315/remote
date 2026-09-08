@@ -2,7 +2,7 @@
 
 ## Vault
 
-The Vault is the separately unlockable encrypted container. Its screen owns master-password unlock, biometric quick unlock when a platform adapter is available, inactivity/sleep/logout locking, recovery keys, and encrypted backups. It does not represent a login that a Connection can select.
+The Vault is the separately unlockable encrypted container. Its screen owns master-password unlock, inactivity/sleep/logout locking, recovery keys, and encrypted backups. Windows Hello and Touch ID quick unlock are generation-2 features. It does not represent a login that a Connection can select.
 
 ## ID Card
 

@@ -82,6 +82,8 @@ _Avoid_: Identical implementation, reduced version
 
 ## Display and session decisions
 
+- Windows Hello and Touch ID quick unlock are explicitly deferred to generation 2. Generation 1 uses the Master Password and Recovery Key; protocol and Session completion takes priority.
+
 - Remote window orientation and remote-display orientation are independent.
 - The default scaling mode is aspect-preserving Fit to Window. The Operator may select 100%, Fill, or Scroll.
 - RDP uses dynamic resolution when the adapter and remote endpoint support it. VNC and other adapters fall back to client-side scaling without forcing a reconnect.
