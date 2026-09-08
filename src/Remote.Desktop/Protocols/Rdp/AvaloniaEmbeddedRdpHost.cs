@@ -157,6 +157,17 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
                 if (!_hasConnected)
                 {
                     _connectingTicks++;
+                    var disconnectReason = TryGetExtendedDisconnectReason(_rdpClient);
+                    if (disconnectReason > 2)
+                    {
+                        _connectionMonitor?.Stop();
+                        var rejected = new InvalidOperationException(
+                            RdpDisconnectReasonFormatter.Format(disconnectReason));
+                        rejected.Data["SafeDiagnostic"] =
+                            $"Embedded RDP connection rejected; ExtendedDisconnectReason={disconnectReason}.";
+                        _connectionReady?.TrySetException(rejected);
+                        return;
+                    }
                     if (_connectingTicks < 30) return;
                     _connectionMonitor?.Stop();
                     var timeout = new TimeoutException("RDP 連線逾時，請檢查主機、防火牆與帳號密碼");
@@ -224,6 +235,19 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
         catch (Exception exception) when (IsComInvocationException(exception))
         {
             return false;
+        }
+    }
+
+    private static int TryGetExtendedDisconnectReason(object client)
+    {
+        try
+        {
+            var value = GetComProperty(client, "ExtendedDisconnectReason");
+            return Convert.ToInt32(value, CultureInfo.InvariantCulture);
+        }
+        catch (Exception exception) when (IsComInvocationException(exception))
+        {
+            return 0;
         }
     }
 
