@@ -32,21 +32,40 @@ public sealed class RfbClient(
         }
 
         ValidateEndpoint(options.Endpoint);
+        if (options.ConnectTimeout <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(options), "VNC connection timeout must be positive.");
+        }
+
+        using var timeout = new CancellationTokenSource(options.ConnectTimeout);
+        using var linkedCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeout.Token);
+        var connectToken = linkedCancellation.Token;
         var port = options.Endpoint.IsDefaultPort ? 5900 : options.Endpoint.Port;
-        var transport = await transportFactory
-            .ConnectAsync(options.Endpoint.Host, port, cancellationToken)
-            .ConfigureAwait(false);
+        RfbTransport transport;
         try
         {
-            var serverInfo = await PerformHandshakeAsync(transport.Stream, options, cancellationToken)
+            transport = await transportFactory.ConnectAsync(options.Endpoint.Host, port, connectToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException exception) when (timeout.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+        {
+            throw new TimeoutException($"VNC connection timed out after {options.ConnectTimeout.TotalSeconds:0} seconds.", exception);
+        }
+        try
+        {
+            var serverInfo = await PerformHandshakeAsync(transport.Stream, options, connectToken)
                 .ConfigureAwait(false);
             _transport = transport;
             _accessMode = options.AccessMode;
             _width = serverInfo.Width;
             _height = serverInfo.Height;
-            await ConfigureFramebufferAsync(cancellationToken).ConfigureAwait(false);
-            await frameSink.DesktopSizeChangedAsync(_width, _height, cancellationToken).ConfigureAwait(false);
+            await ConfigureFramebufferAsync(connectToken).ConfigureAwait(false);
+            await frameSink.DesktopSizeChangedAsync(_width, _height, connectToken).ConfigureAwait(false);
             return serverInfo;
+        }
+        catch (OperationCanceledException exception) when (timeout.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+        {
+            await transport.DisposeAsync().ConfigureAwait(false);
+            throw new TimeoutException($"VNC handshake timed out after {options.ConnectTimeout.TotalSeconds:0} seconds.", exception);
         }
         catch
         {

@@ -11,6 +11,8 @@ public sealed record RfbConnectionOptions
     public SessionAccessMode AccessMode { get; init; } = SessionAccessMode.Interactive;
 
     public bool SharedSession { get; init; } = true;
+
+    public TimeSpan ConnectTimeout { get; init; } = TimeSpan.FromSeconds(15);
 }
 
 public sealed record RfbServerInfo(ushort Width, ushort Height, string Name);

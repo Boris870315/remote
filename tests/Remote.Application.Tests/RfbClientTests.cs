@@ -8,6 +8,18 @@ namespace Remote.Application.Tests;
 public sealed class RfbClientTests
 {
     [Fact]
+    public async Task Connect_WhenTransportDoesNotRespond_TimesOut()
+    {
+        await using var client = new RfbClient(new NeverConnectingTransportFactory(), new RecordingFrameSink());
+
+        await Assert.ThrowsAsync<TimeoutException>(() => client.ConnectAsync(new RfbConnectionOptions
+        {
+            Endpoint = new Uri("vnc://server.example"),
+            ConnectTimeout = TimeSpan.FromMilliseconds(20),
+        }));
+    }
+
+    [Fact]
     public async Task Connect_Rfb38WithoutAuthentication_ConfiguresRawFramebuffer()
     {
         var stream = new ScriptedDuplexStream(BuildServerScript());
@@ -212,6 +224,15 @@ public sealed class RfbClientTests
     {
         public Task<RfbTransport> ConnectAsync(string host, int port, CancellationToken cancellationToken) =>
             Task.FromResult(new RfbTransport(stream, new NoopDisposable()));
+    }
+
+    private sealed class NeverConnectingTransportFactory : IRfbTransportFactory
+    {
+        public async Task<RfbTransport> ConnectAsync(string host, int port, CancellationToken cancellationToken)
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            throw new InvalidOperationException("Unreachable after cancellation.");
+        }
     }
 
     private sealed class NoopDisposable : IDisposable
