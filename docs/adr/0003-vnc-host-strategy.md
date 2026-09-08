@@ -17,4 +17,4 @@ RFB None and classic VNC Authentication do not encrypt the framebuffer or later 
 
 ## Compatibility evolution
 
-Servers are asked to use Raw encoding, which is required by the base RFB protocol and provides a dependable first-party baseline. Additional encodings such as CopyRect and Tight can be added behind isolated decoders without changing the frame sink or session UI. Per-remote-monitor tabs or windows remain a required later display evolution.
+Servers are asked to use Hextile, CopyRect, and Raw encodings, with Raw providing the required dependable baseline. Additional encodings such as Tight can be added behind isolated decoders without changing the frame sink or Session UI. Per-remote-monitor tabs or windows remain a required later display evolution.

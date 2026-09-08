@@ -16,3 +16,5 @@ It covers:
 Open the HTML file directly in a browser. Treat approved changes in this document as the presentation reference for `src/Remote.Desktop`; domain and security behavior remains authoritative in `CONTEXT.md` and the ADRs.
 
 See `identity-card.md` for the normative separation between Vault security, reusable ID Cards, assignment, inheritance, and session-only credentials.
+
+See `../product-scope.md` for the compact generation-1 acceptance scope and explicitly deferred generation-2 work.
