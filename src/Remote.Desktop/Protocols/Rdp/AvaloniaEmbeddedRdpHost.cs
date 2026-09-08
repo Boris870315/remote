@@ -1,6 +1,8 @@
 using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.ComTypes;
 using System.Globalization;
 using System.Reflection;
+using System.Runtime.Versioning;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Platform;
@@ -65,6 +67,11 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
             client.DesktopWidth = Math.Max(640, (int)Bounds.Width);
             client.DesktopHeight = Math.Max(480, (int)Bounds.Height);
             _useMultimon = request.Display.MonitorSelection is Remote.Application.Connections.MonitorSelection.All;
+            if (_useMultimon)
+            {
+                stage = "enable-multiple-monitors";
+                RdpActiveXNativeSettings.SetUseMultimon(clientObject, true);
+            }
             stage = "open-advanced-settings";
             var advanced = client.AdvancedSettings;
             var permissions = RdpSessionPermissionPolicy.Resolve(request.AccessMode, request.Settings);
@@ -416,4 +423,94 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
 
     [DllImport("ole32.dll")]
     private static extern void OleUninitialize();
+
+    /// <summary>
+    /// Invokes the installed RDP client's non-scriptable interface using the
+    /// vtable offset published by its own type library. This avoids hard-coding
+    /// the long inherited IMsRdpClientNonScriptable5 vtable layout.
+    /// </summary>
+    [SupportedOSPlatform("windows")]
+    private static class RdpActiveXNativeSettings
+    {
+        private const int RegkindNone = 2;
+        private static readonly Guid NonScriptable5Id = new("4F6996D5-D7B1-412C-B0FF-063718566907");
+
+        public static void SetUseMultimon(object client, bool enabled)
+        {
+            var typeLibraryPath = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.System),
+                "mstscax.dll");
+            var loadResult = LoadTypeLibEx(typeLibraryPath, RegkindNone, out var typeLibrary);
+            Marshal.ThrowExceptionForHR(loadResult);
+
+            nint unknown = nint.Zero;
+            nint interfacePointer = nint.Zero;
+            try
+            {
+                var interfaceId = NonScriptable5Id;
+                typeLibrary.GetTypeInfoOfGuid(ref interfaceId, out var typeInfo);
+                var vtableOffset = FindPropertySetterOffset(typeInfo, "UseMultimon");
+
+                unknown = Marshal.GetIUnknownForObject(client);
+                var queryResult = Marshal.QueryInterface(unknown, in interfaceId, out interfacePointer);
+                Marshal.ThrowExceptionForHR(queryResult);
+
+                var vtable = Marshal.ReadIntPtr(interfacePointer);
+                var functionPointer = Marshal.ReadIntPtr(vtable, vtableOffset);
+                var setter = Marshal.GetDelegateForFunctionPointer<PutVariantBool>(functionPointer);
+                Marshal.ThrowExceptionForHR(setter(interfacePointer, enabled ? (short)-1 : (short)0));
+            }
+            finally
+            {
+                if (interfacePointer != nint.Zero) Marshal.Release(interfacePointer);
+                if (unknown != nint.Zero) Marshal.Release(unknown);
+                if (Marshal.IsComObject(typeLibrary)) Marshal.FinalReleaseComObject(typeLibrary);
+            }
+        }
+
+        private static int FindPropertySetterOffset(ITypeInfo typeInfo, string propertyName)
+        {
+            typeInfo.GetTypeAttr(out var typeAttributePointer);
+            try
+            {
+                var typeAttribute = Marshal.PtrToStructure<TYPEATTR>(typeAttributePointer);
+                for (var index = 0; index < typeAttribute.cFuncs; index++)
+                {
+                    typeInfo.GetFuncDesc(index, out var functionPointer);
+                    try
+                    {
+                        var function = Marshal.PtrToStructure<FUNCDESC>(functionPointer);
+                        if (function.invkind is not INVOKEKIND.INVOKE_PROPERTYPUT) continue;
+                        var names = new string[1];
+                        typeInfo.GetNames(function.memid, names, names.Length, out var nameCount);
+                        if (nameCount == 1 && string.Equals(names[0], propertyName, StringComparison.Ordinal))
+                        {
+                            return function.oVft;
+                        }
+                    }
+                    finally
+                    {
+                        typeInfo.ReleaseFuncDesc(functionPointer);
+                    }
+                }
+            }
+            finally
+            {
+                typeInfo.ReleaseTypeAttr(typeAttributePointer);
+                if (Marshal.IsComObject(typeInfo)) Marshal.FinalReleaseComObject(typeInfo);
+            }
+
+            throw new MissingMethodException(
+                "The installed Microsoft RDP client does not publish the UseMultimon setting.");
+        }
+
+        [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+        private delegate int PutVariantBool(nint self, short enabled);
+
+        [DllImport("oleaut32.dll", CharSet = CharSet.Unicode)]
+        private static extern int LoadTypeLibEx(
+            string fileName,
+            int registrationKind,
+            [MarshalAs(UnmanagedType.Interface)] out ITypeLib typeLibrary);
+    }
 }
