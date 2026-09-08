@@ -148,6 +148,11 @@ public partial class MainWindow : Window
         {
             ShowSelectedRdpHost();
             ShowSelectedWebView();
+            ApplyRemoteSurfaceScale();
+        }
+        else if (e.PropertyName == nameof(MainViewModel.SelectedConnection))
+        {
+            ApplyRemoteSurfaceScale();
         }
     }
 
@@ -217,8 +222,33 @@ public partial class MainWindow : Window
         }
     }
 
-    private void FitSessionToWindow(object? sender, RoutedEventArgs e) =>
-        RemoteSurface.Stretch = Avalonia.Media.Stretch.Uniform;
+    private async void ApplyDisplayScale(object? sender, SelectionChangedEventArgs e)
+    {
+        if (_viewModel is null) return;
+        if (_viewModel.ApplyDisplayScaleCommand.CanExecute(null))
+        {
+            await _viewModel.ApplyDisplayScaleCommand.ExecuteAsync(null);
+        }
+        ApplyRemoteSurfaceScale();
+    }
+
+    private void ApplyRemoteSurfaceScale()
+    {
+        var mode = _viewModel?.SelectedConnection?.Profile.Display.ScaleMode ??
+            Remote.Application.Connections.DisplayScaleMode.Fit;
+        var scroll = mode is Remote.Application.Connections.DisplayScaleMode.Scroll;
+        RemoteSurfaceScroller.HorizontalScrollBarVisibility = scroll ? ScrollBarVisibility.Auto : ScrollBarVisibility.Disabled;
+        RemoteSurfaceScroller.VerticalScrollBarVisibility = scroll ? ScrollBarVisibility.Auto : ScrollBarVisibility.Disabled;
+        RemoteSurface.Stretch = mode switch
+        {
+            Remote.Application.Connections.DisplayScaleMode.Fill => Avalonia.Media.Stretch.UniformToFill,
+            Remote.Application.Connections.DisplayScaleMode.ActualSize or
+                Remote.Application.Connections.DisplayScaleMode.Scroll => Avalonia.Media.Stretch.None,
+            _ => Avalonia.Media.Stretch.Uniform,
+        };
+        RemoteSurface.HorizontalAlignment = scroll ? Avalonia.Layout.HorizontalAlignment.Left : Avalonia.Layout.HorizontalAlignment.Stretch;
+        RemoteSurface.VerticalAlignment = scroll ? Avalonia.Layout.VerticalAlignment.Top : Avalonia.Layout.VerticalAlignment.Stretch;
+    }
 
     private void ToggleConnectionTree(object? sender, RoutedEventArgs e)
     {
@@ -411,9 +441,17 @@ public partial class MainWindow : Window
             return false;
         }
 
-        var scale = Math.Min(
-            RemoteSurface.Bounds.Width / frame.PixelSize.Width,
-            RemoteSurface.Bounds.Height / frame.PixelSize.Height);
+        var mode = _viewModel?.SelectedConnection?.Profile.Display.ScaleMode ??
+            Remote.Application.Connections.DisplayScaleMode.Fit;
+        var widthScale = RemoteSurface.Bounds.Width / frame.PixelSize.Width;
+        var heightScale = RemoteSurface.Bounds.Height / frame.PixelSize.Height;
+        var scale = mode switch
+        {
+            Remote.Application.Connections.DisplayScaleMode.Fill => Math.Max(widthScale, heightScale),
+            Remote.Application.Connections.DisplayScaleMode.ActualSize or
+                Remote.Application.Connections.DisplayScaleMode.Scroll => 1,
+            _ => Math.Min(widthScale, heightScale),
+        };
         var displayedWidth = frame.PixelSize.Width * scale;
         var displayedHeight = frame.PixelSize.Height * scale;
         var remoteX = (point.X - ((RemoteSurface.Bounds.Width - displayedWidth) / 2)) / scale;

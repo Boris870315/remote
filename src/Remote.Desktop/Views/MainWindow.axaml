@@ -76,7 +76,9 @@
         <Border Grid.Row="1" Margin="10" CornerRadius="9" BorderBrush="#334762" BorderThickness="1" Background="#172941" ClipToBounds="True">
           <Grid>
             <Border Background="#1D3653" Margin="1" CornerRadius="8"/>
-            <Image x:Name="RemoteSurface" Source="{Binding RemoteFrame}" Stretch="Uniform" Focusable="True" PointerPressed="HandleRemotePointerPressed" PointerMoved="HandleRemotePointerMoved" PointerReleased="HandleRemotePointerReleased" PointerWheelChanged="HandleRemotePointerWheelChanged" KeyDown="HandleRemoteKeyDown" KeyUp="HandleRemoteKeyUp"/>
+            <ScrollViewer x:Name="RemoteSurfaceScroller" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
+              <Image x:Name="RemoteSurface" Source="{Binding RemoteFrame}" Stretch="Uniform" Focusable="True" PointerPressed="HandleRemotePointerPressed" PointerMoved="HandleRemotePointerMoved" PointerReleased="HandleRemotePointerReleased" PointerWheelChanged="HandleRemotePointerWheelChanged" KeyDown="HandleRemoteKeyDown" KeyUp="HandleRemoteKeyUp"/>
+            </ScrollViewer>
             <Grid x:Name="EmbeddedRdpSurfaces" IsVisible="{Binding IsRdpSessionActive}"/>
             <Grid IsVisible="{Binding IsWebSessionActive}" RowDefinitions="Auto,*">
               <Grid ColumnDefinitions="Auto,Auto,*,Auto" Margin="8" ColumnSpacing="6" IsEnabled="{Binding !IsViewOnly}">
@@ -119,7 +121,7 @@
             </StackPanel>
             <TextBlock Text="{Binding StatusDetail}" FontSize="10" Foreground="#A9B8CE" TextWrapping="Wrap"/>
           </StackPanel>
-          <StackPanel Spacing="7"><TextBlock Text="工作階段控制" FontSize="10" Foreground="#7F8DA5"/><Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="7" RowSpacing="7"><Button Content="重新整理" Classes="tool" Click="RefreshSession"/><Button Grid.Column="1" Content="全螢幕" Classes="tool" Click="ToggleFullScreen"/><Button Grid.Row="1" Content="適應視窗" Classes="tool" Click="FitSessionToWindow"/><ComboBox Grid.Row="1" Grid.Column="1" ItemsSource="{Binding MonitorOptions}" SelectedItem="{Binding SelectedMonitorOption}" SelectionChanged="ApplyMonitorSelection"/></Grid><Border HorizontalAlignment="Left" Background="#493F78" CornerRadius="6" Padding="8,4" IsVisible="{Binding IsViewOnly}"><TextBlock Text="VIEW ONLY" Foreground="#D5D2FF" FontWeight="Bold" FontSize="10"/></Border></StackPanel>
+          <StackPanel Spacing="7"><TextBlock Text="工作階段控制" FontSize="10" Foreground="#7F8DA5"/><Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="7" RowSpacing="7"><Button Content="重新整理" Classes="tool" Click="RefreshSession"/><Button Grid.Column="1" Content="全螢幕" Classes="tool" Click="ToggleFullScreen"/><ComboBox Grid.Row="1" ItemsSource="{Binding DisplayScaleOptions}" SelectedItem="{Binding SelectedDisplayScaleOption}" SelectionChanged="ApplyDisplayScale"/><ComboBox Grid.Row="1" Grid.Column="1" ItemsSource="{Binding MonitorOptions}" SelectedItem="{Binding SelectedMonitorOption}" SelectionChanged="ApplyMonitorSelection"/></Grid><Border HorizontalAlignment="Left" Background="#493F78" CornerRadius="6" Padding="8,4" IsVisible="{Binding IsViewOnly}"><TextBlock Text="VIEW ONLY" Foreground="#D5D2FF" FontWeight="Bold" FontSize="10"/></Border></StackPanel>
           <StackPanel Spacing="6" IsVisible="{Binding RequiresSessionCredentialInput}">
             <TextBlock Text="本次工作階段帳密（連線後清除密碼）" FontSize="10" Foreground="#7F8DA5"/>
             <TextBox Text="{Binding SessionUsername}" PlaceholderText="使用者名稱"/>

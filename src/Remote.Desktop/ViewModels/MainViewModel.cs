@@ -158,6 +158,7 @@ public sealed partial class MainViewModel : ViewModelBase
 
     public IReadOnlyList<string> IdentityProtocols { get; } = ["rdp", "vnc", "ssh2", "http", "https"];
     public IReadOnlyList<string> PasswordVisibilityOptions { get; } = ["5 秒", "10 秒", "永久顯示"];
+    public IReadOnlyList<string> DisplayScaleOptions { get; } = ["適應視窗", "填滿視窗", "100%", "捲動"];
 
     public ObservableCollection<ConnectionTreeDisplayItem> ConnectionTree { get; }
 
@@ -187,6 +188,9 @@ public sealed partial class MainViewModel : ViewModelBase
 
     [ObservableProperty]
     private string sessionStatusLabel = "尚未開啟工作階段";
+
+    [ObservableProperty]
+    private string selectedDisplayScaleOption = "適應視窗";
 
     [ObservableProperty]
     private bool isSessionOpenChoiceVisible;
@@ -1092,6 +1096,33 @@ public sealed partial class MainViewModel : ViewModelBase
     }
 
     [RelayCommand]
+    private async Task ApplyDisplayScaleAsync()
+    {
+        if (SelectedConnection is not { } selected) return;
+        var scaleMode = SelectedDisplayScaleOption switch
+        {
+            "填滿視窗" => DisplayScaleMode.Fill,
+            "100%" => DisplayScaleMode.ActualSize,
+            "捲動" => DisplayScaleMode.Scroll,
+            _ => DisplayScaleMode.Fit,
+        };
+        if (selected.Profile.Display.ScaleMode == scaleMode) return;
+
+        var updated = selected with
+        {
+            Profile = selected.Profile with
+            {
+                Display = selected.Profile.Display with { ScaleMode = scaleMode },
+            },
+        };
+        Connections[Connections.IndexOf(selected)] = updated;
+        SelectedConnection = updated;
+        RebuildConnectionTree(updated.Profile.Id);
+        if (!IsVaultLocked) await SaveWorkspaceAsync();
+        SessionStatusLabel = $"顯示縮放已設定為 {SelectedDisplayScaleOption}";
+    }
+
+    [RelayCommand]
     private void BeginEditIdentityCard()
     {
         if (SelectedVaultCredential is not { } credential)
@@ -1289,6 +1320,13 @@ public sealed partial class MainViewModel : ViewModelBase
         SelectedMonitorOption = value?.Profile.Display.MonitorSelection is MonitorSelection.All
             ? "全部本機螢幕"
             : MonitorOptions[Math.Clamp(value?.Profile.Display.MonitorIndex ?? 0, 0, Math.Max(0, MonitorOptions.Count - 2))];
+        SelectedDisplayScaleOption = value?.Profile.Display.ScaleMode switch
+        {
+            DisplayScaleMode.Fill => "填滿視窗",
+            DisplayScaleMode.ActualSize => "100%",
+            DisplayScaleMode.Scroll => "捲動",
+            _ => "適應視窗",
+        };
         OnPropertyChanged(nameof(IsSshSelected));
         OnPropertyChanged(nameof(IsVncSelected));
         OnPropertyChanged(nameof(IsRdpSelected));
