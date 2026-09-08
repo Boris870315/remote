@@ -252,7 +252,11 @@ public sealed class RfbClient(
 
         var nameBytes = new byte[checked((int)nameLength)];
         await RfbBinary.ReadExactlyAsync(stream, nameBytes, cancellationToken).ConfigureAwait(false);
-        return new(width, height, Encoding.UTF8.GetString(nameBytes));
+        return new(
+            width,
+            height,
+            Encoding.UTF8.GetString(nameBytes),
+            (RfbSecurityType)requestedSecurityType);
     }
 
     private async Task ConfigureFramebufferAsync(CancellationToken cancellationToken)

@@ -2784,7 +2784,13 @@ public sealed partial class MainViewModel : ViewModelBase
             }, cancellation.Token);
             SetSessionState(sessionId, SessionState.Connected);
             OnPropertyChanged(nameof(IsVncSessionActive));
-            SessionStatusLabel = $"VNC 已連線 · {server.Name} · {server.Width} × {server.Height}";
+            var securityLabel = server.SecurityType switch
+            {
+                RfbSecurityType.VncAuthentication => "傳統 VNC 密碼驗證 · 傳輸未加密",
+                _ => "無驗證 · 傳輸未加密",
+            };
+            SessionStatusLabel =
+                $"VNC 已連線 · {server.Name} · {server.Width} × {server.Height} · {securityLabel}";
             _ = ObserveVncAsync(client, sessionId, cancellation.Token);
         }
         catch (Exception exception) when (

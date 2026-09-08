@@ -35,6 +35,7 @@ public sealed class RfbClientTests
         Assert.Equal((ushort)800, server.Width);
         Assert.Equal((ushort)600, server.Height);
         Assert.Equal("Test Desktop", server.Name);
+        Assert.Equal(RfbSecurityType.None, server.SecurityType);
         Assert.Equal((ushort)800, sink.Width);
         Assert.Equal("RFB 003.008\n", Encoding.ASCII.GetString(stream.Written[..12]));
         Assert.Equal(1, stream.Written[12]);
@@ -163,6 +164,21 @@ public sealed class RfbClientTests
         Assert.Equal(2, stream.Written[12]);
         Assert.Equal(16, stream.Written[13..29].Length);
         Assert.NotEqual(new byte[16], stream.Written[13..29]);
+    }
+
+    [Fact]
+    public async Task Connect_WithPassword_ReportsClassicUnencryptedSecurityType()
+    {
+        var stream = new ScriptedDuplexStream(BuildServerScript(securityType: 2));
+        await using var client = new RfbClient(new ScriptedTransportFactory(stream), new RecordingFrameSink());
+
+        var server = await client.ConnectAsync(new RfbConnectionOptions
+        {
+            Endpoint = new Uri("vnc://secured.example"),
+            Password = "password"u8.ToArray(),
+        });
+
+        Assert.Equal(RfbSecurityType.VncAuthentication, server.SecurityType);
     }
 
     [Fact]

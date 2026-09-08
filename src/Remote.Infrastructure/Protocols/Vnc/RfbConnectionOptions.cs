@@ -15,7 +15,17 @@ public sealed record RfbConnectionOptions
     public TimeSpan ConnectTimeout { get; init; } = TimeSpan.FromSeconds(15);
 }
 
-public sealed record RfbServerInfo(ushort Width, ushort Height, string Name);
+public sealed record RfbServerInfo(
+    ushort Width,
+    ushort Height,
+    string Name,
+    RfbSecurityType SecurityType);
+
+public enum RfbSecurityType : byte
+{
+    None = 1,
+    VncAuthentication = 2,
+}
 
 public sealed record RfbRectangle(ushort X, ushort Y, ushort Width, ushort Height, byte[] BgraPixels);
 
