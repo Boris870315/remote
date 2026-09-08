@@ -2715,7 +2715,13 @@ public sealed partial class MainViewModel : ViewModelBase
             if (SelectedSessionTab?.SessionId == sessionId) RemoteFrame = frame;
         });
         var client = new RfbClient(new TcpRfbTransportFactory(), frameSink);
-        client.ServerClipboardTextReceived += text => VncClipboardTextReceived?.Invoke(text);
+        client.ServerClipboardTextReceived += text =>
+        {
+            if (SelectedSessionTab?.SessionId == sessionId)
+            {
+                VncClipboardTextReceived?.Invoke(text);
+            }
+        };
         runtime = new VncSessionRuntime(client, frameSink, cancellation);
         _vncSessions.Add(sessionId, runtime);
         _vncClient = client;

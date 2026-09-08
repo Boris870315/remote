@@ -318,6 +318,21 @@ public partial class MainWindow : Window
     private async void HandleRemotePointerReleased(object? sender, PointerReleasedEventArgs e) =>
         await SendRemotePointerAsync(e, focus: false);
 
+    private async void HandleRemotePointerWheelChanged(object? sender, PointerWheelEventArgs e)
+    {
+        if (_viewModel?.IsVncSessionActive is not true ||
+            !TryMapRemotePoint(e.GetPosition(RemoteSurface), out var x, out var y))
+        {
+            return;
+        }
+
+        var wheelMask = e.Delta.Y > 0 ? (byte)8 : e.Delta.Y < 0 ? (byte)16 : (byte)0;
+        if (wheelMask == 0) return;
+        var pressed = await _viewModel.SendVncPointerAsync(wheelMask, x, y);
+        var released = await _viewModel.SendVncPointerAsync(0, x, y);
+        e.Handled = pressed && released;
+    }
+
     private async Task SendRemotePointerAsync(PointerEventArgs e, bool focus)
     {
         if (_viewModel?.IsVncSessionActive is not true || _viewModel.RemoteFrame is null)

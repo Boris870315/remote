@@ -76,7 +76,7 @@
         <Border Grid.Row="1" Margin="10" CornerRadius="9" BorderBrush="#334762" BorderThickness="1" Background="#172941" ClipToBounds="True">
           <Grid>
             <Border Background="#1D3653" Margin="1" CornerRadius="8"/>
-            <Image x:Name="RemoteSurface" Source="{Binding RemoteFrame}" Stretch="Uniform" Focusable="True" PointerPressed="HandleRemotePointerPressed" PointerMoved="HandleRemotePointerMoved" PointerReleased="HandleRemotePointerReleased" KeyDown="HandleRemoteKeyDown" KeyUp="HandleRemoteKeyUp"/>
+            <Image x:Name="RemoteSurface" Source="{Binding RemoteFrame}" Stretch="Uniform" Focusable="True" PointerPressed="HandleRemotePointerPressed" PointerMoved="HandleRemotePointerMoved" PointerReleased="HandleRemotePointerReleased" PointerWheelChanged="HandleRemotePointerWheelChanged" KeyDown="HandleRemoteKeyDown" KeyUp="HandleRemoteKeyUp"/>
             <Grid x:Name="EmbeddedRdpSurfaces" IsVisible="{Binding IsRdpSessionActive}"/>
             <Grid IsVisible="{Binding IsWebSessionActive}" RowDefinitions="Auto,*">
               <Grid ColumnDefinitions="Auto,Auto,*,Auto" Margin="8" ColumnSpacing="6" IsEnabled="{Binding !IsViewOnly}">
