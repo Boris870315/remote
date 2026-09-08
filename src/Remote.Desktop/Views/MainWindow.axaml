@@ -9,6 +9,8 @@
     <Style Selector="Button.nav"><Setter Property="Width" Value="40"/><Setter Property="Height" Value="40"/><Setter Property="CornerRadius" Value="9"/><Setter Property="Background" Value="Transparent"/><Setter Property="Foreground" Value="#93A1B8"/><Setter Property="FontSize" Value="17"/></Style>
     <Style Selector="Button.nav.selected"><Setter Property="Background" Value="#293451"/><Setter Property="Foreground" Value="#A8AAFF"/></Style>
     <Style Selector="Button.tool"><Setter Property="Padding" Value="10,6"/><Setter Property="CornerRadius" Value="6"/><Setter Property="Background" Value="#192131"/><Setter Property="Foreground" Value="#DCE4F3"/><Setter Property="FontSize" Value="12"/></Style>
+    <Style Selector="Button.session-tab"><Setter Property="Padding" Value="14,3"/><Setter Property="Background" Value="Transparent"/><Setter Property="BorderThickness" Value="0"/><Setter Property="CornerRadius" Value="0"/></Style>
+    <Style Selector="Button.session-tab.selected"><Setter Property="Background" Value="#252E45"/></Style>
   </Window.Styles>
   <Grid RowDefinitions="56,*">
     <Border x:Name="ApplicationHeader" Background="#151C2B" BorderBrush="#293248" BorderThickness="0,0,0,1">
@@ -54,9 +56,9 @@
               <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
               <ItemsControl.ItemTemplate>
                 <DataTemplate>
-                  <Border Height="39" BorderBrush="#7778EF" BorderThickness="0,0,0,2">
+                  <Border Height="39" BorderBrush="#7778EF" BorderThickness="0,0,0,2" ToolTip.Tip="{Binding ConnectionDetail}">
                     <StackPanel Orientation="Horizontal" Spacing="2">
-                      <Button Padding="14,3" Background="Transparent" BorderThickness="0"
+                      <Button Classes="session-tab" Classes.selected="{Binding IsSelected}"
                               Command="{Binding $parent[Window].DataContext.SelectSessionTabCommand}" CommandParameter="{Binding}">
                         <StackPanel Orientation="Horizontal" Spacing="8">
                       <TextBlock Text="{Binding ConnectionName}" VerticalAlignment="Center"/>

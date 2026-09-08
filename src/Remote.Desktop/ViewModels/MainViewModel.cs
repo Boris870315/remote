@@ -1924,7 +1924,11 @@ public sealed partial class MainViewModel : ViewModelBase
     {
 
         var session = _sessionWorkspace.OpenNew(connection);
-        var tab = new SessionTabViewModel(session.Id, connection);
+        var connectionSessionNumber = SessionTabs.Count(item => item.Connection.Id == connection.Id) + 1;
+        var tabTitle = connectionSessionNumber == 1
+            ? connection.Name
+            : $"{connection.Name} · {connectionSessionNumber}";
+        var tab = new SessionTabViewModel(session.Id, connection, tabTitle);
         SessionTabs.Add(tab);
         SelectSessionTab(tab);
         if (string.Equals(connection.ProtocolId, "vnc", StringComparison.OrdinalIgnoreCase))
