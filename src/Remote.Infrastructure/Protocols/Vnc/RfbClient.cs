@@ -13,6 +13,7 @@ public sealed class RfbClient(
     private const int MaximumClipboardBytes = 16 * 1024 * 1024;
     private const int RawEncoding = 0;
     private const int CopyRectEncoding = 1;
+    private const int HextileEncoding = 5;
     private const int DesktopSizeEncoding = -223;
     private readonly SemaphoreSlim _writeLock = new(1, 1);
     private RfbTransport? _transport;
@@ -270,12 +271,13 @@ public sealed class RfbClient(
         pixelFormat[16] = 0;
         await WriteAsync(pixelFormat, cancellationToken).ConfigureAwait(false);
 
-        var encodings = new byte[16];
+        var encodings = new byte[20];
         encodings[0] = 2;
-        RfbBinary.WriteUInt16(encodings.AsSpan(2), 3);
-        RfbBinary.WriteUInt32(encodings.AsSpan(4), unchecked((uint)RawEncoding));
+        RfbBinary.WriteUInt16(encodings.AsSpan(2), 4);
+        RfbBinary.WriteUInt32(encodings.AsSpan(4), unchecked((uint)HextileEncoding));
         RfbBinary.WriteUInt32(encodings.AsSpan(8), unchecked((uint)CopyRectEncoding));
-        RfbBinary.WriteUInt32(encodings.AsSpan(12), unchecked((uint)DesktopSizeEncoding));
+        RfbBinary.WriteUInt32(encodings.AsSpan(12), unchecked((uint)RawEncoding));
+        RfbBinary.WriteUInt32(encodings.AsSpan(16), unchecked((uint)DesktopSizeEncoding));
         await WriteAsync(encodings, cancellationToken).ConfigureAwait(false);
     }
 
@@ -329,6 +331,15 @@ public sealed class RfbClient(
                 continue;
             }
 
+            if (encoding == HextileEncoding)
+            {
+                var hextilePixels = await ReadHextileAsync(stream, width, height, cancellationToken).ConfigureAwait(false);
+                await frameSink.RectangleUpdatedAsync(
+                    new RfbRectangle(x, y, width, height, hextilePixels),
+                    cancellationToken).ConfigureAwait(false);
+                continue;
+            }
+
             if (encoding != RawEncoding)
             {
                 throw new NotSupportedException($"RFB encoding {encoding} is not supported yet.");
@@ -346,6 +357,122 @@ public sealed class RfbClient(
                 new RfbRectangle(x, y, width, height, pixels),
                 cancellationToken).ConfigureAwait(false);
         }
+    }
+
+    private static async Task<byte[]> ReadHextileAsync(
+        Stream stream,
+        ushort rectangleWidth,
+        ushort rectangleHeight,
+        CancellationToken cancellationToken)
+    {
+        const byte raw = 1;
+        const byte backgroundSpecified = 2;
+        const byte foregroundSpecified = 4;
+        const byte anySubrects = 8;
+        const byte subrectsColored = 16;
+        var result = new byte[checked(rectangleWidth * rectangleHeight * 4)];
+        var background = new byte[] { 0, 0, 0, 255 };
+        var foreground = new byte[] { 0, 0, 0, 255 };
+
+        for (var tileY = 0; tileY < rectangleHeight; tileY += 16)
+        {
+            var tileHeight = Math.Min(16, rectangleHeight - tileY);
+            for (var tileX = 0; tileX < rectangleWidth; tileX += 16)
+            {
+                var tileWidth = Math.Min(16, rectangleWidth - tileX);
+                var subencoding = await RfbBinary.ReadByteAsync(stream, cancellationToken).ConfigureAwait(false);
+                if ((subencoding & raw) != 0)
+                {
+                    var tilePixels = new byte[checked(tileWidth * tileHeight * 4)];
+                    await RfbBinary.ReadExactlyAsync(stream, tilePixels, cancellationToken).ConfigureAwait(false);
+                    MakeOpaque(tilePixels);
+                    Blit(result, rectangleWidth, tilePixels, tileWidth, tileX, tileY, 0, 0, tileWidth, tileHeight);
+                    continue;
+                }
+
+                if ((subencoding & backgroundSpecified) != 0)
+                {
+                    await RfbBinary.ReadExactlyAsync(stream, background, cancellationToken).ConfigureAwait(false);
+                    background[3] = 255;
+                }
+                Fill(result, rectangleWidth, tileX, tileY, tileWidth, tileHeight, background);
+
+                if ((subencoding & foregroundSpecified) != 0)
+                {
+                    await RfbBinary.ReadExactlyAsync(stream, foreground, cancellationToken).ConfigureAwait(false);
+                    foreground[3] = 255;
+                }
+                if ((subencoding & anySubrects) == 0) continue;
+
+                var subrectCount = await RfbBinary.ReadByteAsync(stream, cancellationToken).ConfigureAwait(false);
+                for (var subrectIndex = 0; subrectIndex < subrectCount; subrectIndex++)
+                {
+                    var color = foreground;
+                    if ((subencoding & subrectsColored) != 0)
+                    {
+                        color = new byte[4];
+                        await RfbBinary.ReadExactlyAsync(stream, color, cancellationToken).ConfigureAwait(false);
+                        color[3] = 255;
+                    }
+                    var position = await RfbBinary.ReadByteAsync(stream, cancellationToken).ConfigureAwait(false);
+                    var size = await RfbBinary.ReadByteAsync(stream, cancellationToken).ConfigureAwait(false);
+                    var subX = position >> 4;
+                    var subY = position & 0x0F;
+                    var subWidth = (size >> 4) + 1;
+                    var subHeight = (size & 0x0F) + 1;
+                    if (subX + subWidth > tileWidth || subY + subHeight > tileHeight)
+                    {
+                        throw new InvalidDataException("The VNC Hextile subrectangle exceeds its tile bounds.");
+                    }
+                    Fill(result, rectangleWidth, tileX + subX, tileY + subY, subWidth, subHeight, color);
+                }
+            }
+        }
+
+        return result;
+    }
+
+    private static void Fill(
+        byte[] pixels,
+        int rowWidth,
+        int x,
+        int y,
+        int width,
+        int height,
+        ReadOnlySpan<byte> color)
+    {
+        for (var row = 0; row < height; row++)
+        {
+            for (var column = 0; column < width; column++)
+            {
+                color.CopyTo(pixels.AsSpan((((y + row) * rowWidth) + x + column) * 4, 4));
+            }
+        }
+    }
+
+    private static void Blit(
+        byte[] destination,
+        int destinationWidth,
+        byte[] source,
+        int sourceWidth,
+        int destinationX,
+        int destinationY,
+        int sourceX,
+        int sourceY,
+        int width,
+        int height)
+    {
+        var rowBytes = checked(width * 4);
+        for (var row = 0; row < height; row++)
+        {
+            source.AsSpan((((sourceY + row) * sourceWidth) + sourceX) * 4, rowBytes).CopyTo(
+                destination.AsSpan((((destinationY + row) * destinationWidth) + destinationX) * 4, rowBytes));
+        }
+    }
+
+    private static void MakeOpaque(Span<byte> pixels)
+    {
+        for (var pixel = 3; pixel < pixels.Length; pixel += 4) pixels[pixel] = 255;
     }
 
     private async Task RequestFramebufferUpdateAsync(bool incremental, CancellationToken cancellationToken)

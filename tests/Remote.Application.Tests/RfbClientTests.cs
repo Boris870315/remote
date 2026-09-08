@@ -105,6 +105,34 @@ public sealed class RfbClientTests
         Assert.Equal(new RfbCopyRectangle(10, 20, 30, 40, 2, 3), copy);
     }
 
+    [Fact]
+    public async Task ReceiveHextile_DecodesBackgroundAndColoredSubrectangle()
+    {
+        var update = new byte[]
+        {
+            0, 0, 0, 1,
+            0, 0, 0, 0, 0, 4, 0, 3, 0, 0, 0, 5,
+            2 | 8 | 16,
+            10, 20, 30, 0,
+            1,
+            40, 50, 60, 0,
+            0x11,
+            0x10,
+        };
+        var stream = new ScriptedDuplexStream(BuildServerScript(update));
+        var sink = new RecordingFrameSink();
+        await using var client = new RfbClient(new ScriptedTransportFactory(stream), sink);
+        await client.ConnectAsync(new RfbConnectionOptions { Endpoint = new Uri("vnc://server.example") });
+
+        await client.ReceiveNextServerMessageAsync();
+
+        var rectangle = Assert.Single(sink.Rectangles);
+        Assert.Equal([10, 20, 30, 255], rectangle.BgraPixels[..4]);
+        var coloredPixelOffset = ((1 * 4) + 1) * 4;
+        Assert.Equal([40, 50, 60, 255], rectangle.BgraPixels[coloredPixelOffset..(coloredPixelOffset + 4)]);
+        Assert.Equal([40, 50, 60, 255], rectangle.BgraPixels[(coloredPixelOffset + 4)..(coloredPixelOffset + 8)]);
+    }
+
     [Theory]
     [InlineData(3)]
     [InlineData(7)]
