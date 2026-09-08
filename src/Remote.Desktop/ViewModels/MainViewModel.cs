@@ -550,6 +550,31 @@ public sealed partial class MainViewModel : ViewModelBase
     public Task<bool> SendVncClipboardTextAsync(string text) =>
         _vncClient?.SendClipboardTextAsync(text) ?? Task.FromResult(false);
 
+    public void ResizeSelectedTerminal(double width, double height)
+    {
+        if (SelectedSessionTab is not { } tab) return;
+        var dimensions = TerminalDimensions.FromPixels(width, height);
+        try
+        {
+            if (_sshSessions.TryGetValue(tab.SessionId, out var ssh))
+            {
+                ssh.Session.Resize(
+                    (uint)dimensions.Columns,
+                    (uint)dimensions.Rows,
+                    (uint)Math.Max(1, width),
+                    (uint)Math.Max(1, height));
+            }
+            else if (_localTerminalSessions.TryGetValue(tab.SessionId, out var terminal))
+            {
+                terminal.Session.Resize(dimensions.Columns, dimensions.Rows);
+            }
+        }
+        catch (InvalidOperationException)
+        {
+            // The process may exit between the session lookup and resize.
+        }
+    }
+
     public async Task ShutdownAsync()
     {
         foreach (var tab in SessionTabs.ToArray())

@@ -25,11 +25,26 @@ public partial class MainWindow : Window
     private readonly Dictionary<SessionId, AvaloniaEmbeddedRdpHost> _rdpHosts = [];
     private readonly Dictionary<SessionId, NativeWebView> _webViews = [];
     private readonly DispatcherTimer _vaultTimer;
+    private readonly DispatcherTimer _terminalResizeTimer;
 
     public MainWindow()
     {
         InitializeComponent();
-        SizeChanged += (_, _) => ApplyAdaptiveLayout();
+        _terminalResizeTimer = new DispatcherTimer(
+            TimeSpan.FromMilliseconds(200),
+            DispatcherPriority.Background,
+            (sender, _) =>
+            {
+                (sender as DispatcherTimer)?.Stop();
+                _viewModel?.ResizeSelectedTerminal(
+                    SessionWorkspace.Bounds.Width,
+                    SessionWorkspace.Bounds.Height);
+            });
+        SizeChanged += (_, _) =>
+        {
+            ApplyAdaptiveLayout();
+            ScheduleTerminalResize();
+        };
         Opened += (_, _) =>
         {
             RefreshMonitorOptions();
@@ -46,6 +61,7 @@ public partial class MainWindow : Window
     private async void HandleClosed(object? sender, EventArgs e)
     {
         _vaultTimer.Stop();
+        _terminalResizeTimer.Stop();
         if (_viewModel is not null)
         {
             await _viewModel.ShutdownAsync();
@@ -149,11 +165,18 @@ public partial class MainWindow : Window
             ShowSelectedRdpHost();
             ShowSelectedWebView();
             ApplyRemoteSurfaceScale();
+            ScheduleTerminalResize();
         }
         else if (e.PropertyName == nameof(MainViewModel.SelectedConnection))
         {
             ApplyRemoteSurfaceScale();
         }
+    }
+
+    private void ScheduleTerminalResize()
+    {
+        _terminalResizeTimer.Stop();
+        _terminalResizeTimer.Start();
     }
 
     private void ShowSelectedWebView()
