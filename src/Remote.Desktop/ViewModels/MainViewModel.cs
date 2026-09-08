@@ -1836,7 +1836,7 @@ public sealed partial class MainViewModel : ViewModelBase
         AddAuditEvent($"資料夾已刪除：{selected.Name}");
     }
 
-    [RelayCommand]
+    [RelayCommand(AllowConcurrentExecutions = true)]
     private async Task OpenSelectedSessionAsync()
     {
         if (SelectedConnection is null)
@@ -1851,7 +1851,7 @@ public sealed partial class MainViewModel : ViewModelBase
         await LaunchConnectionAsync(connection);
     }
 
-    [RelayCommand]
+    [RelayCommand(AllowConcurrentExecutions = true)]
     private async Task QuickConnectAsync()
     {
         var value = QuickConnectText.Trim();
@@ -2031,7 +2031,7 @@ public sealed partial class MainViewModel : ViewModelBase
         CancelSessionOpenChoice();
     }
 
-    [RelayCommand]
+    [RelayCommand(AllowConcurrentExecutions = true)]
     private async Task OpenAdditionalSessionAsync()
     {
         var connection = _pendingSessionConnection;
