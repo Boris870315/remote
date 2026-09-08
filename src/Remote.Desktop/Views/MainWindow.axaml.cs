@@ -1,6 +1,7 @@
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
+using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.VisualTree;
 using System.ComponentModel;
@@ -60,6 +61,7 @@ public partial class MainWindow : Window
             _viewModel.EmbeddedWebRequested -= OpenEmbeddedWebAsync;
             _viewModel.EmbeddedWebNavigateRequested -= NavigateEmbeddedWebAsync;
             _viewModel.EmbeddedWebCloseRequested -= CloseEmbeddedWebAsync;
+            _viewModel.VncClipboardTextReceived -= HandleVncClipboardTextReceived;
         }
 
         base.OnDataContextChanged(e);
@@ -72,6 +74,7 @@ public partial class MainWindow : Window
             _viewModel.EmbeddedWebRequested += OpenEmbeddedWebAsync;
             _viewModel.EmbeddedWebNavigateRequested += NavigateEmbeddedWebAsync;
             _viewModel.EmbeddedWebCloseRequested += CloseEmbeddedWebAsync;
+            _viewModel.VncClipboardTextReceived += HandleVncClipboardTextReceived;
         }
 
         ApplyAdaptiveLayout();
@@ -341,10 +344,38 @@ public partial class MainWindow : Window
     }
 
     private async void HandleRemoteKeyDown(object? sender, KeyEventArgs e) =>
-        await SendRemoteKeyAsync(e, true);
+        await SendRemoteKeyDownAsync(e);
 
     private async void HandleRemoteKeyUp(object? sender, KeyEventArgs e) =>
         await SendRemoteKeyAsync(e, false);
+
+    private async Task SendRemoteKeyDownAsync(KeyEventArgs e)
+    {
+        if (e.Key is Key.V && e.KeyModifiers.HasFlag(KeyModifiers.Control) &&
+            _viewModel?.IsVncSessionActive is true)
+        {
+            var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+            var text = clipboard is null ? null : await clipboard.TryGetTextAsync();
+            if (!string.IsNullOrEmpty(text))
+            {
+                await _viewModel.SendVncClipboardTextAsync(text);
+            }
+        }
+
+        await SendRemoteKeyAsync(e, true);
+    }
+
+    private void HandleVncClipboardTextReceived(string text)
+    {
+        _ = Dispatcher.UIThread.InvokeAsync(async () =>
+        {
+            var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+            if (clipboard is not null)
+            {
+                await clipboard.SetTextAsync(text);
+            }
+        });
+    }
 
     private async Task SendRemoteKeyAsync(KeyEventArgs e, bool isDown)
     {

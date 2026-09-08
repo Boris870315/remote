@@ -66,6 +66,8 @@ public sealed partial class MainViewModel : ViewModelBase
     private CancellationTokenSource? _secretRevealCancellation;
 
     public event Func<SessionId, RdpExternalLaunchRequest, Task>? EmbeddedRdpRequested;
+
+    public event Action<string>? VncClipboardTextReceived;
     public event Func<SessionId, Task>? EmbeddedRdpCloseRequested;
     public event Func<SessionId, Uri, bool, Task>? EmbeddedWebRequested;
     public event Func<SessionId, Uri, Task>? EmbeddedWebNavigateRequested;
@@ -540,6 +542,9 @@ public sealed partial class MainViewModel : ViewModelBase
 
     public Task<bool> SendVncPointerAsync(byte buttonMask, ushort x, ushort y) =>
         _vncClient?.SendPointerAsync(buttonMask, x, y) ?? Task.FromResult(false);
+
+    public Task<bool> SendVncClipboardTextAsync(string text) =>
+        _vncClient?.SendClipboardTextAsync(text) ?? Task.FromResult(false);
 
     public async Task ShutdownAsync()
     {
@@ -2710,6 +2715,7 @@ public sealed partial class MainViewModel : ViewModelBase
             if (SelectedSessionTab?.SessionId == sessionId) RemoteFrame = frame;
         });
         var client = new RfbClient(new TcpRfbTransportFactory(), frameSink);
+        client.ServerClipboardTextReceived += text => VncClipboardTextReceived?.Invoke(text);
         runtime = new VncSessionRuntime(client, frameSink, cancellation);
         _vncSessions.Add(sessionId, runtime);
         _vncClient = client;
