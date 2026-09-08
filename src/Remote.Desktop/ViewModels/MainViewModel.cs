@@ -2871,6 +2871,13 @@ public sealed partial class MainViewModel : ViewModelBase
             await Dispatcher.UIThread.InvokeAsync(() => SessionStatusLabel = message);
             await ReportMajorErrorAsync("VNC", "session-interrupted", message, exception);
         }
+        finally
+        {
+            // A remote EOF or protocol failure must not leave a dead client in
+            // the session registry. Closing a tab removes it first, so this is
+            // safely a no-op for operator-requested cancellation.
+            await StopVncSessionAsync(sessionId);
+        }
     }
 
     private async Task StopVncAsync()
