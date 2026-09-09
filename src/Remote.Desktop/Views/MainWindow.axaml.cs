@@ -114,6 +114,7 @@ public partial class MainWindow : Window
         try
         {
             await host.ConnectAsync(request);
+            ShowSelectedRdpHost();
         }
         catch
         {
@@ -190,7 +191,7 @@ public partial class MainWindow : Window
         var selected = _viewModel?.SelectedSessionTab?.SessionId;
         foreach (var pair in _rdpHosts)
         {
-            pair.Value.IsVisible = pair.Key == selected;
+            pair.Value.SetSessionVisible(pair.Key == selected);
         }
     }
 

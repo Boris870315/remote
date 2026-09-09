@@ -32,6 +32,18 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
 
     public event Action<string>? UnexpectedlyDisconnected;
 
+    public void SetSessionVisible(bool visible)
+    {
+        IsVisible = visible;
+        if (!OperatingSystem.IsWindows() || _window == nint.Zero) return;
+        _ = ShowWindow(_window, visible ? SwShow : SwHide);
+        if (visible)
+        {
+            ResizeNativeSurface(Bounds.Size);
+            _ = BringWindowToTop(_window);
+        }
+    }
+
     public AvaloniaEmbeddedRdpHost()
     {
         PropertyChanged += (_, args) =>
@@ -495,9 +507,19 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
     private const uint SwpNoActivate = 0x0010;
     private const uint SwpShowWindow = 0x0040;
     private const uint GwChild = 5;
+    private const int SwHide = 0;
+    private const int SwShow = 5;
 
     [DllImport("user32.dll")]
     private static extern nint GetWindow(nint window, uint command);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool ShowWindow(nint window, int command);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool BringWindowToTop(nint window);
 
     [DllImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
