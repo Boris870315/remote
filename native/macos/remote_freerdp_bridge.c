@@ -24,6 +24,9 @@ struct remote_rdp_session {
     remote_rdp_config config;
     volatile int stopping;
     uint8_t mouse_buttons;
+    pthread_mutex_t state_mutex;
+    uint32_t pending_width;
+    uint32_t pending_height;
 };
 
 typedef struct remote_context {
@@ -98,6 +101,10 @@ remote_rdp_session* remote_rdp_session_new(void) {
     (void)pthread_once(&addin_provider_once, register_addin_provider);
     remote_rdp_session* session = calloc(1, sizeof(*session));
     if (!session) return NULL;
+    if (pthread_mutex_init(&session->state_mutex, NULL) != 0) {
+        free(session);
+        return NULL;
+    }
     session->instance = freerdp_new();
     if (!session->instance) {
         strncpy(session->last_error, "freerdp_new failed", sizeof(session->last_error) - 1);
@@ -121,8 +128,32 @@ remote_rdp_session* remote_rdp_session_new(void) {
 void remote_rdp_session_free(remote_rdp_session* session) {
     if (!session) return;
     if (session->instance) freerdp_free(session->instance);
+    pthread_mutex_destroy(&session->state_mutex);
     memset(session, 0, sizeof(*session));
     free(session);
+}
+
+static void apply_pending_resize(remote_rdp_session* session) {
+    uint32_t width = 0;
+    uint32_t height = 0;
+    pthread_mutex_lock(&session->state_mutex);
+    width = session->pending_width;
+    height = session->pending_height;
+    pthread_mutex_unlock(&session->state_mutex);
+    if (!width || !height) return;
+
+    MONITOR_DEF monitor = { 0 };
+    monitor.right = (INT32)width - 1;
+    monitor.bottom = (INT32)height - 1;
+    monitor.flags = DISPLAY_CONTROL_MONITOR_PRIMARY;
+    if (!freerdp_display_send_monitor_layout(session->instance->context, 1u, &monitor)) return;
+
+    pthread_mutex_lock(&session->state_mutex);
+    if (session->pending_width == width && session->pending_height == height) {
+        session->pending_width = 0;
+        session->pending_height = 0;
+    }
+    pthread_mutex_unlock(&session->state_mutex);
 }
 
 const char* remote_rdp_session_last_error(const remote_rdp_session* session) {
@@ -188,6 +219,7 @@ uint32_t remote_rdp_session_connect(remote_rdp_session* session, const remote_rd
             if (!disconnect_error) disconnect_error = 3u;
             break;
         }
+        apply_pending_resize(session);
     }
     if (!session->stopping && !disconnect_error)
         disconnect_error = freerdp_get_last_error(session->instance->context);
@@ -251,9 +283,10 @@ uint32_t remote_rdp_session_send_key(remote_rdp_session* session, uint32_t virtu
 uint32_t remote_rdp_session_resize(remote_rdp_session* session, uint32_t width, uint32_t height) {
     if (!session || !session->instance || !session->instance->context) return 1u;
     if (width < 200u || height < 200u || width > 8192u || height > 8192u) return 2u;
-    MONITOR_DEF monitor = { 0 };
-    monitor.right = (INT32)width - 1;
-    monitor.bottom = (INT32)height - 1;
-    monitor.flags = DISPLAY_CONTROL_MONITOR_PRIMARY;
-    return freerdp_display_send_monitor_layout(session->instance->context, 1u, &monitor) ? 0u : 3u;
+    if (session->config.use_all_monitors) return 2u;
+    pthread_mutex_lock(&session->state_mutex);
+    session->pending_width = width;
+    session->pending_height = height;
+    pthread_mutex_unlock(&session->state_mutex);
+    return 0u;
 }
