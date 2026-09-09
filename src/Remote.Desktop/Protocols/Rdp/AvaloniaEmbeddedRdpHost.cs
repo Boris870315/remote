@@ -103,7 +103,8 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
             {
                 stage = "set-credential";
                 var clearTextPassword = System.Text.Encoding.UTF8.GetString(request.PasswordUtf8.Span);
-                if (!TrySetComProperty(advanced, "ClearTextPassword", clearTextPassword))
+                var credentialSettings = TryGetComProperty(clientObject, "AdvancedSettings2") ?? advanced;
+                if (!TrySetComProperty(credentialSettings, "ClearTextPassword", clearTextPassword))
                 {
                     var passwordProvider = (IMsTscNonScriptable)clientObject;
                     var passwordResult = passwordProvider.SetClearTextPassword(clearTextPassword);
@@ -283,8 +284,12 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
     private void ResizeNativeSurface(Size size)
     {
         if (!OperatingSystem.IsWindows() || _window == nint.Zero) return;
-        var width = Math.Max(1, (int)Math.Ceiling(size.Width));
-        var height = Math.Max(1, (int)Math.Ceiling(size.Height));
+        // Avalonia layout uses device-independent pixels while SetWindowPos
+        // requires physical pixels. Without this conversion, a 200% Windows
+        // display makes the RDP HWND exactly half the intended width/height.
+        var renderScaling = TopLevel.GetTopLevel(this)?.RenderScaling ?? 1d;
+        var width = Math.Max(1, (int)Math.Ceiling(size.Width * renderScaling));
+        var height = Math.Max(1, (int)Math.Ceiling(size.Height * renderScaling));
         _ = SetWindowPos(
             _window,
             nint.Zero,
@@ -364,6 +369,18 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
             null,
             CultureInfo.InvariantCulture)
         ?? throw new InvalidOperationException($"RDP ActiveX property '{name}' returned null.");
+
+    private static object? TryGetComProperty(object target, string name)
+    {
+        try
+        {
+            return GetComProperty(target, name);
+        }
+        catch (Exception exception) when (IsComInvocationException(exception))
+        {
+            return null;
+        }
+    }
 
     private static object? InvokeComMethod(object target, string name, params object[] arguments) =>
         target.GetType().InvokeMember(
