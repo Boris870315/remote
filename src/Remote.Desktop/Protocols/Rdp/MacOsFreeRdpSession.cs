@@ -1,4 +1,6 @@
+using System.Buffers;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using Remote.Infrastructure.Protocols.Rdp;
 
 namespace Remote.Desktop.Protocols.Rdp;
@@ -26,12 +28,30 @@ internal sealed class MacOsFreeRdpSession : IAsyncDisposable
     public bool SendKey(uint virtualKey, bool down) =>
         _session != nint.Zero && SessionSendKey(_session, virtualKey, down ? (byte)1 : (byte)0) == 0;
 
+    public bool Resize(int width, int height) => _session != nint.Zero &&
+        SessionResize(_session, checked((uint)width), checked((uint)height)) == 0;
+
     public MacOsFreeRdpSession()
     {
         if (!OperatingSystem.IsMacOS()) throw new PlatformNotSupportedException();
         _frameCallback = HandleFrame;
         _stateCallback = HandleState;
-        _session = SessionNew();
+        try
+        {
+            if (GetCapabilities(out var capabilities) != 0 || capabilities.AbiVersion != 1 ||
+                capabilities.SupportsFramebuffer == 0)
+                throw new InvalidOperationException("內嵌 FreeRDP bridge 版本不相容，請重新建置應用程式。");
+            _session = SessionNew();
+        }
+        catch (DllNotFoundException exception)
+        {
+            throw new InvalidOperationException(
+                "找不到 macOS FreeRDP runtime。請安裝 FreeRDP 或使用包含 native runtime 的 Remote 套件。", exception);
+        }
+        catch (EntryPointNotFoundException exception)
+        {
+            throw new InvalidOperationException("內嵌 FreeRDP bridge 不完整，請重新建置應用程式。", exception);
+        }
         if (_session == nint.Zero) throw new InvalidOperationException("FreeRDP session allocation failed.");
     }
 
@@ -111,6 +131,14 @@ internal sealed class MacOsFreeRdpSession : IAsyncDisposable
         public StateCallback State;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativeCapabilities
+    {
+        public uint AbiVersion, FreeRdpMajor, FreeRdpMinor, FreeRdpRevision;
+        public byte SupportsFramebuffer, SupportsDynamicResolution;
+        private byte Reserved0, Reserved1, Reserved2, Reserved3, Reserved4, Reserved5;
+    }
+
     private sealed class NativeConfig : IDisposable
     {
         public NativeConfigValue Value;
@@ -122,7 +150,7 @@ internal sealed class MacOsFreeRdpSession : IAsyncDisposable
                 Hostname = Marshal.StringToCoTaskMemUTF8(request.Endpoint.Host),
                 Port = (ushort)(request.Endpoint.IsDefaultPort ? 3389 : request.Endpoint.Port),
                 Username = Marshal.StringToCoTaskMemUTF8(request.Username ?? string.Empty),
-                Password = Marshal.StringToCoTaskMemUTF8(System.Text.Encoding.UTF8.GetString(request.PasswordUtf8.Span)),
+                Password = CopySecret(request.PasswordUtf8.Span),
                 Domain = Marshal.StringToCoTaskMemUTF8(request.Domain ?? string.Empty),
                 Width = (uint)Math.Max(640, width), Height = (uint)Math.Max(480, height),
                 ViewOnly = request.AccessMode is Remote.Protocols.SessionAccessMode.ViewOnly ? (byte)1 : (byte)0,
@@ -135,8 +163,28 @@ internal sealed class MacOsFreeRdpSession : IAsyncDisposable
             Marshal.ZeroFreeCoTaskMemUTF8(Value.Password);
             Marshal.FreeCoTaskMem(Value.Hostname); Marshal.FreeCoTaskMem(Value.Username); Marshal.FreeCoTaskMem(Value.Domain);
         }
+
+
+        private static nint CopySecret(ReadOnlySpan<byte> secret)
+        {
+            var pointer = Marshal.AllocCoTaskMem(secret.Length + 1);
+            var rented = ArrayPool<byte>.Shared.Rent(Math.Max(1, secret.Length));
+            try
+            {
+                secret.CopyTo(rented);
+                if (!secret.IsEmpty) Marshal.Copy(rented, 0, pointer, secret.Length);
+                Marshal.WriteByte(pointer, secret.Length, 0);
+                return pointer;
+            }
+            finally
+            {
+                CryptographicOperations.ZeroMemory(rented);
+                ArrayPool<byte>.Shared.Return(rented);
+            }
+        }
     }
 
+    [DllImport(LibraryName, EntryPoint = "remote_rdp_get_capabilities")] private static extern uint GetCapabilities(out NativeCapabilities capabilities);
     [DllImport(LibraryName, EntryPoint = "remote_rdp_session_new")] private static extern nint SessionNew();
     [DllImport(LibraryName, EntryPoint = "remote_rdp_session_free")] private static extern void SessionFree(nint session);
     [DllImport(LibraryName, EntryPoint = "remote_rdp_session_last_error")] private static extern nint SessionLastError(nint session);
@@ -145,4 +193,5 @@ internal sealed class MacOsFreeRdpSession : IAsyncDisposable
     [DllImport(LibraryName, EntryPoint = "remote_rdp_session_send_mouse")] private static extern uint SessionSendMouse(nint session, ushort x, ushort y, byte buttonMask);
     [DllImport(LibraryName, EntryPoint = "remote_rdp_session_send_wheel")] private static extern uint SessionSendWheel(nint session, ushort x, ushort y, short delta);
     [DllImport(LibraryName, EntryPoint = "remote_rdp_session_send_key")] private static extern uint SessionSendKey(nint session, uint virtualKey, byte down);
+    [DllImport(LibraryName, EntryPoint = "remote_rdp_session_resize")] private static extern uint SessionResize(nint session, uint width, uint height);
 }

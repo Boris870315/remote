@@ -2,6 +2,8 @@
 
 #include <freerdp/freerdp.h>
 #include <freerdp/codec/color.h>
+#include <freerdp/display.h>
+#include <freerdp/channels/disp.h>
 #include <freerdp/gdi/gdi.h>
 #include <freerdp/input.h>
 #include <freerdp/settings.h>
@@ -125,6 +127,8 @@ static BOOL configure(remote_rdp_session* session, const remote_rdp_config* conf
            freerdp_settings_set_uint32(settings, FreeRDP_DesktopWidth, config->width) &&
            freerdp_settings_set_uint32(settings, FreeRDP_DesktopHeight, config->height) &&
            freerdp_settings_set_uint32(settings, FreeRDP_ColorDepth, 32) &&
+           freerdp_settings_set_bool(settings, FreeRDP_SupportDisplayControl, TRUE) &&
+           freerdp_settings_set_bool(settings, FreeRDP_DynamicResolutionUpdate, TRUE) &&
            freerdp_settings_set_bool(settings, FreeRDP_IgnoreCertificate,
                                      config->allow_untrusted_certificate != 0);
 }
@@ -138,6 +142,11 @@ uint32_t remote_rdp_session_connect(remote_rdp_session* session, const remote_rd
         snprintf(session->last_error, sizeof(session->last_error), "%s",
                  freerdp_get_last_error_string(error));
         return error ? error : 2u;
+    }
+    if (config->password) {
+        const size_t password_length = strlen(config->password);
+        memset((void*)config->password, 0, password_length);
+        freerdp_settings_set_string(session->instance->context->settings, FreeRDP_Password, "");
     }
     if (config->state_callback) config->state_callback(config->callback_state, 1u, 0u, "connected");
     while (!session->stopping && !freerdp_shall_disconnect_context(session->instance->context)) {
@@ -195,4 +204,14 @@ uint32_t remote_rdp_session_send_key(remote_rdp_session* session, uint32_t virtu
     if (!scan_code) return 4u;
     return freerdp_input_send_keyboard_event_ex(session->instance->context->input, down != 0, FALSE,
                                                  scan_code) ? 0u : 3u;
+}
+
+uint32_t remote_rdp_session_resize(remote_rdp_session* session, uint32_t width, uint32_t height) {
+    if (!session || !session->instance || !session->instance->context) return 1u;
+    if (width < 200u || height < 200u || width > 8192u || height > 8192u) return 2u;
+    MONITOR_DEF monitor = { 0 };
+    monitor.right = (INT32)width - 1;
+    monitor.bottom = (INT32)height - 1;
+    monitor.flags = DISPLAY_CONTROL_MONITOR_PRIMARY;
+    return freerdp_display_send_monitor_layout(session->instance->context, 1u, &monitor) ? 0u : 3u;
 }

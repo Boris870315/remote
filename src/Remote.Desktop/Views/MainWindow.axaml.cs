@@ -40,6 +40,7 @@ public partial class MainWindow : Window
                 _viewModel?.ResizeSelectedTerminal(
                     SessionWorkspace.Bounds.Width,
                     SessionWorkspace.Bounds.Height);
+                ResizeSelectedMacRdp();
             });
         SizeChanged += (_, _) =>
         {
@@ -216,6 +217,19 @@ public partial class MainWindow : Window
         _terminalResizeTimer.Start();
     }
 
+    private void ResizeSelectedMacRdp()
+    {
+        if (!TryGetSelectedMacRdp(out var runtime)) return;
+        var width = Math.Clamp((int)SessionWorkspace.Bounds.Width, 640, 8192);
+        var height = Math.Clamp((int)SessionWorkspace.Bounds.Height, 480, 8192);
+        if (runtime.Width == width && runtime.Height == height) return;
+        if (runtime.Session.Resize(width, height))
+        {
+            runtime.Width = width;
+            runtime.Height = height;
+        }
+    }
+
     private void ShowSelectedWebView()
     {
         var selected = _viewModel?.SelectedSessionTab?.SessionId;
@@ -265,9 +279,13 @@ public partial class MainWindow : Window
         }
     }
 
-    private sealed record MacOsRdpRuntime(
-        MacOsFreeRdpSession Session,
-        AvaloniaFreeRdpFrameSink FrameSink);
+    private sealed class MacOsRdpRuntime(MacOsFreeRdpSession session, AvaloniaFreeRdpFrameSink frameSink)
+    {
+        public MacOsFreeRdpSession Session { get; } = session;
+        public AvaloniaFreeRdpFrameSink FrameSink { get; } = frameSink;
+        public int Width { get; set; }
+        public int Height { get; set; }
+    }
 
     private void RefreshMonitorOptions()
     {

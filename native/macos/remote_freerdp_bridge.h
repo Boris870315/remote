@@ -56,6 +56,8 @@ REMOTE_RDP_EXPORT uint32_t remote_rdp_session_send_wheel(remote_rdp_session* ses
 REMOTE_RDP_EXPORT uint32_t remote_rdp_session_send_key(remote_rdp_session* session,
                                                         uint32_t virtual_key,
                                                         uint8_t down);
+REMOTE_RDP_EXPORT uint32_t remote_rdp_session_resize(remote_rdp_session* session,
+                                                      uint32_t width, uint32_t height);
 
 #if defined(__cplusplus)
 }
