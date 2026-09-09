@@ -176,7 +176,6 @@ uint32_t remote_rdp_session_connect(remote_rdp_session* session, const remote_rd
     if (config->password) {
         const size_t password_length = strlen(config->password);
         memset((void*)config->password, 0, password_length);
-        freerdp_settings_set_string(session->instance->context->settings, FreeRDP_Password, "");
     }
     if (config->state_callback) config->state_callback(config->callback_state, 1u, 0u, "connected");
     uint32_t disconnect_error = 0u;
@@ -193,6 +192,7 @@ uint32_t remote_rdp_session_connect(remote_rdp_session* session, const remote_rd
     if (!session->stopping && !disconnect_error)
         disconnect_error = freerdp_get_last_error(session->instance->context);
     freerdp_disconnect(session->instance);
+    (void)freerdp_settings_set_string(session->instance->context->settings, FreeRDP_Password, "");
     const char* disconnect_message = disconnect_error
         ? freerdp_get_last_error_string(disconnect_error) : "disconnected";
     if (disconnect_error)
