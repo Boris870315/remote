@@ -86,8 +86,9 @@ public sealed class RdpExternalLaunchSpecTests
     }
 
     [Fact]
-    public void MacOs_BuildsDocumentedRdpUriWithoutPassword()
+    public void MacOs_BuildsRdpDocumentWithoutPassword()
     {
+        var path = Path.Combine(Path.GetTempPath(), $"remote-test-{Guid.NewGuid():N}.rdp");
         var request = CreateRequest() with
         {
             Username = "CORP\\operator",
@@ -100,17 +101,20 @@ public sealed class RdpExternalLaunchSpecTests
             },
         };
 
-        var specification = new MacOsRdpLaunchSpecFactory().Create(request);
+        var specification = new MacOsRdpLaunchSpecFactory(() => path).Create(request);
 
-        Assert.True(specification.UseShellExecute);
-        Assert.StartsWith("rdp://", specification.FileName, StringComparison.Ordinal);
-        Assert.Contains("full%20address=s:server.example%3A3390", specification.FileName, StringComparison.Ordinal);
-        Assert.Contains("username=s:CORP%5Coperator", specification.FileName, StringComparison.Ordinal);
-        Assert.DoesNotContain("password", specification.FileName, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("gatewayhostname=s:gateway.example", specification.FileName, StringComparison.Ordinal);
-        Assert.Contains("redirectprinters=i:1", specification.FileName, StringComparison.Ordinal);
-        Assert.Contains("drivestoredirect=s:*", specification.FileName, StringComparison.Ordinal);
-        Assert.Contains("audiomode=i:2", specification.FileName, StringComparison.Ordinal);
+        Assert.False(specification.UseShellExecute);
+        Assert.Equal("/usr/bin/open", specification.FileName);
+        Assert.Equal(["-a", "Microsoft Remote Desktop", path], specification.Arguments);
+        var document = File.ReadAllText(path, System.Text.Encoding.Unicode);
+        Assert.Contains("full address:s:server.example:3390", document, StringComparison.Ordinal);
+        Assert.Contains("username:s:CORP\\operator", document, StringComparison.Ordinal);
+        Assert.DoesNotContain("password", document, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("gatewayhostname:s:gateway.example", document, StringComparison.Ordinal);
+        Assert.Contains("redirectprinters:i:1", document, StringComparison.Ordinal);
+        Assert.Contains("drivestoredirect:s:*", document, StringComparison.Ordinal);
+        Assert.Contains("audiomode:i:2", document, StringComparison.Ordinal);
+        File.Delete(path);
     }
 
     [Theory]
