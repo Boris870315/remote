@@ -22,11 +22,13 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
     private object? _rdpClient;
     private readonly TaskCompletionSource _hostReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private DispatcherTimer? _connectionMonitor;
+    private DispatcherTimer? _displayResizeTimer;
     private TaskCompletionSource? _connectionReady;
     private bool _hasConnected;
     private bool _disconnectRequested;
     private int _connectingTicks;
     private bool _useMultimon;
+    private PixelSize _lastSessionDisplaySize;
 
     public event Action<string>? UnexpectedlyDisconnected;
 
@@ -158,6 +160,7 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
                 {
                     _hasConnected = true;
                     _connectionReady?.TrySetResult();
+                    ScheduleDisplayResize();
                     return;
                 }
                 if (!_hasConnected)
@@ -209,6 +212,27 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
         // full-screen and layout transitions. SmartSizing keeps the existing
         // session visible while the native host follows the new bounds.
         ResizeNativeSurface(Bounds.Size);
+        if (!_hasConnected || _useMultimon || _rdpClient is null) return;
+
+        // Coalesce Avalonia's intermediate layout sizes. Newer RDP controls can
+        // change the server-side session resolution without disconnecting; older
+        // controls simply keep SmartSizing as the safe fallback.
+        _displayResizeTimer?.Stop();
+        _displayResizeTimer = new DispatcherTimer(
+            TimeSpan.FromMilliseconds(250),
+            DispatcherPriority.Background,
+            (_, _) =>
+            {
+                _displayResizeTimer?.Stop();
+                if (!OperatingSystem.IsWindows() || !_hasConnected || _useMultimon || _rdpClient is null) return;
+                var pixelSize = GetPhysicalPixelSize(Bounds.Size);
+                if (pixelSize == _lastSessionDisplaySize || pixelSize.Width < 200 || pixelSize.Height < 200) return;
+                if (RdpActiveXNativeSettings.TryUpdateSessionDisplaySettings(_rdpClient, pixelSize))
+                {
+                    _lastSessionDisplaySize = pixelSize;
+                }
+            });
+        _displayResizeTimer.Start();
     }
 
     private static int TryGetExtendedDisconnectReason(object client)
@@ -332,6 +356,7 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
         {
             _disconnectRequested = true;
             _connectionMonitor?.Stop();
+            _displayResizeTimer?.Stop();
             if (_rdpClient is not null)
             {
                 TryDisconnect(_rdpClient);
@@ -511,6 +536,40 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
     {
         private const int RegkindNone = 2;
         private static readonly Guid NonScriptable5Id = new("4F6996D5-D7B1-412C-B0FF-063718566907");
+        private static readonly Guid RdpClient9Id = new("28904001-04B6-436C-A55B-0AF1A0883DC9");
+
+        public static bool TryUpdateSessionDisplaySettings(object client, PixelSize size)
+        {
+            nint unknown = nint.Zero;
+            nint interfacePointer = nint.Zero;
+            ITypeLib? typeLibrary = null;
+            try
+            {
+                typeLibrary = LoadRdpTypeLibrary();
+                var interfaceId = RdpClient9Id;
+                typeLibrary.GetTypeInfoOfGuid(ref interfaceId, out var typeInfo);
+                var vtableOffset = FindMethodOffset(typeInfo, "UpdateSessionDisplaySettings");
+
+                unknown = Marshal.GetIUnknownForObject(client);
+                if (Marshal.QueryInterface(unknown, in interfaceId, out interfacePointer) < 0) return false;
+                var vtable = Marshal.ReadIntPtr(interfacePointer);
+                var functionPointer = Marshal.ReadIntPtr(vtable, vtableOffset);
+                var update = Marshal.GetDelegateForFunctionPointer<UpdateSessionDisplaySettings>(functionPointer);
+                var width = (uint)size.Width;
+                var height = (uint)size.Height;
+                return update(interfacePointer, width, height, width, height, 0, 100, 100) >= 0;
+            }
+            catch (Exception exception) when (IsComInvocationException(exception) || exception is TypeLoadException)
+            {
+                return false;
+            }
+            finally
+            {
+                if (interfacePointer != nint.Zero) Marshal.Release(interfacePointer);
+                if (unknown != nint.Zero) Marshal.Release(unknown);
+                if (typeLibrary is not null && Marshal.IsComObject(typeLibrary)) Marshal.FinalReleaseComObject(typeLibrary);
+            }
+        }
 
         public static void SetSelectedMonitors(object client, int monitorIndex)
         {
@@ -521,11 +580,7 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
 
         public static void SetUseMultimon(object client, bool enabled)
         {
-            var typeLibraryPath = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.System),
-                "mstscax.dll");
-            var loadResult = LoadTypeLibEx(typeLibraryPath, RegkindNone, out var typeLibrary);
-            Marshal.ThrowExceptionForHR(loadResult);
+            var typeLibrary = LoadRdpTypeLibrary();
 
             nint unknown = nint.Zero;
             nint interfacePointer = nint.Zero;
@@ -552,7 +607,22 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
             }
         }
 
+        private static ITypeLib LoadRdpTypeLibrary()
+        {
+            var typeLibraryPath = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.System),
+                "mstscax.dll");
+            Marshal.ThrowExceptionForHR(LoadTypeLibEx(typeLibraryPath, RegkindNone, out var typeLibrary));
+            return typeLibrary;
+        }
+
+        private static int FindMethodOffset(ITypeInfo typeInfo, string methodName) =>
+            FindFunctionOffset(typeInfo, methodName, INVOKEKIND.INVOKE_FUNC);
+
         private static int FindPropertySetterOffset(ITypeInfo typeInfo, string propertyName)
+            => FindFunctionOffset(typeInfo, propertyName, INVOKEKIND.INVOKE_PROPERTYPUT);
+
+        private static int FindFunctionOffset(ITypeInfo typeInfo, string functionName, INVOKEKIND invokeKind)
         {
             typeInfo.GetTypeAttr(out var typeAttributePointer);
             try
@@ -564,10 +634,10 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
                     try
                     {
                         var function = Marshal.PtrToStructure<FUNCDESC>(functionPointer);
-                        if (function.invkind is not INVOKEKIND.INVOKE_PROPERTYPUT) continue;
+                        if (function.invkind != invokeKind) continue;
                         var names = new string[1];
                         typeInfo.GetNames(function.memid, names, names.Length, out var nameCount);
-                        if (nameCount == 1 && string.Equals(names[0], propertyName, StringComparison.Ordinal))
+                        if (nameCount == 1 && string.Equals(names[0], functionName, StringComparison.Ordinal))
                         {
                             return function.oVft;
                         }
@@ -585,11 +655,22 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
             }
 
             throw new MissingMethodException(
-                "The installed Microsoft RDP client does not publish the UseMultimon setting.");
+                $"The installed Microsoft RDP client does not publish {functionName}.");
         }
 
         [UnmanagedFunctionPointer(CallingConvention.StdCall)]
         private delegate int PutVariantBool(nint self, short enabled);
+
+        [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+        private delegate int UpdateSessionDisplaySettings(
+            nint self,
+            uint desktopWidth,
+            uint desktopHeight,
+            uint physicalWidth,
+            uint physicalHeight,
+            uint orientation,
+            uint desktopScaleFactor,
+            uint deviceScaleFactor);
 
         [ComImport]
         [Guid("302D8188-0052-4807-806A-362B628F9AC5")]
