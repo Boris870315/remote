@@ -16,10 +16,10 @@ typedef void (*remote_rdp_state_callback)(void* state, uint32_t state_code,
 
 typedef struct remote_rdp_config {
     const char* hostname;
-    uint16_t port;
     const char* username;
     const char* password;
     const char* domain;
+    uint16_t port;
     uint32_t width;
     uint32_t height;
     uint8_t view_only;
@@ -47,6 +47,15 @@ REMOTE_RDP_EXPORT const char* remote_rdp_session_last_error(const remote_rdp_ses
 REMOTE_RDP_EXPORT uint32_t remote_rdp_session_connect(remote_rdp_session* session,
                                                        const remote_rdp_config* config);
 REMOTE_RDP_EXPORT void remote_rdp_session_disconnect(remote_rdp_session* session);
+REMOTE_RDP_EXPORT uint32_t remote_rdp_session_send_mouse(remote_rdp_session* session,
+                                                          uint16_t x, uint16_t y,
+                                                          uint8_t button_mask);
+REMOTE_RDP_EXPORT uint32_t remote_rdp_session_send_wheel(remote_rdp_session* session,
+                                                          uint16_t x, uint16_t y,
+                                                          int16_t delta);
+REMOTE_RDP_EXPORT uint32_t remote_rdp_session_send_key(remote_rdp_session* session,
+                                                        uint32_t virtual_key,
+                                                        uint8_t down);
 
 #if defined(__cplusplus)
 }

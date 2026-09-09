@@ -81,7 +81,7 @@
             <ScrollViewer x:Name="RemoteSurfaceScroller" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
               <Image x:Name="RemoteSurface" Source="{Binding RemoteFrame}" Stretch="Uniform" Focusable="True" PointerPressed="HandleRemotePointerPressed" PointerMoved="HandleRemotePointerMoved" PointerReleased="HandleRemotePointerReleased" PointerWheelChanged="HandleRemotePointerWheelChanged" KeyDown="HandleRemoteKeyDown" KeyUp="HandleRemoteKeyUp"/>
             </ScrollViewer>
-            <Grid x:Name="EmbeddedRdpSurfaces" IsVisible="{Binding IsRdpSessionActive}"/>
+            <Grid x:Name="EmbeddedRdpSurfaces" IsVisible="{Binding UsesWindowsEmbeddedRdpSurface}"/>
             <Grid IsVisible="{Binding IsWebSessionActive}" RowDefinitions="Auto,*">
               <Grid ColumnDefinitions="Auto,Auto,*,Auto" Margin="8" ColumnSpacing="6" IsEnabled="{Binding !IsViewOnly}">
                 <Button Content="←" Classes="tool" Click="GoWebBack"/>

@@ -3,9 +3,11 @@
 #include <freerdp/freerdp.h>
 #include <freerdp/codec/color.h>
 #include <freerdp/gdi/gdi.h>
+#include <freerdp/input.h>
 #include <freerdp/settings.h>
 #include <freerdp/update.h>
 #include <winpr/synch.h>
+#include <winpr/input.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -15,6 +17,7 @@ struct remote_rdp_session {
     char last_error[512];
     remote_rdp_config config;
     volatile int stopping;
+    uint8_t mouse_buttons;
 };
 
 typedef struct remote_context {
@@ -152,4 +155,44 @@ void remote_rdp_session_disconnect(remote_rdp_session* session) {
     if (!session || !session->instance) return;
     session->stopping = 1;
     freerdp_abort_connect_context(session->instance->context);
+}
+
+uint32_t remote_rdp_session_send_mouse(remote_rdp_session* session, uint16_t x, uint16_t y,
+                                       uint8_t button_mask) {
+    if (!session || !session->instance || !session->instance->context ||
+        !session->instance->context->input) return 1u;
+    if (session->config.view_only) return 2u;
+    static const uint16_t flags[3] = { PTR_FLAGS_BUTTON1, PTR_FLAGS_BUTTON3, PTR_FLAGS_BUTTON2 };
+    for (uint8_t index = 0; index < 3; index++) {
+        const uint8_t bit = (uint8_t)(1u << index);
+        if ((session->mouse_buttons & bit) == (button_mask & bit)) continue;
+        uint16_t event_flags = flags[index];
+        if (button_mask & bit) event_flags |= PTR_FLAGS_DOWN;
+        if (!freerdp_input_send_mouse_event(session->instance->context->input, event_flags, x, y)) return 3u;
+    }
+    session->mouse_buttons = button_mask;
+    return freerdp_input_send_mouse_event(session->instance->context->input, PTR_FLAGS_MOVE, x, y) ? 0u : 3u;
+}
+
+uint32_t remote_rdp_session_send_wheel(remote_rdp_session* session, uint16_t x, uint16_t y,
+                                       int16_t delta) {
+    if (!session || !session->instance || !session->instance->context ||
+        !session->instance->context->input) return 1u;
+    if (session->config.view_only) return 2u;
+    uint16_t magnitude = (uint16_t)(delta < 0 ? -delta : delta);
+    if (magnitude > 0x00ffu) magnitude = 0x00ffu;
+    uint16_t flags = (uint16_t)(PTR_FLAGS_WHEEL | magnitude);
+    if (delta < 0) flags |= PTR_FLAGS_WHEEL_NEGATIVE;
+    return freerdp_input_send_mouse_event(session->instance->context->input, flags, x, y) ? 0u : 3u;
+}
+
+uint32_t remote_rdp_session_send_key(remote_rdp_session* session, uint32_t virtual_key,
+                                     uint8_t down) {
+    if (!session || !session->instance || !session->instance->context ||
+        !session->instance->context->input) return 1u;
+    if (session->config.view_only) return 2u;
+    DWORD scan_code = GetVirtualScanCodeFromVirtualKeyCode(virtual_key, WINPR_KBD_TYPE_IBM_ENHANCED);
+    if (!scan_code) return 4u;
+    return freerdp_input_send_keyboard_event_ex(session->instance->context->input, down != 0, FALSE,
+                                                 scan_code) ? 0u : 3u;
 }

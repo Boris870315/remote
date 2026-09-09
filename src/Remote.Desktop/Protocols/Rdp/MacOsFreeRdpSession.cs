@@ -1,0 +1,148 @@
+using System.Runtime.InteropServices;
+using Remote.Infrastructure.Protocols.Rdp;
+
+namespace Remote.Desktop.Protocols.Rdp;
+
+/// <summary>Managed owner for one in-process FreeRDP session on macOS.</summary>
+internal sealed class MacOsFreeRdpSession : IAsyncDisposable
+{
+    private const string LibraryName = "remote-freerdp";
+    private readonly FrameCallback _frameCallback;
+    private readonly StateCallback _stateCallback;
+    private readonly TaskCompletionSource _connected = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private nint _session;
+    private Task<uint>? _connectionTask;
+    private bool _disposing;
+
+    public event Action<byte[], int, int, int>? FrameReceived;
+    public event Action<uint, string>? StateChanged;
+
+    public bool SendMouse(ushort x, ushort y, byte buttonMask) =>
+        _session != nint.Zero && SessionSendMouse(_session, x, y, buttonMask) == 0;
+
+    public bool SendWheel(ushort x, ushort y, short delta) =>
+        _session != nint.Zero && SessionSendWheel(_session, x, y, delta) == 0;
+
+    public bool SendKey(uint virtualKey, bool down) =>
+        _session != nint.Zero && SessionSendKey(_session, virtualKey, down ? (byte)1 : (byte)0) == 0;
+
+    public MacOsFreeRdpSession()
+    {
+        if (!OperatingSystem.IsMacOS()) throw new PlatformNotSupportedException();
+        _frameCallback = HandleFrame;
+        _stateCallback = HandleState;
+        _session = SessionNew();
+        if (_session == nint.Zero) throw new InvalidOperationException("FreeRDP session allocation failed.");
+    }
+
+    public Task ConnectAsync(RdpExternalLaunchRequest request, int width, int height)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (_connectionTask is not null) throw new InvalidOperationException("FreeRDP session already started.");
+        var config = new NativeConfig(request, width, height, _frameCallback, _stateCallback);
+        _connectionTask = Task.Run(() =>
+        {
+            using (config)
+            {
+                return SessionConnect(_session, in config.Value);
+            }
+        });
+        return AwaitConnectionAsync(_connectionTask, _connected.Task);
+    }
+
+    private async Task AwaitConnectionAsync(Task<uint> connection, Task connected)
+    {
+        if (await Task.WhenAny(connection, connected).ConfigureAwait(false) == connected)
+        {
+            await connected.ConfigureAwait(false);
+            return;
+        }
+
+        var result = await connection.ConfigureAwait(false);
+        var nativeMessage = Marshal.PtrToStringUTF8(SessionLastError(_session));
+        throw new InvalidOperationException(string.IsNullOrWhiteSpace(nativeMessage)
+            ? $"FreeRDP connection failed (0x{result:X8})."
+            : $"FreeRDP connection failed (0x{result:X8}): {nativeMessage}");
+    }
+
+    private void HandleFrame(nint state, nint pixels, uint width, uint height, uint stride)
+    {
+        if (pixels == nint.Zero || width == 0 || height == 0 || stride == 0) return;
+        var copy = new byte[checked((int)(stride * height))];
+        Marshal.Copy(pixels, copy, 0, copy.Length);
+        FrameReceived?.Invoke(copy, checked((int)width), checked((int)height), checked((int)stride));
+    }
+
+    private void HandleState(nint state, uint stateCode, uint errorCode, nint message)
+    {
+        var text = Marshal.PtrToStringUTF8(message) ?? string.Empty;
+        if (stateCode == 1) _connected.TrySetResult();
+        if (!_disposing || stateCode != 2) StateChanged?.Invoke(stateCode, text);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_session == nint.Zero) return;
+        _disposing = true;
+        SessionDisconnect(_session);
+        if (_connectionTask is not null)
+        {
+            try { await _connectionTask.ConfigureAwait(false); } catch (InvalidOperationException) { }
+        }
+        SessionFree(_session);
+        _session = nint.Zero;
+    }
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate void FrameCallback(nint state, nint pixels, uint width, uint height, uint stride);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate void StateCallback(nint state, uint stateCode, uint errorCode, nint message);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativeConfigValue
+    {
+        public nint Hostname, Username, Password, Domain;
+        public ushort Port;
+        public uint Width, Height;
+        public byte ViewOnly, AllowUntrustedCertificate;
+        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 6)] public byte[] Reserved;
+        public nint CallbackState;
+        public FrameCallback Frame;
+        public StateCallback State;
+    }
+
+    private sealed class NativeConfig : IDisposable
+    {
+        public NativeConfigValue Value;
+        public NativeConfig(RdpExternalLaunchRequest request, int width, int height,
+            FrameCallback frame, StateCallback state)
+        {
+            Value = new NativeConfigValue
+            {
+                Hostname = Marshal.StringToCoTaskMemUTF8(request.Endpoint.Host),
+                Port = (ushort)(request.Endpoint.IsDefaultPort ? 3389 : request.Endpoint.Port),
+                Username = Marshal.StringToCoTaskMemUTF8(request.Username ?? string.Empty),
+                Password = Marshal.StringToCoTaskMemUTF8(System.Text.Encoding.UTF8.GetString(request.PasswordUtf8.Span)),
+                Domain = Marshal.StringToCoTaskMemUTF8(request.Domain ?? string.Empty),
+                Width = (uint)Math.Max(640, width), Height = (uint)Math.Max(480, height),
+                ViewOnly = request.AccessMode is Remote.Protocols.SessionAccessMode.ViewOnly ? (byte)1 : (byte)0,
+                AllowUntrustedCertificate = request.Settings.CertificatePolicy is RdpCertificatePolicy.PromptOnUntrusted ? (byte)1 : (byte)0,
+                Reserved = new byte[6], Frame = frame, State = state,
+            };
+        }
+        public void Dispose()
+        {
+            Marshal.ZeroFreeCoTaskMemUTF8(Value.Password);
+            Marshal.FreeCoTaskMem(Value.Hostname); Marshal.FreeCoTaskMem(Value.Username); Marshal.FreeCoTaskMem(Value.Domain);
+        }
+    }
+
+    [DllImport(LibraryName, EntryPoint = "remote_rdp_session_new")] private static extern nint SessionNew();
+    [DllImport(LibraryName, EntryPoint = "remote_rdp_session_free")] private static extern void SessionFree(nint session);
+    [DllImport(LibraryName, EntryPoint = "remote_rdp_session_last_error")] private static extern nint SessionLastError(nint session);
+    [DllImport(LibraryName, EntryPoint = "remote_rdp_session_connect")] private static extern uint SessionConnect(nint session, in NativeConfigValue config);
+    [DllImport(LibraryName, EntryPoint = "remote_rdp_session_disconnect")] private static extern void SessionDisconnect(nint session);
+    [DllImport(LibraryName, EntryPoint = "remote_rdp_session_send_mouse")] private static extern uint SessionSendMouse(nint session, ushort x, ushort y, byte buttonMask);
+    [DllImport(LibraryName, EntryPoint = "remote_rdp_session_send_wheel")] private static extern uint SessionSendWheel(nint session, ushort x, ushort y, short delta);
+    [DllImport(LibraryName, EntryPoint = "remote_rdp_session_send_key")] private static extern uint SessionSendKey(nint session, uint virtualKey, byte down);
+}

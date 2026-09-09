@@ -513,6 +513,8 @@ public sealed partial class MainViewModel : ViewModelBase
     public bool IsSessionConnected =>
         RemoteFrame is not null || IsTerminalActive || IsWebSessionActive || IsRdpSessionActive;
 
+    public bool UsesWindowsEmbeddedRdpSurface => IsRdpSessionActive && OperatingSystem.IsWindows();
+
     public ObservableCollection<string> MonitorOptions { get; } = ["螢幕 1（主螢幕）", "全部本機螢幕"];
 
     public void SetAvailableMonitorCount(int count)
@@ -1560,6 +1562,12 @@ public sealed partial class MainViewModel : ViewModelBase
     {
         OnPropertyChanged(nameof(ShowSessionPlaceholder));
         OnPropertyChanged(nameof(IsSessionConnected));
+        OnPropertyChanged(nameof(UsesWindowsEmbeddedRdpSurface));
+    }
+
+    public void SetEmbeddedRdpFrame(SessionId sessionId, WriteableBitmap? frame)
+    {
+        if (SelectedSessionTab?.SessionId == sessionId) RemoteFrame = frame;
     }
 
     public string RuntimeStatus => _sessionService.GetStatus().State;
@@ -2154,7 +2162,8 @@ public sealed partial class MainViewModel : ViewModelBase
                 Display = connection.Display,
                 Settings = RdpConnectionSettings.FromProtocolSettings(connection.ProtocolSettings),
             };
-            if (OperatingSystem.IsWindows() && EmbeddedRdpRequested is { } embeddedRdpRequested)
+            if ((OperatingSystem.IsWindows() || OperatingSystem.IsMacOS()) &&
+                EmbeddedRdpRequested is { } embeddedRdpRequested)
             {
                 IsRdpSessionActive = true;
                 await embeddedRdpRequested(session.Id, launchRequest);

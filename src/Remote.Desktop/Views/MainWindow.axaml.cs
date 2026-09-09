@@ -23,6 +23,7 @@ public partial class MainWindow : Window
     private byte _vncButtonMask;
     private MainViewModel? _viewModel;
     private readonly Dictionary<SessionId, AvaloniaEmbeddedRdpHost> _rdpHosts = [];
+    private readonly Dictionary<SessionId, MacOsRdpRuntime> _macRdpSessions = [];
     private readonly Dictionary<SessionId, NativeWebView> _webViews = [];
     private readonly DispatcherTimer _vaultTimer;
     private readonly DispatcherTimer _terminalResizeTimer;
@@ -124,6 +125,12 @@ public partial class MainWindow : Window
         SessionId sessionId,
         Remote.Infrastructure.Protocols.Rdp.RdpExternalLaunchRequest request)
     {
+        if (OperatingSystem.IsMacOS())
+        {
+            await ConnectMacOsEmbeddedRdpAsync(sessionId, request);
+            return;
+        }
+
         if (!_rdpHosts.TryGetValue(sessionId, out var host))
         {
             host = new AvaloniaEmbeddedRdpHost();
@@ -152,6 +159,12 @@ public partial class MainWindow : Window
 
     private async Task CloseEmbeddedRdpAsync(SessionId sessionId)
     {
+        if (_macRdpSessions.Remove(sessionId, out var macRuntime))
+        {
+            await macRuntime.Session.DisposeAsync();
+            macRuntime.FrameSink.Dispose();
+            return;
+        }
         if (!_rdpHosts.Remove(sessionId, out var host)) return;
         await host.DisconnectAsync();
         EmbeddedRdpSurfaces.Children.Remove(host);
@@ -216,7 +229,45 @@ public partial class MainWindow : Window
         {
             pair.Value.SetSessionVisible(pair.Key == selected);
         }
+        if (selected is { } sessionId && _macRdpSessions.TryGetValue(sessionId, out var runtime))
+            _viewModel?.SetEmbeddedRdpFrame(sessionId, runtime.FrameSink.Frame);
     }
+
+    private async Task ConnectMacOsEmbeddedRdpAsync(
+        SessionId sessionId,
+        Remote.Infrastructure.Protocols.Rdp.RdpExternalLaunchRequest request)
+    {
+        var session = new MacOsFreeRdpSession();
+        var sink = new AvaloniaFreeRdpFrameSink(frame =>
+            _viewModel?.SetEmbeddedRdpFrame(sessionId, frame));
+        var runtime = new MacOsRdpRuntime(session, sink);
+        session.FrameReceived += sink.Publish;
+        session.StateChanged += (state, message) =>
+        {
+            if (state == 2 && _macRdpSessions.ContainsKey(sessionId))
+                Dispatcher.UIThread.Post(() =>
+                    _ = _viewModel?.HandleEmbeddedRdpFailureAsync(sessionId,
+                        string.IsNullOrWhiteSpace(message) ? "RDP 工作階段已中斷" : message));
+        };
+        _macRdpSessions.Add(sessionId, runtime);
+        try
+        {
+            await session.ConnectAsync(request,
+                Math.Max(640, (int)SessionWorkspace.Bounds.Width),
+                Math.Max(480, (int)SessionWorkspace.Bounds.Height));
+        }
+        catch
+        {
+            _macRdpSessions.Remove(sessionId);
+            await session.DisposeAsync();
+            sink.Dispose();
+            throw;
+        }
+    }
+
+    private sealed record MacOsRdpRuntime(
+        MacOsFreeRdpSession Session,
+        AvaloniaFreeRdpFrameSink FrameSink);
 
     private void RefreshMonitorOptions()
     {
@@ -430,11 +481,18 @@ public partial class MainWindow : Window
 
     private async void HandleRemotePointerWheelChanged(object? sender, PointerWheelEventArgs e)
     {
-        if (_viewModel?.IsVncSessionActive is not true ||
-            !TryMapRemotePoint(e.GetPosition(RemoteSurface), out var x, out var y))
+        if (!TryMapRemotePoint(e.GetPosition(RemoteSurface), out var x, out var y))
         {
             return;
         }
+
+        if (TryGetSelectedMacRdp(out var macRdp))
+        {
+            var delta = (short)Math.Clamp((int)(e.Delta.Y * 120), short.MinValue, short.MaxValue);
+            e.Handled = delta != 0 && macRdp.Session.SendWheel(x, y, delta);
+            return;
+        }
+        if (_viewModel?.IsVncSessionActive is not true) return;
 
         var wheelMask = e.Delta.Y > 0 ? (byte)8 : e.Delta.Y < 0 ? (byte)16 : (byte)0;
         if (wheelMask == 0) return;
@@ -445,7 +503,7 @@ public partial class MainWindow : Window
 
     private async Task SendRemotePointerAsync(PointerEventArgs e, bool focus)
     {
-        if (_viewModel?.IsVncSessionActive is not true || _viewModel.RemoteFrame is null)
+        if (_viewModel?.RemoteFrame is null)
         {
             return;
         }
@@ -465,7 +523,10 @@ public partial class MainWindow : Window
             return;
         }
 
-        e.Handled = await _viewModel.SendVncPointerAsync(_vncButtonMask, x, y);
+        if (TryGetSelectedMacRdp(out var macRdp))
+            e.Handled = macRdp.Session.SendMouse(x, y, _vncButtonMask);
+        else if (_viewModel.IsVncSessionActive)
+            e.Handled = await _viewModel.SendVncPointerAsync(_vncButtonMask, x, y);
     }
 
     private async void HandleRemoteKeyDown(object? sender, KeyEventArgs e) =>
@@ -504,11 +565,29 @@ public partial class MainWindow : Window
 
     private async Task SendRemoteKeyAsync(KeyEventArgs e, bool isDown)
     {
+        if (TryGetSelectedMacRdp(out var macRdp))
+        {
+            var virtualKey = RdpVirtualKeyMapper.Map(e.Key);
+            if (virtualKey is not null) e.Handled = macRdp.Session.SendKey(virtualKey.Value, isDown);
+            return;
+        }
         var keySym = RfbKeySymMapper.Map(e.Key);
         if (keySym is not null && _viewModel is not null)
         {
             e.Handled = await _viewModel.SendVncKeyAsync(keySym.Value, isDown);
         }
+    }
+
+    private bool TryGetSelectedMacRdp(out MacOsRdpRuntime runtime)
+    {
+        if (_viewModel?.SelectedSessionTab is { } tab &&
+            _macRdpSessions.TryGetValue(tab.SessionId, out var selected))
+        {
+            runtime = selected;
+            return true;
+        }
+        runtime = null!;
+        return false;
     }
 
     private bool TryMapRemotePoint(Avalonia.Point point, out ushort x, out ushort y)
