@@ -161,6 +161,8 @@ public sealed partial class MainViewModel : ViewModelBase
     public IReadOnlyList<string> IdentityProtocols { get; } = ["rdp", "vnc", "ssh2", "http", "https"];
     public IReadOnlyList<string> PasswordVisibilityOptions { get; } = ["5 秒", "10 秒", "永久顯示"];
     public IReadOnlyList<string> DisplayScaleOptions { get; } = ["適應視窗", "填滿視窗", "100%", "捲動"];
+    public IReadOnlyList<RdpAudioMode> RdpAudioModeOptions { get; } = Enum.GetValues<RdpAudioMode>();
+    public IReadOnlyList<RdpCertificatePolicy> RdpCertificatePolicyOptions { get; } = Enum.GetValues<RdpCertificatePolicy>();
 
     public ObservableCollection<ConnectionTreeDisplayItem> ConnectionTree { get; }
 
@@ -286,6 +288,21 @@ public sealed partial class MainViewModel : ViewModelBase
 
     [ObservableProperty]
     private bool editRedirectDrives;
+
+    [ObservableProperty]
+    private bool editRedirectMicrophone;
+
+    [ObservableProperty]
+    private bool editRedirectCamera;
+
+    [ObservableProperty]
+    private bool editConnectAsAdministrator;
+
+    [ObservableProperty]
+    private RdpAudioMode editRdpAudioMode = RdpAudioMode.PlayLocally;
+
+    [ObservableProperty]
+    private RdpCertificatePolicy editRdpCertificatePolicy = RdpCertificatePolicy.RequireTrusted;
 
     [ObservableProperty]
     private string editShellPath = string.Empty;
@@ -1526,6 +1543,11 @@ public sealed partial class MainViewModel : ViewModelBase
         EditRedirectClipboard = true;
         EditRedirectPrinters = false;
         EditRedirectDrives = false;
+        EditRedirectMicrophone = false;
+        EditRedirectCamera = false;
+        EditConnectAsAdministrator = false;
+        EditRdpAudioMode = RdpAudioMode.PlayLocally;
+        EditRdpCertificatePolicy = RdpCertificatePolicy.RequireTrusted;
         EditShellPath = string.Empty;
         EditWorkingDirectory = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         EditIsFavorite = false;
@@ -1565,6 +1587,11 @@ public sealed partial class MainViewModel : ViewModelBase
         EditRedirectClipboard = settings.RedirectClipboard;
         EditRedirectPrinters = settings.RedirectPrinters;
         EditRedirectDrives = settings.RedirectDrives;
+        EditRedirectMicrophone = settings.RedirectMicrophone;
+        EditRedirectCamera = settings.RedirectCamera;
+        EditConnectAsAdministrator = settings.ConnectAsAdministrator;
+        EditRdpAudioMode = settings.AudioMode;
+        EditRdpCertificatePolicy = settings.CertificatePolicy;
         var terminalSettings = LocalTerminalOptions.FromProtocolSettings(profile.ProtocolSettings);
         EditShellPath = terminalSettings.ShellPath ?? string.Empty;
         EditWorkingDirectory = terminalSettings.WorkingDirectory;
@@ -1652,6 +1679,11 @@ public sealed partial class MainViewModel : ViewModelBase
             RedirectClipboard = EditRedirectClipboard,
             RedirectPrinters = EditRedirectPrinters,
             RedirectDrives = EditRedirectDrives,
+            RedirectMicrophone = EditRedirectMicrophone,
+            RedirectCamera = EditRedirectCamera,
+            ConnectAsAdministrator = EditConnectAsAdministrator,
+            AudioMode = EditRdpAudioMode,
+            CertificatePolicy = EditRdpCertificatePolicy,
         };
         try
         {
@@ -2059,13 +2091,13 @@ public sealed partial class MainViewModel : ViewModelBase
             string? domain = null;
             if (ResolveCredentialDefinition(connection) is { } definition)
             {
-                username = string.IsNullOrWhiteSpace(definition.Username) ? null : definition.Username.Trim();
-                domain = string.IsNullOrWhiteSpace(definition.Domain) ? null : definition.Domain.Trim();
+                username = string.IsNullOrEmpty(definition.Username) ? null : definition.Username;
+                domain = string.IsNullOrEmpty(definition.Domain) ? null : definition.Domain;
                 rdpSecret = _vault!.Reveal(definition.Id);
             }
             else
             {
-                username = string.IsNullOrWhiteSpace(SessionUsername) ? null : SessionUsername.Trim();
+                username = string.IsNullOrEmpty(SessionUsername) ? null : SessionUsername;
                 rdpSecret = string.IsNullOrEmpty(SessionPassword)
                     ? null
                     : Encoding.UTF8.GetBytes(SessionPassword);

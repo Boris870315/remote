@@ -63,10 +63,10 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
             stage = "set-endpoint";
             client.Server = request.Endpoint.Host;
             client.UserName = request.Username ?? string.Empty;
-            if (!string.IsNullOrWhiteSpace(request.Domain))
-            {
-                client.Domain = request.Domain;
-            }
+            // Explicitly clear the ActiveX domain when the operator did not
+            // provide one. Leaving it untouched lets some Windows revisions
+            // infer the destination computer name and display HOST\\username.
+            client.Domain = request.Domain ?? string.Empty;
             stage = "set-display";
             var initialPixelSize = GetPhysicalPixelSize(Bounds.Size);
             client.DesktopWidth = Math.Max(640, initialPixelSize.Width);
@@ -93,7 +93,13 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
             SetComProperty(advanced, "RedirectClipboard", permissions.RedirectClipboard);
             SetComProperty(advanced, "RedirectPrinters", permissions.RedirectPrinters);
             SetComProperty(advanced, "RedirectDrives", permissions.RedirectDrives);
+            TrySetComProperty(advanced, "AudioCaptureRedirectionMode", permissions.RedirectMicrophone ? 1u : 0u);
+            TrySetComProperty(advanced, "RedirectDevices", permissions.RedirectCamera);
             SetComProperty(advanced, "AudioRedirectionMode", (uint)request.Settings.AudioMode);
+            TrySetComProperty(
+                advanced,
+                "AuthenticationLevel",
+                request.Settings.CertificatePolicy is RdpCertificatePolicy.RequireTrusted ? 1u : 2u);
             if (!string.IsNullOrWhiteSpace(request.Settings.GatewayHost))
             {
                 stage = "set-gateway";

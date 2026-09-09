@@ -12,7 +12,9 @@ public static class RdpSessionPermissionPolicy
             interactive,
             interactive && settings.RedirectClipboard,
             interactive && settings.RedirectPrinters,
-            interactive && settings.RedirectDrives);
+            interactive && settings.RedirectDrives,
+            interactive && settings.RedirectMicrophone,
+            interactive && settings.RedirectCamera);
     }
 }
 
@@ -20,4 +22,6 @@ public sealed record RdpEffectiveRedirections(
     bool AcceptsInput,
     bool RedirectClipboard,
     bool RedirectPrinters,
-    bool RedirectDrives);
+    bool RedirectDrives,
+    bool RedirectMicrophone,
+    bool RedirectCamera);

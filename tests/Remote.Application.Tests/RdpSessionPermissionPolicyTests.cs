@@ -19,6 +19,8 @@ public sealed class RdpSessionPermissionPolicyTests
         Assert.False(result.RedirectClipboard);
         Assert.False(result.RedirectPrinters);
         Assert.False(result.RedirectDrives);
+        Assert.False(result.RedirectMicrophone);
+        Assert.False(result.RedirectCamera);
     }
 
     [Fact]
@@ -29,11 +31,15 @@ public sealed class RdpSessionPermissionPolicyTests
             RedirectClipboard = true,
             RedirectPrinters = false,
             RedirectDrives = true,
+            RedirectMicrophone = true,
+            RedirectCamera = true,
         });
 
         Assert.True(result.AcceptsInput);
         Assert.True(result.RedirectClipboard);
         Assert.False(result.RedirectPrinters);
         Assert.True(result.RedirectDrives);
+        Assert.True(result.RedirectMicrophone);
+        Assert.True(result.RedirectCamera);
     }
 }

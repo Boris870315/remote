@@ -183,6 +183,16 @@
                   <CheckBox IsChecked="{Binding EditRedirectClipboard}" Content="文字剪貼簿"/>
                   <CheckBox IsChecked="{Binding EditRedirectPrinters}" Content="印表機"/>
                   <CheckBox IsChecked="{Binding EditRedirectDrives}" Content="磁碟機"/>
+                  <CheckBox IsChecked="{Binding EditRedirectMicrophone}" Content="麥克風"/>
+                  <CheckBox IsChecked="{Binding EditRedirectCamera}" Content="相機與其他視訊擷取裝置"/>
+                </StackPanel>
+                <StackPanel Spacing="6" IsVisible="{Binding IsEditingRdp}">
+                  <TextBlock Text="登入與安全性" FontSize="10" Foreground="#7F8DA5"/>
+                  <CheckBox IsChecked="{Binding EditConnectAsAdministrator}" Content="連線到系統管理工作階段"/>
+                  <TextBlock Text="遠端音訊" FontSize="10" Foreground="#7F8DA5"/>
+                  <ComboBox ItemsSource="{Binding RdpAudioModeOptions}" SelectedItem="{Binding EditRdpAudioMode}"/>
+                  <TextBlock Text="伺服器憑證" FontSize="10" Foreground="#7F8DA5"/>
+                  <ComboBox ItemsSource="{Binding RdpCertificatePolicyOptions}" SelectedItem="{Binding EditRdpCertificatePolicy}"/>
                 </StackPanel>
               </StackPanel>
             </Border>
