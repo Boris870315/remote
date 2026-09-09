@@ -53,9 +53,32 @@ public partial class MainWindow : Window
         Closed += HandleClosed;
         KeyDown += HandleWindowKeyDown;
         PointerPressed += (_, _) => _viewModel?.RecordUserActivity();
+        AddHandler(PointerPressedEvent, HandleSecretRevealPressed, RoutingStrategies.Tunnel, true);
+        AddHandler(PointerReleasedEvent, HandleSecretRevealReleased, RoutingStrategies.Tunnel, true);
         _vaultTimer = new DispatcherTimer(TimeSpan.FromSeconds(15), DispatcherPriority.Background, (_, _) =>
             _viewModel?.EvaluateVaultAutoLock());
         _vaultTimer.Start();
+    }
+
+    private void HandleSecretRevealPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (FindRevealButton(e.Source) is null) return;
+        _viewModel?.BeginSecretReveal();
+        e.Handled = true;
+    }
+
+    private void HandleSecretRevealReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        if (_viewModel?.AreEditableSecretsVisible is not true) return;
+        _viewModel.EndSecretReveal();
+        e.Handled = true;
+    }
+
+    private static Button? FindRevealButton(object? source)
+    {
+        var control = source as Control;
+        var button = control as Button ?? control?.GetVisualAncestors().OfType<Button>().FirstOrDefault();
+        return string.Equals(button?.Content?.ToString(), "顯示", StringComparison.Ordinal) ? button : null;
     }
 
     private async void HandleClosed(object? sender, EventArgs e)

@@ -585,6 +585,12 @@ public sealed partial class MainViewModel : ViewModelBase
 
     public string IdentitySaveLabel => _editingCredentialId is null ? "加密儲存身份卡" : "儲存身份卡變更";
 
+    public string IdentitySecretStatusLabel => NewIdentitySecret.Length > 0
+        ? (AreEditableSecretsVisible ? "密碼已載入並暫時顯示" : "密碼已載入並遮罩")
+        : _editingCredentialId is not null
+            ? "✓ 已加密儲存密碼；按「顯示」可檢查"
+            : "尚未輸入密碼";
+
     public bool IsEditingIdentity => _editingCredentialId is not null;
 
     public string SelectedCredentialSourceLabel => SelectedConnection?.Profile.Credential.Kind switch
@@ -850,21 +856,32 @@ public sealed partial class MainViewModel : ViewModelBase
     [RelayCommand]
     private async Task RevealEditableSecretsAsync()
     {
-        if (_editingCredentialId is { } credentialId &&
+        var identityCredentialId = _editingCredentialId ?? SelectedVaultCredential?.Id;
+        if (identityCredentialId is { } credentialId &&
             NewIdentitySecret.Length == 0 &&
             _vault is not null &&
             !IsVaultLocked)
         {
-            var revealed = _vault.Reveal(credentialId);
+            byte[]? revealed = null;
             try
             {
+                revealed = _vault.Reveal(credentialId);
                 _loadingIdentitySecretForReveal = true;
                 NewIdentitySecret = Encoding.UTF8.GetString(revealed);
+                VaultMessage = "已從加密 Vault 載入密碼";
+            }
+            catch (Exception exception) when (exception is InvalidOperationException or KeyNotFoundException)
+            {
+                VaultMessage = $"無法顯示密碼：{exception.Message}";
+                NotificationMessage = VaultMessage;
+                IsNotificationOpen = true;
+                return;
             }
             finally
             {
                 _loadingIdentitySecretForReveal = false;
-                System.Security.Cryptography.CryptographicOperations.ZeroMemory(revealed);
+                if (revealed is not null)
+                    System.Security.Cryptography.CryptographicOperations.ZeroMemory(revealed);
             }
         }
 
@@ -885,8 +902,19 @@ public sealed partial class MainViewModel : ViewModelBase
         }
     }
 
-    partial void OnAreEditableSecretsVisibleChanged(bool value) =>
+    public void BeginSecretReveal()
+    {
+        _secretRevealCancellation?.Cancel();
+        AreEditableSecretsVisible = true;
+    }
+
+    public void EndSecretReveal() => AreEditableSecretsVisible = false;
+
+    partial void OnAreEditableSecretsVisibleChanged(bool value)
+    {
         OnPropertyChanged(nameof(EditableSecretMask));
+        OnPropertyChanged(nameof(IdentitySecretStatusLabel));
+    }
 
     partial void OnNewIdentitySecretChanged(string value)
     {
@@ -894,6 +922,7 @@ public sealed partial class MainViewModel : ViewModelBase
         {
             _identitySecretWasEdited = true;
         }
+        OnPropertyChanged(nameof(IdentitySecretStatusLabel));
     }
 
     [RelayCommand]
@@ -959,6 +988,8 @@ public sealed partial class MainViewModel : ViewModelBase
             RefreshVaultCredentials();
             await SaveWorkspaceAsync();
             VaultMessage = $"身份卡「{definition.Name}」已加密儲存";
+            NotificationMessage = $"身份卡「{definition.Name}」的帳號與密碼已加密儲存成功。";
+            IsNotificationOpen = true;
             AddAuditEvent($"身份卡已儲存：{definition.Name}");
         }
         finally
@@ -1260,12 +1291,22 @@ public sealed partial class MainViewModel : ViewModelBase
         NewIdentityProtocol = credential.ProtocolScope;
         NewIdentityUsername = credential.Username ?? string.Empty;
         NewIdentityDomain = credential.Domain ?? string.Empty;
-        NewIdentitySecret = string.Empty;
+        var revealed = _vault!.Reveal(credential.Id);
+        try
+        {
+            _loadingIdentitySecretForReveal = true;
+            NewIdentitySecret = Encoding.UTF8.GetString(revealed);
+        }
+        finally
+        {
+            _loadingIdentitySecretForReveal = false;
+            System.Security.Cryptography.CryptographicOperations.ZeroMemory(revealed);
+        }
         _identitySecretWasEdited = false;
         OnPropertyChanged(nameof(IdentityEditorTitle));
         OnPropertyChanged(nameof(IdentitySaveLabel));
         OnPropertyChanged(nameof(IsEditingIdentity));
-        VaultMessage = "密碼留空會保留原密碼；輸入新密碼才會建立新版本";
+        VaultMessage = "✓ 此身份卡已有加密密碼；按「顯示」可檢查。留空儲存會保留原密碼。";
     }
 
     [RelayCommand]
