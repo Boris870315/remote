@@ -9,6 +9,26 @@ extern "C" {
 #define REMOTE_RDP_EXPORT __attribute__((visibility("default")))
 
 typedef struct remote_rdp_session remote_rdp_session;
+typedef void (*remote_rdp_frame_callback)(void* state, const uint8_t* pixels,
+                                          uint32_t width, uint32_t height, uint32_t stride);
+typedef void (*remote_rdp_state_callback)(void* state, uint32_t state_code,
+                                          uint32_t error_code, const char* message);
+
+typedef struct remote_rdp_config {
+    const char* hostname;
+    uint16_t port;
+    const char* username;
+    const char* password;
+    const char* domain;
+    uint32_t width;
+    uint32_t height;
+    uint8_t view_only;
+    uint8_t allow_untrusted_certificate;
+    uint8_t reserved[6];
+    void* callback_state;
+    remote_rdp_frame_callback frame_callback;
+    remote_rdp_state_callback state_callback;
+} remote_rdp_config;
 
 typedef struct remote_rdp_capabilities {
     uint32_t abi_version;
@@ -24,6 +44,9 @@ REMOTE_RDP_EXPORT uint32_t remote_rdp_get_capabilities(remote_rdp_capabilities* 
 REMOTE_RDP_EXPORT remote_rdp_session* remote_rdp_session_new(void);
 REMOTE_RDP_EXPORT void remote_rdp_session_free(remote_rdp_session* session);
 REMOTE_RDP_EXPORT const char* remote_rdp_session_last_error(const remote_rdp_session* session);
+REMOTE_RDP_EXPORT uint32_t remote_rdp_session_connect(remote_rdp_session* session,
+                                                       const remote_rdp_config* config);
+REMOTE_RDP_EXPORT void remote_rdp_session_disconnect(remote_rdp_session* session);
 
 #if defined(__cplusplus)
 }

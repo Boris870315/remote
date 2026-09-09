@@ -1,13 +1,71 @@
 #include "remote_freerdp_bridge.h"
 
 #include <freerdp/freerdp.h>
+#include <freerdp/codec/color.h>
+#include <freerdp/gdi/gdi.h>
+#include <freerdp/settings.h>
+#include <freerdp/update.h>
+#include <winpr/synch.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
 
 struct remote_rdp_session {
     freerdp* instance;
     char last_error[512];
+    remote_rdp_config config;
+    volatile int stopping;
 };
+
+typedef struct remote_context {
+    rdpContext base;
+    remote_rdp_session* owner;
+} remote_context;
+
+static remote_rdp_session* owner_from_context(rdpContext* context) {
+    return context ? ((remote_context*)context)->owner : NULL;
+}
+
+static BOOL remote_begin_paint(rdpContext* context) {
+    if (context && context->gdi && context->gdi->primary && context->gdi->primary->hdc &&
+        context->gdi->primary->hdc->hwnd && context->gdi->primary->hdc->hwnd->invalid)
+        context->gdi->primary->hdc->hwnd->invalid->null = TRUE;
+    return TRUE;
+}
+
+static BOOL remote_end_paint(rdpContext* context) {
+    remote_rdp_session* session = owner_from_context(context);
+    if (!session || !context->gdi || !session->config.frame_callback) return TRUE;
+    session->config.frame_callback(session->config.callback_state, context->gdi->primary_buffer,
+                                   (uint32_t)context->gdi->width, (uint32_t)context->gdi->height,
+                                   context->gdi->stride);
+    return TRUE;
+}
+
+static BOOL remote_desktop_resize(rdpContext* context) {
+    return context && context->gdi && gdi_resize(context->gdi,
+        freerdp_settings_get_uint32(context->settings, FreeRDP_DesktopWidth),
+        freerdp_settings_get_uint32(context->settings, FreeRDP_DesktopHeight));
+}
+
+static BOOL remote_post_connect(freerdp* instance) {
+    if (!gdi_init(instance, PIXEL_FORMAT_BGRA32)) return FALSE;
+    instance->context->update->BeginPaint = remote_begin_paint;
+    instance->context->update->EndPaint = remote_end_paint;
+    instance->context->update->DesktopResize = remote_desktop_resize;
+    return TRUE;
+}
+
+static void remote_post_disconnect(freerdp* instance) {
+    if (instance && instance->context && instance->context->gdi) gdi_free(instance);
+}
+
+static int remote_verify_certificate(freerdp* instance, const BYTE* data, size_t length,
+                                     const char* hostname, UINT16 port, DWORD flags) {
+    (void)data; (void)length; (void)hostname; (void)port; (void)flags;
+    remote_rdp_session* session = instance ? owner_from_context(instance->context) : NULL;
+    return session && session->config.allow_untrusted_certificate ? 2 : 0;
+}
 
 uint32_t remote_rdp_get_capabilities(remote_rdp_capabilities* capabilities) {
     if (!capabilities) return 1u;
@@ -27,6 +85,18 @@ remote_rdp_session* remote_rdp_session_new(void) {
     session->instance = freerdp_new();
     if (!session->instance) {
         strncpy(session->last_error, "freerdp_new failed", sizeof(session->last_error) - 1);
+    } else {
+        session->instance->ContextSize = sizeof(remote_context);
+        session->instance->PostConnect = remote_post_connect;
+        session->instance->PostDisconnect = remote_post_disconnect;
+        session->instance->VerifyX509Certificate = remote_verify_certificate;
+        if (!freerdp_context_new(session->instance)) {
+            freerdp_free(session->instance);
+            session->instance = NULL;
+            strncpy(session->last_error, "freerdp_context_new failed", sizeof(session->last_error) - 1);
+        } else {
+            ((remote_context*)session->instance->context)->owner = session;
+        }
     }
     return session;
 }
@@ -40,4 +110,46 @@ void remote_rdp_session_free(remote_rdp_session* session) {
 
 const char* remote_rdp_session_last_error(const remote_rdp_session* session) {
     return session ? session->last_error : "invalid session";
+}
+
+static BOOL configure(remote_rdp_session* session, const remote_rdp_config* config) {
+    rdpSettings* settings = session->instance->context->settings;
+    return freerdp_settings_set_string(settings, FreeRDP_ServerHostname, config->hostname) &&
+           freerdp_settings_set_uint32(settings, FreeRDP_ServerPort, config->port ? config->port : 3389) &&
+           freerdp_settings_set_string(settings, FreeRDP_Username, config->username ? config->username : "") &&
+           freerdp_settings_set_string(settings, FreeRDP_Password, config->password ? config->password : "") &&
+           freerdp_settings_set_string(settings, FreeRDP_Domain, config->domain ? config->domain : "") &&
+           freerdp_settings_set_uint32(settings, FreeRDP_DesktopWidth, config->width) &&
+           freerdp_settings_set_uint32(settings, FreeRDP_DesktopHeight, config->height) &&
+           freerdp_settings_set_uint32(settings, FreeRDP_ColorDepth, 32) &&
+           freerdp_settings_set_bool(settings, FreeRDP_IgnoreCertificate,
+                                     config->allow_untrusted_certificate != 0);
+}
+
+uint32_t remote_rdp_session_connect(remote_rdp_session* session, const remote_rdp_config* config) {
+    if (!session || !session->instance || !config || !config->hostname) return 1u;
+    session->config = *config;
+    session->stopping = 0;
+    if (!configure(session, config) || !freerdp_connect(session->instance)) {
+        uint32_t error = freerdp_get_last_error(session->instance->context);
+        snprintf(session->last_error, sizeof(session->last_error), "%s",
+                 freerdp_get_last_error_string(error));
+        return error ? error : 2u;
+    }
+    if (config->state_callback) config->state_callback(config->callback_state, 1u, 0u, "connected");
+    while (!session->stopping && !freerdp_shall_disconnect_context(session->instance->context)) {
+        HANDLE handles[64] = { 0 };
+        DWORD count = freerdp_get_event_handles(session->instance->context, handles, 64);
+        if (!count || WaitForMultipleObjects(count, handles, FALSE, 100) == WAIT_FAILED ||
+            !freerdp_check_event_handles(session->instance->context)) break;
+    }
+    freerdp_disconnect(session->instance);
+    if (config->state_callback) config->state_callback(config->callback_state, 2u, 0u, "disconnected");
+    return 0u;
+}
+
+void remote_rdp_session_disconnect(remote_rdp_session* session) {
+    if (!session || !session->instance) return;
+    session->stopping = 1;
+    freerdp_abort_connect_context(session->instance->context);
 }
