@@ -1,6 +1,7 @@
 using System.Buffers;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
+using System.Text.RegularExpressions;
 using Remote.Infrastructure.Protocols.Rdp;
 
 namespace Remote.Desktop.Protocols.Rdp;
@@ -123,7 +124,11 @@ internal sealed class MacOsFreeRdpSession : IAsyncDisposable
             _ => "RDP 工作階段失敗"
         };
 
-        return $"{reason}（HRESULT=0x{errorCode:X8}）";
+        var details = Regex.Match(nativeMessage ?? string.Empty,
+            @"serverError=0x(?<server>[0-9a-fA-F]{8}); ultimatum=(?<ultimatum>-?\d+)");
+        return details.Success
+            ? $"{reason}（HRESULT=0x{errorCode:X8}；伺服器錯誤=0x{details.Groups["server"].Value}；中斷原因={details.Groups["ultimatum"].Value}）"
+            : $"{reason}（HRESULT=0x{errorCode:X8}）";
     }
 
     private void HandleFrame(nint state, nint pixels, uint width, uint height, uint stride)

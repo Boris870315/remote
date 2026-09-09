@@ -191,8 +191,10 @@ static BOOL configure(remote_rdp_session* session, const remote_rdp_config* conf
            freerdp_settings_set_uint32(settings, FreeRDP_DesktopWidth, config->width) &&
            freerdp_settings_set_uint32(settings, FreeRDP_DesktopHeight, config->height) &&
            freerdp_settings_set_uint32(settings, FreeRDP_ColorDepth, 32) &&
-           freerdp_settings_set_bool(settings, FreeRDP_SupportDisplayControl, TRUE) &&
-           freerdp_settings_set_bool(settings, FreeRDP_DynamicResolutionUpdate, TRUE) &&
+           freerdp_settings_set_bool(settings, FreeRDP_SupportDisplayControl,
+                                     config->use_all_monitors != 0) &&
+           freerdp_settings_set_bool(settings, FreeRDP_DynamicResolutionUpdate,
+                                     config->use_all_monitors != 0) &&
            freerdp_settings_set_bool(settings, FreeRDP_UseMultimon,
                                      config->use_all_monitors != 0) &&
            freerdp_settings_set_bool(settings, FreeRDP_SpanMonitors,
@@ -253,18 +255,22 @@ uint32_t remote_rdp_session_connect(remote_rdp_session* session, const remote_rd
         if (!freerdp_check_event_handles(session->instance->context)) {
             disconnect_error = freerdp_get_last_error(session->instance->context);
             if (!disconnect_error) disconnect_error = 3u;
+            const uint32_t server_error = freerdp_error_info(session->instance);
+            const int ultimatum = freerdp_get_disconnect_ultimatum(session->instance->context);
             snprintf(session->last_error, sizeof(session->last_error),
-                     "RDP event processing failed; HRESULT=0x%08x: %s", disconnect_error,
-                     freerdp_get_last_error_string(disconnect_error));
+                     "RDP event processing failed; HRESULT=0x%08x; serverError=0x%08x; ultimatum=%d",
+                     disconnect_error, server_error, ultimatum);
             break;
         }
         apply_pending_resize(session);
     }
     if (!session->stopping && !disconnect_error) {
         disconnect_error = freerdp_get_last_error(session->instance->context);
+        const uint32_t server_error = freerdp_error_info(session->instance);
+        const int ultimatum = freerdp_get_disconnect_ultimatum(session->instance->context);
         snprintf(session->last_error, sizeof(session->last_error),
-                 "RDP server requested disconnect; HRESULT=0x%08x: %s", disconnect_error,
-                 disconnect_error ? freerdp_get_last_error_string(disconnect_error) : "no error supplied");
+                 "RDP server requested disconnect; HRESULT=0x%08x; serverError=0x%08x; ultimatum=%d",
+                 disconnect_error, server_error, ultimatum);
     }
     freerdp_disconnect(session->instance);
     (void)freerdp_settings_set_string(session->instance->context->settings, FreeRDP_Password, "");
