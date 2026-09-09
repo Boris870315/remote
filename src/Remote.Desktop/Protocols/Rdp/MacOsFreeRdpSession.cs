@@ -38,7 +38,7 @@ internal sealed class MacOsFreeRdpSession : IAsyncDisposable
         _stateCallback = HandleState;
         try
         {
-            if (GetCapabilities(out var capabilities) != 0 || capabilities.AbiVersion != 1 ||
+            if (GetCapabilities(out var capabilities) != 0 || capabilities.AbiVersion != 2 ||
                 capabilities.SupportsFramebuffer == 0)
                 throw new InvalidOperationException("內嵌 FreeRDP bridge 版本不相容，請重新建置應用程式。");
             _session = SessionNew();
@@ -124,8 +124,9 @@ internal sealed class MacOsFreeRdpSession : IAsyncDisposable
         public nint Hostname, Username, Password, Domain;
         public ushort Port;
         public uint Width, Height;
-        public byte ViewOnly, AllowUntrustedCertificate;
-        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 6)] public byte[] Reserved;
+        public byte ViewOnly, AllowUntrustedCertificate, UseAllMonitors;
+        public byte RedirectClipboard, RedirectPrinters, RedirectDrives;
+        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 2)] public byte[] Reserved;
         public nint CallbackState;
         public FrameCallback Frame;
         public StateCallback State;
@@ -155,7 +156,11 @@ internal sealed class MacOsFreeRdpSession : IAsyncDisposable
                 Width = (uint)Math.Max(640, width), Height = (uint)Math.Max(480, height),
                 ViewOnly = request.AccessMode is Remote.Protocols.SessionAccessMode.ViewOnly ? (byte)1 : (byte)0,
                 AllowUntrustedCertificate = request.Settings.CertificatePolicy is RdpCertificatePolicy.PromptOnUntrusted ? (byte)1 : (byte)0,
-                Reserved = new byte[6], Frame = frame, State = state,
+                UseAllMonitors = request.Display.MonitorSelection is Remote.Application.Connections.MonitorSelection.All ? (byte)1 : (byte)0,
+                RedirectClipboard = request.Settings.RedirectClipboard ? (byte)1 : (byte)0,
+                RedirectPrinters = request.Settings.RedirectPrinters ? (byte)1 : (byte)0,
+                RedirectDrives = request.Settings.RedirectDrives ? (byte)1 : (byte)0,
+                Reserved = new byte[2], Frame = frame, State = state,
             };
         }
         public void Dispose()

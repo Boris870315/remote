@@ -5,7 +5,7 @@
 extern "C" {
 #endif
 
-#define REMOTE_FREERDP_ABI_VERSION 1u
+#define REMOTE_FREERDP_ABI_VERSION 2u
 #define REMOTE_RDP_EXPORT __attribute__((visibility("default")))
 
 typedef struct remote_rdp_session remote_rdp_session;
@@ -24,7 +24,11 @@ typedef struct remote_rdp_config {
     uint32_t height;
     uint8_t view_only;
     uint8_t allow_untrusted_certificate;
-    uint8_t reserved[6];
+    uint8_t use_all_monitors;
+    uint8_t redirect_clipboard;
+    uint8_t redirect_printers;
+    uint8_t redirect_drives;
+    uint8_t reserved[2];
     void* callback_state;
     remote_rdp_frame_callback frame_callback;
     remote_rdp_state_callback state_callback;

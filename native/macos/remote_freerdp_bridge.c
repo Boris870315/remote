@@ -4,6 +4,7 @@
 #include <freerdp/codec/color.h>
 #include <freerdp/display.h>
 #include <freerdp/channels/disp.h>
+#include <freerdp/client/cmdline.h>
 #include <freerdp/gdi/gdi.h>
 #include <freerdp/input.h>
 #include <freerdp/settings.h>
@@ -129,6 +130,19 @@ static BOOL configure(remote_rdp_session* session, const remote_rdp_config* conf
            freerdp_settings_set_uint32(settings, FreeRDP_ColorDepth, 32) &&
            freerdp_settings_set_bool(settings, FreeRDP_SupportDisplayControl, TRUE) &&
            freerdp_settings_set_bool(settings, FreeRDP_DynamicResolutionUpdate, TRUE) &&
+           freerdp_settings_set_bool(settings, FreeRDP_UseMultimon,
+                                     config->use_all_monitors != 0) &&
+           freerdp_settings_set_bool(settings, FreeRDP_SpanMonitors,
+                                     config->use_all_monitors != 0) &&
+           freerdp_settings_set_bool(settings, FreeRDP_RedirectClipboard,
+                                     !config->view_only && config->redirect_clipboard) &&
+           freerdp_settings_set_bool(settings, FreeRDP_RedirectPrinters,
+                                     !config->view_only && config->redirect_printers) &&
+           freerdp_settings_set_bool(settings, FreeRDP_RedirectDrives,
+                                     !config->view_only && config->redirect_drives) &&
+           freerdp_settings_set_bool(settings, FreeRDP_DeviceRedirection,
+                                     !config->view_only &&
+                                     (config->redirect_printers || config->redirect_drives)) &&
            freerdp_settings_set_bool(settings, FreeRDP_IgnoreCertificate,
                                      config->allow_untrusted_certificate != 0);
 }
@@ -137,7 +151,10 @@ uint32_t remote_rdp_session_connect(remote_rdp_session* session, const remote_rd
     if (!session || !session->instance || !config || !config->hostname) return 1u;
     session->config = *config;
     session->stopping = 0;
-    if (!configure(session, config) || !freerdp_connect(session->instance)) {
+    if (!configure(session, config) ||
+        !freerdp_client_load_addins(session->instance->context->channels,
+                                    session->instance->context->settings) ||
+        !freerdp_connect(session->instance)) {
         uint32_t error = freerdp_get_last_error(session->instance->context);
         snprintf(session->last_error, sizeof(session->last_error), "%s",
                  freerdp_get_last_error_string(error));
@@ -149,15 +166,27 @@ uint32_t remote_rdp_session_connect(remote_rdp_session* session, const remote_rd
         freerdp_settings_set_string(session->instance->context->settings, FreeRDP_Password, "");
     }
     if (config->state_callback) config->state_callback(config->callback_state, 1u, 0u, "connected");
+    uint32_t disconnect_error = 0u;
     while (!session->stopping && !freerdp_shall_disconnect_context(session->instance->context)) {
         HANDLE handles[64] = { 0 };
         DWORD count = freerdp_get_event_handles(session->instance->context, handles, 64);
         if (!count || WaitForMultipleObjects(count, handles, FALSE, 100) == WAIT_FAILED ||
-            !freerdp_check_event_handles(session->instance->context)) break;
+            !freerdp_check_event_handles(session->instance->context)) {
+            disconnect_error = freerdp_get_last_error(session->instance->context);
+            if (!disconnect_error) disconnect_error = 3u;
+            break;
+        }
     }
+    if (!session->stopping && !disconnect_error)
+        disconnect_error = freerdp_get_last_error(session->instance->context);
     freerdp_disconnect(session->instance);
-    if (config->state_callback) config->state_callback(config->callback_state, 2u, 0u, "disconnected");
-    return 0u;
+    const char* disconnect_message = disconnect_error
+        ? freerdp_get_last_error_string(disconnect_error) : "disconnected";
+    if (disconnect_error)
+        snprintf(session->last_error, sizeof(session->last_error), "%s", disconnect_message);
+    if (config->state_callback)
+        config->state_callback(config->callback_state, 2u, disconnect_error, disconnect_message);
+    return disconnect_error;
 }
 
 void remote_rdp_session_disconnect(remote_rdp_session* session) {
