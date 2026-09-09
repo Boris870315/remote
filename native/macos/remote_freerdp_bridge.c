@@ -5,6 +5,8 @@
 #include <freerdp/display.h>
 #include <freerdp/channels/disp.h>
 #include <freerdp/client/cmdline.h>
+#include <freerdp/addin.h>
+#include <freerdp/client/channels.h>
 #include <freerdp/gdi/gdi.h>
 #include <freerdp/input.h>
 #include <freerdp/settings.h>
@@ -14,6 +16,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <pthread.h>
 
 struct remote_rdp_session {
     freerdp* instance;
@@ -27,6 +30,12 @@ typedef struct remote_context {
     rdpContext base;
     remote_rdp_session* owner;
 } remote_context;
+
+static pthread_once_t addin_provider_once = PTHREAD_ONCE_INIT;
+
+static void register_addin_provider(void) {
+    (void)freerdp_register_addin_provider(freerdp_channels_load_static_addin_entry, 0);
+}
 
 static remote_rdp_session* owner_from_context(rdpContext* context) {
     return context ? ((remote_context*)context)->owner : NULL;
@@ -86,6 +95,7 @@ uint32_t remote_rdp_get_capabilities(remote_rdp_capabilities* capabilities) {
 }
 
 remote_rdp_session* remote_rdp_session_new(void) {
+    (void)pthread_once(&addin_provider_once, register_addin_provider);
     remote_rdp_session* session = calloc(1, sizeof(*session));
     if (!session) return NULL;
     session->instance = freerdp_new();
@@ -93,6 +103,7 @@ remote_rdp_session* remote_rdp_session_new(void) {
         strncpy(session->last_error, "freerdp_new failed", sizeof(session->last_error) - 1);
     } else {
         session->instance->ContextSize = sizeof(remote_context);
+        session->instance->LoadChannels = freerdp_client_load_channels;
         session->instance->PostConnect = remote_post_connect;
         session->instance->PostDisconnect = remote_post_disconnect;
         session->instance->VerifyX509Certificate = remote_verify_certificate;
@@ -151,13 +162,15 @@ uint32_t remote_rdp_session_connect(remote_rdp_session* session, const remote_rd
     if (!session || !session->instance || !config || !config->hostname) return 1u;
     session->config = *config;
     session->stopping = 0;
-    if (!configure(session, config) ||
-        !freerdp_client_load_addins(session->instance->context->channels,
-                                    session->instance->context->settings) ||
-        !freerdp_connect(session->instance)) {
+    if (!configure(session, config)) {
+        snprintf(session->last_error, sizeof(session->last_error),
+                 "FreeRDP settings configuration failed");
+        return 2u;
+    }
+    if (!freerdp_connect(session->instance)) {
         uint32_t error = freerdp_get_last_error(session->instance->context);
-        snprintf(session->last_error, sizeof(session->last_error), "%s",
-                 freerdp_get_last_error_string(error));
+        const char* message = error ? freerdp_get_last_error_string(error) : "FreeRDP connection failed";
+        snprintf(session->last_error, sizeof(session->last_error), "%s", message);
         return error ? error : 2u;
     }
     if (config->password) {
