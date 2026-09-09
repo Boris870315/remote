@@ -61,7 +61,10 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
             stage = "set-endpoint";
             client.Server = request.Endpoint.Host;
             client.UserName = request.Username ?? string.Empty;
-            client.Domain = string.Empty;
+            if (!string.IsNullOrWhiteSpace(request.Domain))
+            {
+                client.Domain = request.Domain;
+            }
             stage = "set-display";
             client.DesktopWidth = Math.Max(640, (int)Bounds.Width);
             client.DesktopHeight = Math.Max(480, (int)Bounds.Height);
@@ -99,10 +102,13 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
             if (request.PasswordUtf8 is { Length: > 0 })
             {
                 stage = "set-credential";
-                var passwordProvider = (IMsTscNonScriptable)clientObject;
-                var passwordResult = passwordProvider.SetClearTextPassword(
-                    System.Text.Encoding.UTF8.GetString(request.PasswordUtf8.Span));
-                Marshal.ThrowExceptionForHR(passwordResult);
+                var clearTextPassword = System.Text.Encoding.UTF8.GetString(request.PasswordUtf8.Span);
+                if (!TrySetComProperty(advanced, "ClearTextPassword", clearTextPassword))
+                {
+                    var passwordProvider = (IMsTscNonScriptable)clientObject;
+                    var passwordResult = passwordProvider.SetClearTextPassword(clearTextPassword);
+                    Marshal.ThrowExceptionForHR(passwordResult);
+                }
             }
             stage = "connect";
             client.Connect();
@@ -335,6 +341,19 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
             target,
             [value],
             CultureInfo.InvariantCulture);
+
+    private static bool TrySetComProperty(object target, string name, object? value)
+    {
+        try
+        {
+            SetComProperty(target, name, value);
+            return true;
+        }
+        catch (Exception exception) when (IsComInvocationException(exception))
+        {
+            return false;
+        }
+    }
 
     private static object GetComProperty(object target, string name) =>
         target.GetType().InvokeMember(

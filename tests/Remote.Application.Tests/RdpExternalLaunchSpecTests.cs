@@ -8,6 +8,15 @@ namespace Remote.Application.Tests;
 public sealed class RdpExternalLaunchSpecTests
 {
     [Fact]
+    public void Request_KeepsUsernameAndDomainAsSeparateUnmodifiedValues()
+    {
+        var request = CreateRequest() with { Username = "AAA", Domain = null };
+
+        Assert.Equal("AAA", request.Username);
+        Assert.Null(request.Domain);
+    }
+
+    [Fact]
     public void Windows_WithAllMonitors_BuildsPromptedMstscLaunchWhenNoIdentityCardExists()
     {
         var request = CreateRequest() with
