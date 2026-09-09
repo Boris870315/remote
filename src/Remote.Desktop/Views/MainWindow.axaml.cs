@@ -256,12 +256,12 @@ public partial class MainWindow : Window
             _viewModel?.SetEmbeddedRdpFrame(sessionId, frame));
         var runtime = new MacOsRdpRuntime(session, sink);
         session.FrameReceived += sink.Publish;
-        session.StateChanged += (state, message) =>
+        session.StateChanged += (state, errorCode, message) =>
         {
             if (state == 2 && _macRdpSessions.ContainsKey(sessionId))
                 Dispatcher.UIThread.Post(() =>
                     _ = _viewModel?.HandleEmbeddedRdpFailureAsync(sessionId,
-                        string.IsNullOrWhiteSpace(message) ? "RDP 工作階段已中斷" : message));
+                        MacOsFreeRdpSession.DescribeError(errorCode, message)));
         };
         _macRdpSessions.Add(sessionId, runtime);
         try

@@ -17,7 +17,7 @@ internal sealed class MacOsFreeRdpSession : IAsyncDisposable
     private bool _disposing;
 
     public event Action<byte[], int, int, int>? FrameReceived;
-    public event Action<uint, string>? StateChanged;
+    public event Action<uint, uint, string>? StateChanged;
 
     public bool SendMouse(ushort x, ushort y, byte buttonMask) =>
         _session != nint.Zero && SessionSendMouse(_session, x, y, buttonMask) == 0;
@@ -52,13 +52,13 @@ internal sealed class MacOsFreeRdpSession : IAsyncDisposable
         {
             throw new InvalidOperationException("內嵌 FreeRDP bridge 不完整，請重新建置應用程式。", exception);
         }
-        if (_session == nint.Zero) throw new InvalidOperationException("FreeRDP session allocation failed.");
+        if (_session == nint.Zero) throw new InvalidOperationException("無法建立 FreeRDP 工作階段。");
     }
 
     public Task ConnectAsync(RdpExternalLaunchRequest request, int width, int height)
     {
         ArgumentNullException.ThrowIfNull(request);
-        if (_connectionTask is not null) throw new InvalidOperationException("FreeRDP session already started.");
+        if (_connectionTask is not null) throw new InvalidOperationException("FreeRDP 工作階段已啟動。");
         var config = new NativeConfig(request, width, height, _frameCallback, _stateCallback);
         _connectionTask = Task.Run(() =>
         {
@@ -87,9 +87,43 @@ internal sealed class MacOsFreeRdpSession : IAsyncDisposable
             throw new InvalidOperationException(
                 "TLS 憑證不受信任。此 Windows 主機通常使用自簽 RDP 憑證；請編輯連線，將憑證政策改為 PromptOnUntrusted，僅在本次工作階段接受後再連線。");
         }
-        throw new InvalidOperationException(string.IsNullOrWhiteSpace(nativeMessage)
-            ? $"FreeRDP connection failed (0x{result:X8})."
-            : $"FreeRDP connection failed (0x{result:X8}): {nativeMessage}");
+        throw new InvalidOperationException(DescribeError(result, nativeMessage));
+    }
+
+    internal static string DescribeError(uint errorCode, string? nativeMessage)
+    {
+        var stage = nativeMessage switch
+        {
+            { } text when text.Contains("event loop has no event handles", StringComparison.OrdinalIgnoreCase) =>
+                "RDP 事件迴圈沒有可用的事件控制代碼",
+            { } text when text.Contains("event wait failed", StringComparison.OrdinalIgnoreCase) =>
+                "RDP 事件等待失敗",
+            { } text when text.Contains("event processing failed", StringComparison.OrdinalIgnoreCase) =>
+                "RDP 事件處理失敗",
+            { } text when text.Contains("server requested disconnect", StringComparison.OrdinalIgnoreCase) =>
+                "遠端主機要求中斷 RDP 工作階段",
+            _ => null
+        };
+
+        var reason = stage ?? errorCode switch
+        {
+            0x00020004 or 0x00020005 => "無法解析遠端主機名稱",
+            0x00020006 => "無法建立 RDP 連線",
+            0x00020008 => "TLS 連線失敗",
+            0x0002000C => "安全性協商失敗",
+            0x0002000D => "傳輸層連線失敗",
+            0x0002000E => "使用者密碼已過期",
+            0x0002000F or 0x00020013 => "使用者必須變更密碼後才能登入",
+            0x00020012 => "使用者帳號已停用",
+            0x00020014 => "登入失敗，請檢查帳號、密碼與網域",
+            0x00020015 => "密碼錯誤",
+            0x00020018 => "使用者帳號已鎖定",
+            0x0002001B => "缺少登入帳號或密碼",
+            0x0002001C => "等待遠端桌面啟用逾時",
+            _ => "RDP 工作階段失敗"
+        };
+
+        return $"{reason}（HRESULT=0x{errorCode:X8}）";
     }
 
     private void HandleFrame(nint state, nint pixels, uint width, uint height, uint stride)
@@ -104,7 +138,7 @@ internal sealed class MacOsFreeRdpSession : IAsyncDisposable
     {
         var text = Marshal.PtrToStringUTF8(message) ?? string.Empty;
         if (stateCode == 1) _connected.TrySetResult();
-        if (!_disposing || stateCode != 2) StateChanged?.Invoke(stateCode, text);
+        if (!_disposing || stateCode != 2) StateChanged?.Invoke(stateCode, errorCode, text);
     }
 
     public async ValueTask DisposeAsync()
