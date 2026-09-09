@@ -66,8 +66,9 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
                 client.Domain = request.Domain;
             }
             stage = "set-display";
-            client.DesktopWidth = Math.Max(640, (int)Bounds.Width);
-            client.DesktopHeight = Math.Max(480, (int)Bounds.Height);
+            var initialPixelSize = GetPhysicalPixelSize(Bounds.Size);
+            client.DesktopWidth = Math.Max(640, initialPixelSize.Width);
+            client.DesktopHeight = Math.Max(480, initialPixelSize.Height);
             var selectedMonitorIndex = Math.Max(0, request.Display.MonitorIndex ?? 0);
             _useMultimon = request.Display.MonitorSelection is Remote.Application.Connections.MonitorSelection.All ||
                 selectedMonitorIndex > 0;
@@ -287,9 +288,9 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
         // Avalonia layout uses device-independent pixels while SetWindowPos
         // requires physical pixels. Without this conversion, a 200% Windows
         // display makes the RDP HWND exactly half the intended width/height.
-        var renderScaling = TopLevel.GetTopLevel(this)?.RenderScaling ?? 1d;
-        var width = Math.Max(1, (int)Math.Ceiling(size.Width * renderScaling));
-        var height = Math.Max(1, (int)Math.Ceiling(size.Height * renderScaling));
+        var pixelSize = GetPhysicalPixelSize(size);
+        var width = pixelSize.Width;
+        var height = pixelSize.Height;
         _ = SetWindowPos(
             _window,
             nint.Zero,
@@ -298,8 +299,31 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
             width,
             height,
             SwpNoZOrder | SwpNoActivate | SwpShowWindow);
+        // AtlAxWin can resize without propagating the new client rectangle to
+        // the hosted RDP ActiveX window. mRemoteNG handles the equivalent AxHost
+        // issue by explicitly sizing the control to its containing panel.
+        var activeXWindow = GetWindow(_window, GwChild);
+        if (activeXWindow != nint.Zero)
+        {
+            _ = SetWindowPos(
+                activeXWindow,
+                nint.Zero,
+                0,
+                0,
+                width,
+                height,
+                SwpNoZOrder | SwpNoActivate | SwpShowWindow);
+        }
         _ = InvalidateRect(_window, nint.Zero, false);
         _ = UpdateWindow(_window);
+    }
+
+    private PixelSize GetPhysicalPixelSize(Size size)
+    {
+        var renderScaling = TopLevel.GetTopLevel(this)?.RenderScaling ?? 1d;
+        return new PixelSize(
+            Math.Max(1, (int)Math.Ceiling(size.Width * renderScaling)),
+            Math.Max(1, (int)Math.Ceiling(size.Height * renderScaling)));
     }
 
     protected override void DestroyNativeControlCore(IPlatformHandle control)
@@ -439,6 +463,10 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
     private const uint SwpNoZOrder = 0x0004;
     private const uint SwpNoActivate = 0x0010;
     private const uint SwpShowWindow = 0x0040;
+    private const uint GwChild = 5;
+
+    [DllImport("user32.dll")]
+    private static extern nint GetWindow(nint window, uint command);
 
     [DllImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]

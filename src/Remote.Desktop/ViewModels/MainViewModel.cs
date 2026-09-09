@@ -64,6 +64,8 @@ public sealed partial class MainViewModel : ViewModelBase
     private VaultId _primaryVaultId = new(Guid.NewGuid());
     private VaultAutoLockController _autoLockController = new(new VaultLockSettings());
     private CancellationTokenSource? _secretRevealCancellation;
+    private bool _loadingIdentitySecretForReveal;
+    private bool _identitySecretWasEdited;
 
     public event Func<SessionId, RdpExternalLaunchRequest, Task>? EmbeddedRdpRequested;
 
@@ -831,6 +833,24 @@ public sealed partial class MainViewModel : ViewModelBase
     [RelayCommand]
     private async Task RevealEditableSecretsAsync()
     {
+        if (_editingCredentialId is { } credentialId &&
+            NewIdentitySecret.Length == 0 &&
+            _vault is not null &&
+            !IsVaultLocked)
+        {
+            var revealed = _vault.Reveal(credentialId);
+            try
+            {
+                _loadingIdentitySecretForReveal = true;
+                NewIdentitySecret = Encoding.UTF8.GetString(revealed);
+            }
+            finally
+            {
+                _loadingIdentitySecretForReveal = false;
+                System.Security.Cryptography.CryptographicOperations.ZeroMemory(revealed);
+            }
+        }
+
         _secretRevealCancellation?.Cancel();
         _secretRevealCancellation?.Dispose();
         _secretRevealCancellation = new CancellationTokenSource();
@@ -850,6 +870,14 @@ public sealed partial class MainViewModel : ViewModelBase
 
     partial void OnAreEditableSecretsVisibleChanged(bool value) =>
         OnPropertyChanged(nameof(EditableSecretMask));
+
+    partial void OnNewIdentitySecretChanged(string value)
+    {
+        if (!_loadingIdentitySecretForReveal)
+        {
+            _identitySecretWasEdited = true;
+        }
+    }
 
     [RelayCommand]
     private async Task AddIdentityCardAsync()
@@ -885,7 +913,9 @@ public sealed partial class MainViewModel : ViewModelBase
             Username = username,
             Domain = string.IsNullOrWhiteSpace(NewIdentityDomain) ? null : NewIdentityDomain.Trim(),
         };
-        byte[]? secret = NewIdentitySecret.Length == 0 ? null : Encoding.UTF8.GetBytes(NewIdentitySecret);
+        byte[]? secret = NewIdentitySecret.Length == 0 || (!isNew && !_identitySecretWasEdited)
+            ? null
+            : Encoding.UTF8.GetBytes(NewIdentitySecret);
         try
         {
             if (_editingCredentialId is null)
@@ -905,6 +935,7 @@ public sealed partial class MainViewModel : ViewModelBase
             NewIdentityUsername = string.Empty;
             NewIdentityDomain = string.Empty;
             _editingCredentialId = null;
+            _identitySecretWasEdited = false;
             OnPropertyChanged(nameof(IdentityEditorTitle));
             OnPropertyChanged(nameof(IdentitySaveLabel));
             OnPropertyChanged(nameof(IsEditingIdentity));
@@ -1213,6 +1244,7 @@ public sealed partial class MainViewModel : ViewModelBase
         NewIdentityUsername = credential.Username ?? string.Empty;
         NewIdentityDomain = credential.Domain ?? string.Empty;
         NewIdentitySecret = string.Empty;
+        _identitySecretWasEdited = false;
         OnPropertyChanged(nameof(IdentityEditorTitle));
         OnPropertyChanged(nameof(IdentitySaveLabel));
         OnPropertyChanged(nameof(IsEditingIdentity));
@@ -1227,6 +1259,7 @@ public sealed partial class MainViewModel : ViewModelBase
         NewIdentityUsername = string.Empty;
         NewIdentityDomain = string.Empty;
         NewIdentitySecret = string.Empty;
+        _identitySecretWasEdited = false;
         OnPropertyChanged(nameof(IdentityEditorTitle));
         OnPropertyChanged(nameof(IdentitySaveLabel));
         OnPropertyChanged(nameof(IsEditingIdentity));
