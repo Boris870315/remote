@@ -6,6 +6,7 @@
 #include <freerdp/channels/disp.h>
 #include <freerdp/client/cmdline.h>
 #include <freerdp/addin.h>
+#include <freerdp/client.h>
 #include <freerdp/client/channels.h>
 #include <freerdp/gdi/gdi.h>
 #include <freerdp/input.h>
@@ -66,6 +67,20 @@ static BOOL remote_desktop_resize(rdpContext* context) {
         freerdp_settings_get_uint32(context->settings, FreeRDP_DesktopHeight));
 }
 
+static BOOL remote_pre_connect(freerdp* instance) {
+    if (!instance || !instance->context || !instance->context->pubSub) return FALSE;
+    if (PubSub_SubscribeChannelConnected(instance->context->pubSub,
+                                         freerdp_client_OnChannelConnectedEventHandler) < 0)
+        return FALSE;
+    if (PubSub_SubscribeChannelDisconnected(instance->context->pubSub,
+                                            freerdp_client_OnChannelDisconnectedEventHandler) < 0) {
+        PubSub_UnsubscribeChannelConnected(instance->context->pubSub,
+                                           freerdp_client_OnChannelConnectedEventHandler);
+        return FALSE;
+    }
+    return TRUE;
+}
+
 static BOOL remote_post_connect(freerdp* instance) {
     if (!gdi_init(instance, PIXEL_FORMAT_BGRA32)) return FALSE;
     instance->context->update->BeginPaint = remote_begin_paint;
@@ -75,7 +90,12 @@ static BOOL remote_post_connect(freerdp* instance) {
 }
 
 static void remote_post_disconnect(freerdp* instance) {
-    if (instance && instance->context && instance->context->gdi) gdi_free(instance);
+    if (!instance || !instance->context) return;
+    PubSub_UnsubscribeChannelConnected(instance->context->pubSub,
+                                       freerdp_client_OnChannelConnectedEventHandler);
+    PubSub_UnsubscribeChannelDisconnected(instance->context->pubSub,
+                                          freerdp_client_OnChannelDisconnectedEventHandler);
+    if (instance->context->gdi) gdi_free(instance);
 }
 
 static int remote_verify_certificate(freerdp* instance, const BYTE* data, size_t length,
@@ -111,6 +131,7 @@ remote_rdp_session* remote_rdp_session_new(void) {
     } else {
         session->instance->ContextSize = sizeof(remote_context);
         session->instance->LoadChannels = freerdp_client_load_channels;
+        session->instance->PreConnect = remote_pre_connect;
         session->instance->PostConnect = remote_post_connect;
         session->instance->PostDisconnect = remote_post_disconnect;
         session->instance->VerifyX509Certificate = remote_verify_certificate;
