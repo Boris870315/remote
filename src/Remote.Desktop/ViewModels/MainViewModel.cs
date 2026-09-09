@@ -511,6 +511,57 @@ public sealed partial class MainViewModel : ViewModelBase
             : MonitorOptions[Math.Clamp(selectedIndex, 0, count - 1)];
     }
 
+    public async Task UpdateSelectedRdpSettingsAsync(
+        bool useAllMonitors,
+        bool redirectClipboard,
+        bool redirectPrinters,
+        bool redirectDrives)
+    {
+        if (SelectedConnection is not { Profile.ProtocolId: "rdp" } selected)
+        {
+            return;
+        }
+
+        var current = RdpConnectionSettings.FromProtocolSettings(selected.Profile.ProtocolSettings);
+        var monitorSelection = useAllMonitors ? MonitorSelection.All : MonitorSelection.Single;
+        if (selected.Profile.Display.MonitorSelection == monitorSelection &&
+            current.RedirectClipboard == redirectClipboard &&
+            current.RedirectPrinters == redirectPrinters &&
+            current.RedirectDrives == redirectDrives)
+        {
+            return;
+        }
+
+        var updatedSettings = current with
+        {
+            RedirectClipboard = redirectClipboard,
+            RedirectPrinters = redirectPrinters,
+            RedirectDrives = redirectDrives,
+        };
+        var updated = selected with
+        {
+            Profile = selected.Profile with
+            {
+                Display = selected.Profile.Display with
+                {
+                    MonitorSelection = monitorSelection,
+                    MonitorIndex = useAllMonitors ? null : selected.Profile.Display.MonitorIndex ?? 0,
+                },
+                ProtocolSettings = updatedSettings.ToProtocolSettings(),
+            },
+        };
+        Connections[Connections.IndexOf(selected)] = updated;
+        SelectedConnection = updated;
+        RebuildConnectionTree(updated.Profile.Id);
+        if (!IsVaultLocked)
+        {
+            await SaveWorkspaceAsync();
+        }
+
+        SessionStatusLabel = "RDP 工作階段權限已儲存；新設定會套用到下一個 Session";
+        AddAuditEvent($"變更 RDP 工作階段權限：{updated.Name}");
+    }
+
     public string IdentityEditorTitle => _editingCredentialId is null ? "新增身份卡" : "編輯身份卡";
 
     public string IdentitySaveLabel => _editingCredentialId is null ? "加密儲存身份卡" : "儲存身份卡變更";

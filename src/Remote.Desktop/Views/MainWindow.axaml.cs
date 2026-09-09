@@ -255,6 +255,20 @@ public partial class MainWindow : Window
         ApplyRemoteSurfaceScale();
     }
 
+    private async void UpdateInspectorRdpSettings(object? sender, RoutedEventArgs e)
+    {
+        if (_viewModel is null || !_viewModel.IsRdpSelected)
+        {
+            return;
+        }
+
+        await _viewModel.UpdateSelectedRdpSettingsAsync(
+            InspectorAllMonitors.IsChecked is true,
+            InspectorRedirectClipboard.IsChecked is true,
+            InspectorRedirectPrinters.IsChecked is true,
+            InspectorRedirectDrives.IsChecked is true);
+    }
+
     private void ApplyRemoteSurfaceScale()
     {
         var mode = _viewModel?.SelectedConnection?.Profile.Display.ScaleMode ??

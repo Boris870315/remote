@@ -26,7 +26,6 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
     private bool _hasConnected;
     private bool _disconnectRequested;
     private int _connectingTicks;
-    private DispatcherTimer? _resizeTimer;
     private bool _useMultimon;
 
     public event Action<string>? UnexpectedlyDisconnected;
@@ -129,7 +128,6 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
     {
         _disconnectRequested = true;
         _connectionMonitor?.Stop();
-        _resizeTimer?.Stop();
         _connectionReady?.TrySetCanceled();
         if (_rdpClient is not null)
         {
@@ -197,45 +195,12 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
 
     private void ScheduleDisplayResize()
     {
-        if (!_hasConnected || _useMultimon || _disconnectRequested) return;
-        _resizeTimer ??= new DispatcherTimer(TimeSpan.FromMilliseconds(350), DispatcherPriority.Background, (_, _) =>
-        {
-            _resizeTimer?.Stop();
-            if (_rdpClient is null || !_hasConnected || _disconnectRequested) return;
-            var width = (uint)Math.Clamp((int)Bounds.Width, 200, 8192);
-            var height = (uint)Math.Clamp((int)Bounds.Height, 200, 8192);
-            try
-            {
-                var client = (IMsTscAxDispatch)_rdpClient;
-                if (!TryReconnectDisplay(_rdpClient, width, height))
-                {
-                    client.DesktopWidth = (int)width;
-                    client.DesktopHeight = (int)height;
-                }
-            }
-            catch (Exception exception) when (IsComInvocationException(exception))
-            {
-                /* SmartSizing remains the safe fallback. */
-            }
-        });
-        _resizeTimer.Stop();
-        _resizeTimer.Start();
-    }
-
-    private static bool TryReconnectDisplay(object client, uint width, uint height)
-    {
-        try
-        {
-            // IMsRdpClient8.Reconnect asks the server to recreate the remote
-            // desktop at the new size. A non-zero status means the control did
-            // not accept the resize; SmartSizing remains the visual fallback.
-            var status = InvokeComMethod(client, "Reconnect", width, height);
-            return status is not null && Convert.ToInt32(status, CultureInfo.InvariantCulture) == 0;
-        }
-        catch (Exception exception) when (IsComInvocationException(exception))
-        {
-            return false;
-        }
+        // AtlAxWin resizes the ActiveX surface with its native child window.
+        // Do not call the RDP Reconnect method here: several installed client
+        // revisions recreate the desktop as a blank surface during Avalonia
+        // full-screen and layout transitions. SmartSizing keeps the existing
+        // session visible while the native host follows the new bounds.
+        ResizeNativeSurface(Bounds.Size);
     }
 
     private static int TryGetExtendedDisconnectReason(object client)
@@ -332,7 +297,6 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
         {
             _disconnectRequested = true;
             _connectionMonitor?.Stop();
-            _resizeTimer?.Stop();
             if (_rdpClient is not null)
             {
                 TryDisconnect(_rdpClient);
