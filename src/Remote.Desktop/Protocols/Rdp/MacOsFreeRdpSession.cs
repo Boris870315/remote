@@ -67,10 +67,12 @@ internal sealed class MacOsFreeRdpSession : IAsyncDisposable
                 return SessionConnect(_session, in config.Value);
             }
         });
-        return AwaitConnectionAsync(_connectionTask, _connected.Task);
+        return AwaitConnectionAsync(_connectionTask, _connected.Task,
+            request.Settings.CertificatePolicy);
     }
 
-    private async Task AwaitConnectionAsync(Task<uint> connection, Task connected)
+    private async Task AwaitConnectionAsync(Task<uint> connection, Task connected,
+        RdpCertificatePolicy certificatePolicy)
     {
         if (await Task.WhenAny(connection, connected).ConfigureAwait(false) == connected)
         {
@@ -80,6 +82,11 @@ internal sealed class MacOsFreeRdpSession : IAsyncDisposable
 
         var result = await connection.ConfigureAwait(false);
         var nativeMessage = Marshal.PtrToStringUTF8(SessionLastError(_session));
+        if (result == 0x00020008 && certificatePolicy is RdpCertificatePolicy.RequireTrusted)
+        {
+            throw new InvalidOperationException(
+                "TLS 憑證不受信任。此 Windows 主機通常使用自簽 RDP 憑證；請編輯連線，將憑證政策改為 PromptOnUntrusted，僅在本次工作階段接受後再連線。");
+        }
         throw new InvalidOperationException(string.IsNullOrWhiteSpace(nativeMessage)
             ? $"FreeRDP connection failed (0x{result:X8})."
             : $"FreeRDP connection failed (0x{result:X8}): {nativeMessage}");
