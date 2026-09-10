@@ -17,7 +17,7 @@ internal sealed class MacOsFreeRdpSession : IAsyncDisposable
     private Task<uint>? _connectionTask;
     private bool _disposing;
 
-    public event Action<byte[], int, int, int>? FrameReceived;
+    public event Action<byte[], int, int, int, int, int, int>? FrameReceived;
     public event Action<uint, uint, string>? StateChanged;
 
     public bool SendMouse(ushort x, ushort y, byte buttonMask) =>
@@ -39,7 +39,7 @@ internal sealed class MacOsFreeRdpSession : IAsyncDisposable
         _stateCallback = HandleState;
         try
         {
-            if (GetCapabilities(out var capabilities) != 0 || capabilities.AbiVersion != 2 ||
+            if (GetCapabilities(out var capabilities) != 0 || capabilities.AbiVersion != 3 ||
                 capabilities.SupportsFramebuffer == 0)
                 throw new InvalidOperationException("內嵌 FreeRDP bridge 版本不相容，請重新建置應用程式。");
             _session = SessionNew();
@@ -131,12 +131,33 @@ internal sealed class MacOsFreeRdpSession : IAsyncDisposable
             : $"{reason}（HRESULT=0x{errorCode:X8}）";
     }
 
-    private void HandleFrame(nint state, nint pixels, uint width, uint height, uint stride)
+    private void HandleFrame(nint state, nint pixels, uint width, uint height, uint stride,
+        uint dirtyX, uint dirtyY, uint dirtyWidth, uint dirtyHeight)
     {
-        if (pixels == nint.Zero || width == 0 || height == 0 || stride == 0) return;
-        var copy = new byte[checked((int)(stride * height))];
-        Marshal.Copy(pixels, copy, 0, copy.Length);
-        FrameReceived?.Invoke(copy, checked((int)width), checked((int)height), checked((int)stride));
+        if (pixels == nint.Zero || width == 0 || height == 0 || stride == 0 ||
+            dirtyWidth == 0 || dirtyHeight == 0) return;
+        var handler = FrameReceived;
+        if (handler is null) return;
+        var packedStride = checked((int)dirtyWidth * 4);
+        var length = checked(packedStride * (int)dirtyHeight);
+        var copy = ArrayPool<byte>.Shared.Rent(length);
+        try
+        {
+            for (var row = 0; row < dirtyHeight; row++)
+            {
+                var source = IntPtr.Add(pixels,
+                    checked((int)(((dirtyY + row) * stride) + (dirtyX * 4))));
+                Marshal.Copy(source, copy, checked((int)row * packedStride), packedStride);
+            }
+            handler(copy, checked((int)width), checked((int)height),
+                checked((int)dirtyX), checked((int)dirtyY), packedStride,
+                checked((int)dirtyHeight));
+        }
+        catch
+        {
+            ArrayPool<byte>.Shared.Return(copy);
+            throw;
+        }
     }
 
     private void HandleState(nint state, uint stateCode, uint errorCode, nint message)
@@ -160,7 +181,8 @@ internal sealed class MacOsFreeRdpSession : IAsyncDisposable
     }
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-    private delegate void FrameCallback(nint state, nint pixels, uint width, uint height, uint stride);
+    private delegate void FrameCallback(nint state, nint pixels, uint width, uint height, uint stride,
+        uint dirtyX, uint dirtyY, uint dirtyWidth, uint dirtyHeight);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate void StateCallback(nint state, uint stateCode, uint errorCode, nint message);
 

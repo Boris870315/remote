@@ -10,6 +10,7 @@
 #include <freerdp/client/channels.h>
 #include <freerdp/gdi/gdi.h>
 #include <freerdp/input.h>
+#include <freerdp/scancode.h>
 #include <freerdp/settings.h>
 #include <freerdp/update.h>
 #include <winpr/synch.h>
@@ -18,9 +19,11 @@
 #include <stdio.h>
 #include <string.h>
 #include <pthread.h>
+#include <time.h>
 
 struct remote_rdp_session {
     freerdp* instance;
+    rdpContext* client_context;
     char last_error[512];
     remote_rdp_config config;
     volatile int stopping;
@@ -28,6 +31,31 @@ struct remote_rdp_session {
     pthread_mutex_t state_mutex;
     uint32_t pending_width;
     uint32_t pending_height;
+    HANDLE input_event;
+    struct remote_input_event {
+        uint8_t type;
+        uint8_t button_mask;
+        uint8_t down;
+        int16_t wheel_delta;
+        uint16_t x;
+        uint16_t y;
+        uint32_t virtual_key;
+    } input_queue[512];
+    size_t input_head;
+    size_t input_count;
+    uint8_t input_focused;
+    uint64_t last_frame_time_ms;
+    uint8_t has_frame;
+    int32_t dirty_left;
+    int32_t dirty_top;
+    int32_t dirty_right;
+    int32_t dirty_bottom;
+};
+
+enum {
+    REMOTE_INPUT_MOUSE = 1,
+    REMOTE_INPUT_WHEEL = 2,
+    REMOTE_INPUT_KEY = 3
 };
 
 typedef struct remote_context {
@@ -55,9 +83,53 @@ static BOOL remote_begin_paint(rdpContext* context) {
 static BOOL remote_end_paint(rdpContext* context) {
     remote_rdp_session* session = owner_from_context(context);
     if (!session || !context->gdi || !session->config.frame_callback) return TRUE;
+    HGDI_RGN invalid = context->gdi->primary->hdc->hwnd->invalid;
+    const int32_t desktop_width = context->gdi->width;
+    const int32_t desktop_height = context->gdi->height;
+    int32_t left = 0;
+    int32_t top = 0;
+    int32_t right = desktop_width;
+    int32_t bottom = desktop_height;
+    if (session->has_frame && invalid && !invalid->null) {
+        left = invalid->x;
+        top = invalid->y;
+        right = invalid->x + invalid->w;
+        bottom = invalid->y + invalid->h;
+    }
+    left = left < 0 ? 0 : left;
+    top = top < 0 ? 0 : top;
+    right = right > desktop_width ? desktop_width : right;
+    bottom = bottom > desktop_height ? desktop_height : bottom;
+    if (right <= left || bottom <= top) return TRUE;
+
+    if (session->dirty_right <= session->dirty_left) {
+        session->dirty_left = left;
+        session->dirty_top = top;
+        session->dirty_right = right;
+        session->dirty_bottom = bottom;
+    } else {
+        if (left < session->dirty_left) session->dirty_left = left;
+        if (top < session->dirty_top) session->dirty_top = top;
+        if (right > session->dirty_right) session->dirty_right = right;
+        if (bottom > session->dirty_bottom) session->dirty_bottom = bottom;
+    }
+    struct timespec now = { 0 };
+    if (clock_gettime(CLOCK_MONOTONIC, &now) == 0) {
+        const uint64_t now_ms = ((uint64_t)now.tv_sec * 1000u) +
+                                ((uint64_t)now.tv_nsec / 1000000u);
+        if (session->last_frame_time_ms && now_ms - session->last_frame_time_ms < 33u)
+            return TRUE;
+        session->last_frame_time_ms = now_ms;
+    }
     session->config.frame_callback(session->config.callback_state, context->gdi->primary_buffer,
                                    (uint32_t)context->gdi->width, (uint32_t)context->gdi->height,
-                                   context->gdi->stride);
+                                   context->gdi->stride,
+                                   (uint32_t)session->dirty_left, (uint32_t)session->dirty_top,
+                                   (uint32_t)(session->dirty_right - session->dirty_left),
+                                   (uint32_t)(session->dirty_bottom - session->dirty_top));
+    session->has_frame = 1;
+    session->dirty_left = session->dirty_top = 0;
+    session->dirty_right = session->dirty_bottom = 0;
     return TRUE;
 }
 
@@ -105,6 +177,30 @@ static int remote_verify_certificate(freerdp* instance, const BYTE* data, size_t
     return session && session->config.allow_untrusted_certificate ? 2 : 0;
 }
 
+static BOOL remote_client_new(freerdp* instance, rdpContext* context) {
+    if (!instance || !context) return FALSE;
+    instance->ContextSize = sizeof(remote_context);
+    instance->LoadChannels = freerdp_client_load_channels;
+    instance->PreConnect = remote_pre_connect;
+    instance->PostConnect = remote_post_connect;
+    instance->PostDisconnect = remote_post_disconnect;
+    instance->VerifyX509Certificate = remote_verify_certificate;
+    return TRUE;
+}
+
+static void remote_client_free(freerdp* instance, rdpContext* context) {
+    (void)instance;
+    (void)context;
+}
+
+static int remote_client_start(rdpContext* context) {
+    return context ? 0 : -1;
+}
+
+static int remote_client_stop(rdpContext* context) {
+    return context ? 0 : -1;
+}
+
 uint32_t remote_rdp_get_capabilities(remote_rdp_capabilities* capabilities) {
     if (!capabilities) return 1u;
     memset(capabilities, 0, sizeof(*capabilities));
@@ -125,22 +221,33 @@ remote_rdp_session* remote_rdp_session_new(void) {
         free(session);
         return NULL;
     }
-    session->instance = freerdp_new();
-    if (!session->instance) {
-        strncpy(session->last_error, "freerdp_new failed", sizeof(session->last_error) - 1);
+    session->input_event = CreateEvent(NULL, TRUE, FALSE, NULL);
+    if (!session->input_event) {
+        pthread_mutex_destroy(&session->state_mutex);
+        free(session);
+        return NULL;
+    }
+    RDP_CLIENT_ENTRY_POINTS entry_points = { 0 };
+    entry_points.Size = sizeof(RDP_CLIENT_ENTRY_POINTS);
+    entry_points.Version = RDP_CLIENT_INTERFACE_VERSION;
+    entry_points.ContextSize = sizeof(remote_context);
+    entry_points.ClientNew = remote_client_new;
+    entry_points.ClientFree = remote_client_free;
+    entry_points.ClientStart = remote_client_start;
+    entry_points.ClientStop = remote_client_stop;
+    session->client_context = freerdp_client_context_new(&entry_points);
+    if (!session->client_context) {
+        strncpy(session->last_error, "freerdp_client_context_new failed",
+                sizeof(session->last_error) - 1);
     } else {
-        session->instance->ContextSize = sizeof(remote_context);
-        session->instance->LoadChannels = freerdp_client_load_channels;
-        session->instance->PreConnect = remote_pre_connect;
-        session->instance->PostConnect = remote_post_connect;
-        session->instance->PostDisconnect = remote_post_disconnect;
-        session->instance->VerifyX509Certificate = remote_verify_certificate;
-        if (!freerdp_context_new(session->instance)) {
-            freerdp_free(session->instance);
+        session->instance = freerdp_client_get_instance(session->client_context);
+        ((remote_context*)session->client_context)->owner = session;
+        if (!session->instance || freerdp_client_start(session->client_context) != 0) {
+            freerdp_client_context_free(session->client_context);
+            session->client_context = NULL;
             session->instance = NULL;
-            strncpy(session->last_error, "freerdp_context_new failed", sizeof(session->last_error) - 1);
-        } else {
-            ((remote_context*)session->instance->context)->owner = session;
+            strncpy(session->last_error, "freerdp_client_start failed",
+                    sizeof(session->last_error) - 1);
         }
     }
     return session;
@@ -148,13 +255,18 @@ remote_rdp_session* remote_rdp_session_new(void) {
 
 void remote_rdp_session_free(remote_rdp_session* session) {
     if (!session) return;
-    if (session->instance) freerdp_free(session->instance);
+    if (session->client_context) {
+        (void)freerdp_client_stop(session->client_context);
+        freerdp_client_context_free(session->client_context);
+    }
+    CloseHandle(session->input_event);
     pthread_mutex_destroy(&session->state_mutex);
     memset(session, 0, sizeof(*session));
     free(session);
 }
 
 static void apply_pending_resize(remote_rdp_session* session) {
+    if (!session->config.use_all_monitors) return;
     uint32_t width = 0;
     uint32_t height = 0;
     pthread_mutex_lock(&session->state_mutex);
@@ -177,6 +289,71 @@ static void apply_pending_resize(remote_rdp_session* session) {
     pthread_mutex_unlock(&session->state_mutex);
 }
 
+static BOOL enqueue_input(remote_rdp_session* session, const struct remote_input_event* event) {
+    BOOL accepted = FALSE;
+    pthread_mutex_lock(&session->state_mutex);
+    if (session->input_count < 512) {
+        const size_t tail = (session->input_head + session->input_count) % 512;
+        session->input_queue[tail] = *event;
+        session->input_count++;
+        accepted = TRUE;
+    }
+    pthread_mutex_unlock(&session->state_mutex);
+    if (accepted) SetEvent(session->input_event);
+    return accepted;
+}
+
+static BOOL process_pending_input(remote_rdp_session* session) {
+    for (;;) {
+        struct remote_input_event event = { 0 };
+        pthread_mutex_lock(&session->state_mutex);
+        if (!session->input_count) {
+            ResetEvent(session->input_event);
+            pthread_mutex_unlock(&session->state_mutex);
+            return TRUE;
+        }
+        event = session->input_queue[session->input_head];
+        session->input_head = (session->input_head + 1) % 512;
+        session->input_count--;
+        pthread_mutex_unlock(&session->state_mutex);
+
+        rdpInput* input = session->instance->context->input;
+        if (!session->input_focused && input->FocusInEvent) {
+            session->input_focused = input->FocusInEvent(input, 0u) ? 1u : 0u;
+        }
+        if (event.type == REMOTE_INPUT_MOUSE) {
+            static const uint16_t flags[3] = {
+                PTR_FLAGS_BUTTON1, PTR_FLAGS_BUTTON3, PTR_FLAGS_BUTTON2
+            };
+            for (uint8_t index = 0; index < 3; index++) {
+                const uint8_t bit = (uint8_t)(1u << index);
+                if ((session->mouse_buttons & bit) == (event.button_mask & bit)) continue;
+                uint16_t event_flags = flags[index];
+                if (event.button_mask & bit) event_flags |= PTR_FLAGS_DOWN;
+                if (!input->MouseEvent ||
+                    !input->MouseEvent(input, event_flags, event.x, event.y)) continue;
+            }
+            session->mouse_buttons = event.button_mask;
+            if (input->MouseEvent)
+                (void)input->MouseEvent(input, PTR_FLAGS_MOVE, event.x, event.y);
+        } else if (event.type == REMOTE_INPUT_WHEEL) {
+            uint16_t magnitude = (uint16_t)(event.wheel_delta < 0
+                ? -event.wheel_delta : event.wheel_delta);
+            if (magnitude > 0x00ffu) magnitude = 0x00ffu;
+            uint16_t flags = (uint16_t)(PTR_FLAGS_WHEEL | magnitude);
+            if (event.wheel_delta < 0) flags |= PTR_FLAGS_WHEEL_NEGATIVE;
+            if (input->MouseEvent) (void)input->MouseEvent(input, flags, event.x, event.y);
+        } else if (event.type == REMOTE_INPUT_KEY) {
+            DWORD scan_code = GetVirtualScanCodeFromVirtualKeyCode(
+                event.virtual_key, WINPR_KBD_TYPE_IBM_ENHANCED);
+            if (!scan_code || !input->KeyboardEvent) continue;
+            uint16_t flags = event.down ? 0u : KBD_FLAGS_RELEASE;
+            if (RDP_SCANCODE_EXTENDED(scan_code)) flags |= KBD_FLAGS_EXTENDED;
+            (void)input->KeyboardEvent(input, flags, RDP_SCANCODE_CODE(scan_code));
+        }
+    }
+}
+
 const char* remote_rdp_session_last_error(const remote_rdp_session* session) {
     return session ? session->last_error : "invalid session";
 }
@@ -191,6 +368,7 @@ static BOOL configure(remote_rdp_session* session, const remote_rdp_config* conf
            freerdp_settings_set_uint32(settings, FreeRDP_DesktopWidth, config->width) &&
            freerdp_settings_set_uint32(settings, FreeRDP_DesktopHeight, config->height) &&
            freerdp_settings_set_uint32(settings, FreeRDP_ColorDepth, 32) &&
+           freerdp_settings_set_bool(settings, FreeRDP_FastPathInput, FALSE) &&
            freerdp_settings_set_bool(settings, FreeRDP_SupportDisplayControl,
                                      config->use_all_monitors != 0) &&
            freerdp_settings_set_bool(settings, FreeRDP_DynamicResolutionUpdate,
@@ -199,15 +377,10 @@ static BOOL configure(remote_rdp_session* session, const remote_rdp_config* conf
                                      config->use_all_monitors != 0) &&
            freerdp_settings_set_bool(settings, FreeRDP_SpanMonitors,
                                      config->use_all_monitors != 0) &&
-           freerdp_settings_set_bool(settings, FreeRDP_RedirectClipboard,
-                                     !config->view_only && config->redirect_clipboard) &&
-           freerdp_settings_set_bool(settings, FreeRDP_RedirectPrinters,
-                                     !config->view_only && config->redirect_printers) &&
-           freerdp_settings_set_bool(settings, FreeRDP_RedirectDrives,
-                                     !config->view_only && config->redirect_drives) &&
-           freerdp_settings_set_bool(settings, FreeRDP_DeviceRedirection,
-                                     !config->view_only &&
-                                     (config->redirect_printers || config->redirect_drives)) &&
+           freerdp_settings_set_bool(settings, FreeRDP_RedirectClipboard, FALSE) &&
+           freerdp_settings_set_bool(settings, FreeRDP_RedirectPrinters, FALSE) &&
+           freerdp_settings_set_bool(settings, FreeRDP_RedirectDrives, FALSE) &&
+           freerdp_settings_set_bool(settings, FreeRDP_DeviceRedirection, FALSE) &&
            freerdp_settings_set_bool(settings, FreeRDP_IgnoreCertificate,
                                      config->allow_untrusted_certificate != 0);
 }
@@ -215,8 +388,14 @@ static BOOL configure(remote_rdp_session* session, const remote_rdp_config* conf
 uint32_t remote_rdp_session_connect(remote_rdp_session* session, const remote_rdp_config* config) {
     if (!session || !session->instance || !config || !config->hostname) return 1u;
     session->config = *config;
+    session->config.use_all_monitors = 0;
     session->stopping = 0;
-    if (!configure(session, config)) {
+    session->input_focused = 0;
+    session->last_frame_time_ms = 0;
+    session->has_frame = 0;
+    session->dirty_left = session->dirty_top = 0;
+    session->dirty_right = session->dirty_bottom = 0;
+    if (!configure(session, &session->config)) {
         snprintf(session->last_error, sizeof(session->last_error),
                  "FreeRDP settings configuration failed");
         return 2u;
@@ -236,7 +415,8 @@ uint32_t remote_rdp_session_connect(remote_rdp_session* session, const remote_rd
     session->last_error[0] = '\0';
     while (!session->stopping && !freerdp_shall_disconnect_context(session->instance->context)) {
         HANDLE handles[64] = { 0 };
-        DWORD count = freerdp_get_event_handles(session->instance->context, handles, 64);
+        handles[0] = session->input_event;
+        DWORD count = freerdp_get_event_handles(session->instance->context, &handles[1], 63);
         if (!count) {
             disconnect_error = freerdp_get_last_error(session->instance->context);
             if (!disconnect_error) disconnect_error = 3u;
@@ -244,7 +424,8 @@ uint32_t remote_rdp_session_connect(remote_rdp_session* session, const remote_rd
                      "RDP event loop has no event handles; HRESULT=0x%08x", disconnect_error);
             break;
         }
-        DWORD wait_result = WaitForMultipleObjects(count, handles, FALSE, 100);
+        count++;
+        DWORD wait_result = WaitForMultipleObjects(count, handles, FALSE, INFINITE);
         if (wait_result == WAIT_FAILED) {
             disconnect_error = freerdp_get_last_error(session->instance->context);
             if (!disconnect_error) disconnect_error = 3u;
@@ -260,6 +441,12 @@ uint32_t remote_rdp_session_connect(remote_rdp_session* session, const remote_rd
             snprintf(session->last_error, sizeof(session->last_error),
                      "RDP event processing failed; HRESULT=0x%08x; serverError=0x%08x; ultimatum=%d",
                      disconnect_error, server_error, ultimatum);
+            break;
+        }
+        if (!process_pending_input(session)) {
+            disconnect_error = 3u;
+            snprintf(session->last_error, sizeof(session->last_error),
+                     "RDP input processing failed; HRESULT=0x%08x", disconnect_error);
             break;
         }
         apply_pending_resize(session);
@@ -291,16 +478,10 @@ uint32_t remote_rdp_session_send_mouse(remote_rdp_session* session, uint16_t x, 
     if (!session || !session->instance || !session->instance->context ||
         !session->instance->context->input) return 1u;
     if (session->config.view_only) return 2u;
-    static const uint16_t flags[3] = { PTR_FLAGS_BUTTON1, PTR_FLAGS_BUTTON3, PTR_FLAGS_BUTTON2 };
-    for (uint8_t index = 0; index < 3; index++) {
-        const uint8_t bit = (uint8_t)(1u << index);
-        if ((session->mouse_buttons & bit) == (button_mask & bit)) continue;
-        uint16_t event_flags = flags[index];
-        if (button_mask & bit) event_flags |= PTR_FLAGS_DOWN;
-        if (!freerdp_input_send_mouse_event(session->instance->context->input, event_flags, x, y)) return 3u;
-    }
-    session->mouse_buttons = button_mask;
-    return freerdp_input_send_mouse_event(session->instance->context->input, PTR_FLAGS_MOVE, x, y) ? 0u : 3u;
+    const struct remote_input_event event = {
+        .type = REMOTE_INPUT_MOUSE, .button_mask = button_mask, .x = x, .y = y
+    };
+    return enqueue_input(session, &event) ? 0u : 3u;
 }
 
 uint32_t remote_rdp_session_send_wheel(remote_rdp_session* session, uint16_t x, uint16_t y,
@@ -308,11 +489,10 @@ uint32_t remote_rdp_session_send_wheel(remote_rdp_session* session, uint16_t x, 
     if (!session || !session->instance || !session->instance->context ||
         !session->instance->context->input) return 1u;
     if (session->config.view_only) return 2u;
-    uint16_t magnitude = (uint16_t)(delta < 0 ? -delta : delta);
-    if (magnitude > 0x00ffu) magnitude = 0x00ffu;
-    uint16_t flags = (uint16_t)(PTR_FLAGS_WHEEL | magnitude);
-    if (delta < 0) flags |= PTR_FLAGS_WHEEL_NEGATIVE;
-    return freerdp_input_send_mouse_event(session->instance->context->input, flags, x, y) ? 0u : 3u;
+    const struct remote_input_event event = {
+        .type = REMOTE_INPUT_WHEEL, .wheel_delta = delta, .x = x, .y = y
+    };
+    return enqueue_input(session, &event) ? 0u : 3u;
 }
 
 uint32_t remote_rdp_session_send_key(remote_rdp_session* session, uint32_t virtual_key,
@@ -320,10 +500,10 @@ uint32_t remote_rdp_session_send_key(remote_rdp_session* session, uint32_t virtu
     if (!session || !session->instance || !session->instance->context ||
         !session->instance->context->input) return 1u;
     if (session->config.view_only) return 2u;
-    DWORD scan_code = GetVirtualScanCodeFromVirtualKeyCode(virtual_key, WINPR_KBD_TYPE_IBM_ENHANCED);
-    if (!scan_code) return 4u;
-    return freerdp_input_send_keyboard_event_ex(session->instance->context->input, down != 0, FALSE,
-                                                 scan_code) ? 0u : 3u;
+    const struct remote_input_event event = {
+        .type = REMOTE_INPUT_KEY, .down = down, .virtual_key = virtual_key
+    };
+    return enqueue_input(session, &event) ? 0u : 3u;
 }
 
 uint32_t remote_rdp_session_resize(remote_rdp_session* session, uint32_t width, uint32_t height) {
@@ -334,5 +514,6 @@ uint32_t remote_rdp_session_resize(remote_rdp_session* session, uint32_t width, 
     session->pending_width = width;
     session->pending_height = height;
     pthread_mutex_unlock(&session->state_mutex);
+    SetEvent(session->input_event);
     return 0u;
 }

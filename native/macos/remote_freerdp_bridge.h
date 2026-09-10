@@ -5,12 +5,14 @@
 extern "C" {
 #endif
 
-#define REMOTE_FREERDP_ABI_VERSION 2u
+#define REMOTE_FREERDP_ABI_VERSION 3u
 #define REMOTE_RDP_EXPORT __attribute__((visibility("default")))
 
 typedef struct remote_rdp_session remote_rdp_session;
 typedef void (*remote_rdp_frame_callback)(void* state, const uint8_t* pixels,
-                                          uint32_t width, uint32_t height, uint32_t stride);
+                                          uint32_t width, uint32_t height, uint32_t stride,
+                                          uint32_t dirty_x, uint32_t dirty_y,
+                                          uint32_t dirty_width, uint32_t dirty_height);
 typedef void (*remote_rdp_state_callback)(void* state, uint32_t state_code,
                                           uint32_t error_code, const char* message);
 

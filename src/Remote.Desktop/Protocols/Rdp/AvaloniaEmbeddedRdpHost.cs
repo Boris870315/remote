@@ -111,7 +111,7 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
             TrySetComProperty(
                 advanced,
                 "AuthenticationLevel",
-                request.Settings.CertificatePolicy is RdpCertificatePolicy.RequireTrusted ? 1u : 2u);
+                GetAuthenticationLevel(request.Settings.CertificatePolicy));
             if (!string.IsNullOrWhiteSpace(request.Settings.GatewayHost))
             {
                 stage = "set-gateway";
@@ -151,6 +151,14 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
             throw wrapped;
         }
     }
+
+    // AuthenticationLevel 2 still displays Microsoft's native "cannot verify"
+    // confirmation. That prompt can be detached from an embedded ActiveX host and
+    // leaves the in-app session blocked. PromptOnUntrusted is the existing persisted
+    // opt-in used by the FreeRDP host to accept a self-signed certificate, so use the
+    // equivalent non-blocking ActiveX level on Windows as well.
+    internal static uint GetAuthenticationLevel(RdpCertificatePolicy certificatePolicy) =>
+        certificatePolicy is RdpCertificatePolicy.RequireTrusted ? 1u : 0u;
 
     public Task DisconnectAsync()
     {

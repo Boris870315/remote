@@ -1567,7 +1567,9 @@ public sealed partial class MainViewModel : ViewModelBase
 
     public void SetEmbeddedRdpFrame(SessionId sessionId, WriteableBitmap? frame)
     {
-        if (SelectedSessionTab?.SessionId == sessionId) RemoteFrame = frame;
+        if (SelectedSessionTab?.SessionId != sessionId) return;
+        RemoteFrame = frame;
+        OnPropertyChanged(nameof(RemoteFrame));
     }
 
     public string RuntimeStatus => _sessionService.GetStatus().State;
@@ -2016,9 +2018,16 @@ public sealed partial class MainViewModel : ViewModelBase
         await LaunchConnectionAsync(connection);
     }
 
-    public Task OpenConnectionInNewTabAsync(ConnectionProfile connection)
+    public Task ActivateConnectionFromTreeAsync(ConnectionProfile connection)
     {
         ArgumentNullException.ThrowIfNull(connection);
+        var existing = SessionTabs.FirstOrDefault(tab => tab.Connection.Id == connection.Id);
+        if (existing is not null)
+        {
+            SelectSessionTab(existing);
+            SessionStatusLabel = $"已切換至 {existing.ConnectionName}";
+            return Task.CompletedTask;
+        }
         var sessionConnection = connection with
         {
             DefaultAccessMode = IsViewOnly ? SessionAccessMode.ViewOnly : SessionAccessMode.Interactive,

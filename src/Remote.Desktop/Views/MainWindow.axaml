@@ -99,7 +99,6 @@
               </Grid>
             </Grid>
             <StackPanel IsVisible="{Binding ShowSessionPlaceholder}" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="10"><TextBlock Text="{Binding SelectedConnection.Name, FallbackValue=Windows Prod}" FontSize="24" FontWeight="SemiBold" HorizontalAlignment="Center"/><TextBlock Text="遠端畫面 · RDP／VNC／SSH2" Foreground="#A9B8CE"/><TextBlock Text="{Binding AccessModeLabel}" Foreground="#9FA5FF" FontWeight="Bold"/><Button Margin="0,8,0,0" Padding="14,8" Background="#5B5CE2" Foreground="White" CornerRadius="8" Content="準備工作階段" Command="{Binding OpenSelectedSessionCommand}"/><TextBlock MaxWidth="440" Text="{Binding SessionStatusLabel}" TextAlignment="Center" TextWrapping="Wrap" Foreground="#A9B8CE" FontSize="11"/></StackPanel>
-            <Border VerticalAlignment="Bottom" HorizontalAlignment="Center" Margin="0,0,0,24" Background="#111827" CornerRadius="10" Padding="14,8"><TextBlock Text="●　●　●" Foreground="#78A7E6"/></Border>
             <Button x:Name="ExitSessionFullScreenButton" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="12" Padding="11,7" Content="離開全螢幕　Esc" Classes="tool" IsVisible="False" Click="ToggleFullScreen"/>
           </Grid>
         </Border>

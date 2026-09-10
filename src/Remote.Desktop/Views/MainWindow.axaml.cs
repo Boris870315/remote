@@ -424,7 +424,7 @@ public partial class MainWindow : Window
         }
 
         e.Handled = true;
-        await _viewModel.OpenConnectionInNewTabAsync(connection);
+        await _viewModel.ActivateConnectionFromTreeAsync(connection);
     }
 
     private void ToggleInspector(object? sender, RoutedEventArgs e)
