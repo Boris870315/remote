@@ -121,6 +121,7 @@ public partial class MainWindow : Window
             _viewModel.EmbeddedWebNavigateRequested -= NavigateEmbeddedWebAsync;
             _viewModel.EmbeddedWebCloseRequested -= CloseEmbeddedWebAsync;
             _viewModel.VncClipboardTextReceived -= HandleVncClipboardTextReceived;
+            _viewModel.SessionViewOnlyChanged -= HandleSessionViewOnlyChanged;
         }
 
         base.OnDataContextChanged(e);
@@ -134,9 +135,19 @@ public partial class MainWindow : Window
             _viewModel.EmbeddedWebNavigateRequested += NavigateEmbeddedWebAsync;
             _viewModel.EmbeddedWebCloseRequested += CloseEmbeddedWebAsync;
             _viewModel.VncClipboardTextReceived += HandleVncClipboardTextReceived;
+            _viewModel.SessionViewOnlyChanged += HandleSessionViewOnlyChanged;
         }
 
         ApplyAdaptiveLayout();
+    }
+
+    private void HandleSessionViewOnlyChanged(SessionId sessionId, bool viewOnly)
+    {
+        if (!_macRdpSessions.TryGetValue(sessionId, out var runtime)) return;
+        runtime.Session.SetViewOnly(viewOnly);
+        if (!viewOnly) return;
+        runtime.ControlDown = runtime.AltDown = runtime.ShiftDown = false;
+        runtime.SuppressPasteKeyUp = false;
     }
 
     private async Task ConnectEmbeddedRdpAsync(
@@ -307,6 +318,10 @@ public partial class MainWindow : Window
     {
         public MacOsFreeRdpSession Session { get; } = session;
         public AvaloniaFreeRdpFrameSink FrameSink { get; } = frameSink;
+        public bool ControlDown { get; set; }
+        public bool AltDown { get; set; }
+        public bool ShiftDown { get; set; }
+        public bool SuppressPasteKeyUp { get; set; }
         public int Width { get; set; }
         public int Height { get; set; }
     }
@@ -380,10 +395,12 @@ public partial class MainWindow : Window
         }
 
         await _viewModel.UpdateSelectedRdpSettingsAsync(
-            InspectorAllMonitors.IsChecked is true,
+            _viewModel.SelectedUsesAllMonitors,
             InspectorRedirectClipboard.IsChecked is true,
             InspectorRedirectPrinters.IsChecked is true,
-            InspectorRedirectDrives.IsChecked is true);
+            InspectorRedirectDrives.IsChecked is true,
+            InspectorRedirectMicrophone.IsChecked is true,
+            InspectorRedirectCamera.IsChecked is true);
     }
 
     private void ApplyRemoteSurfaceScale()
@@ -523,6 +540,7 @@ public partial class MainWindow : Window
 
     private async void HandleRemotePointerWheelChanged(object? sender, PointerWheelEventArgs e)
     {
+        if (_viewModel?.IsViewOnly is true) { e.Handled = true; return; }
         if (!TryMapRemotePoint(e.GetPosition(RemoteSurface), out var x, out var y))
         {
             return;
@@ -545,6 +563,7 @@ public partial class MainWindow : Window
 
     private async Task SendRemotePointerAsync(PointerEventArgs e, bool focus)
     {
+        if (_viewModel?.IsViewOnly is true) { e.Handled = true; return; }
         if (_viewModel?.RemoteFrame is null)
         {
             return;
@@ -574,11 +593,39 @@ public partial class MainWindow : Window
     private async void HandleRemoteKeyDown(object? sender, KeyEventArgs e) =>
         await SendRemoteKeyDownAsync(e);
 
-    private async void HandleRemoteKeyUp(object? sender, KeyEventArgs e) =>
+    private async void HandleRemoteKeyUp(object? sender, KeyEventArgs e)
+    {
+        if (e.Key is Key.V && TryGetSelectedMacRdp(out var macRdp) &&
+            macRdp.SuppressPasteKeyUp)
+        {
+            macRdp.SuppressPasteKeyUp = false;
+            e.Handled = true;
+            return;
+        }
         await SendRemoteKeyAsync(e, false);
+    }
 
     private async Task SendRemoteKeyDownAsync(KeyEventArgs e)
     {
+        if (_viewModel?.IsViewOnly is true) { e.Handled = true; return; }
+        if (e.Key is Key.V && TryGetSelectedMacRdp(out var macRdp) &&
+            _viewModel?.SelectedRedirectsClipboard is true &&
+            (e.KeyModifiers.HasFlag(KeyModifiers.Meta) ||
+             e.KeyModifiers.HasFlag(KeyModifiers.Control)))
+        {
+            var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+            var text = clipboard is null ? null : await clipboard.TryGetTextAsync();
+            if (!string.IsNullOrEmpty(text))
+            {
+                // Release a Command/Control modifier that may already have been
+                // forwarded; Unicode input must not be interpreted as shortcuts.
+                SynchronizeMacRdpModifiers(macRdp, false, false, false);
+                macRdp.SuppressPasteKeyUp = true;
+                e.Handled = macRdp.Session.SendUnicodeText(text);
+                return;
+            }
+        }
+
         if (e.Key is Key.V && e.KeyModifiers.HasFlag(KeyModifiers.Control) &&
             _viewModel?.IsVncSessionActive is true)
         {
@@ -595,6 +642,7 @@ public partial class MainWindow : Window
 
     private void HandleVncClipboardTextReceived(string text)
     {
+        if (_viewModel?.IsViewOnly is true) return;
         _ = Dispatcher.UIThread.InvokeAsync(async () =>
         {
             var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
@@ -607,8 +655,34 @@ public partial class MainWindow : Window
 
     private async Task SendRemoteKeyAsync(KeyEventArgs e, bool isDown)
     {
+        if (_viewModel?.IsViewOnly is true) { e.Handled = true; return; }
         if (TryGetSelectedMacRdp(out var macRdp))
         {
+            if (OperatingSystem.IsMacOS())
+            {
+                // macOS does not consistently raise a separate Command/Control
+                // key event for a focused Avalonia Image. Derive and synchronize
+                // the Windows modifier state from every key event instead, so a
+                // Command+C event always reaches RDP as Ctrl-down, C-down.
+                var isControlKey = e.Key is Key.LeftCtrl or Key.RightCtrl or Key.LWin or Key.RWin;
+                var isAltKey = e.Key is Key.LeftAlt or Key.RightAlt;
+                var isShiftKey = e.Key is Key.LeftShift or Key.RightShift;
+                var wantsControl = isControlKey
+                    ? isDown
+                    : e.KeyModifiers.HasFlag(KeyModifiers.Control) ||
+                      e.KeyModifiers.HasFlag(KeyModifiers.Meta);
+                var wantsAlt = isAltKey ? isDown : e.KeyModifiers.HasFlag(KeyModifiers.Alt);
+                var wantsShift = isShiftKey ? isDown : e.KeyModifiers.HasFlag(KeyModifiers.Shift);
+
+                var modifiersSent = SynchronizeMacRdpModifiers(
+                    macRdp, wantsControl, wantsAlt, wantsShift);
+                if (isControlKey || isAltKey || isShiftKey)
+                {
+                    e.Handled = modifiersSent;
+                    return;
+                }
+            }
+
             var virtualKey = RdpVirtualKeyMapper.Map(e.Key);
             if (virtualKey is not null) e.Handled = macRdp.Session.SendKey(virtualKey.Value, isDown);
             return;
@@ -618,6 +692,28 @@ public partial class MainWindow : Window
         {
             e.Handled = await _viewModel.SendVncKeyAsync(keySym.Value, isDown);
         }
+    }
+
+    private static bool SynchronizeMacRdpModifiers(
+        MacOsRdpRuntime runtime, bool control, bool alt, bool shift)
+    {
+        var sent = true;
+        if (runtime.ControlDown != control)
+        {
+            sent &= runtime.Session.SendKey(0xA2, control); // VK_LCONTROL
+            runtime.ControlDown = control;
+        }
+        if (runtime.AltDown != alt)
+        {
+            sent &= runtime.Session.SendKey(0xA4, alt); // VK_LMENU
+            runtime.AltDown = alt;
+        }
+        if (runtime.ShiftDown != shift)
+        {
+            sent &= runtime.Session.SendKey(0xA0, shift); // VK_LSHIFT
+            runtime.ShiftDown = shift;
+        }
+        return sent;
     }
 
     private bool TryGetSelectedMacRdp(out MacOsRdpRuntime runtime)

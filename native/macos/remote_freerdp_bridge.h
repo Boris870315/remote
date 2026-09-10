@@ -5,7 +5,7 @@
 extern "C" {
 #endif
 
-#define REMOTE_FREERDP_ABI_VERSION 3u
+#define REMOTE_FREERDP_ABI_VERSION 4u
 #define REMOTE_RDP_EXPORT __attribute__((visibility("default")))
 
 typedef struct remote_rdp_session remote_rdp_session;
@@ -30,7 +30,8 @@ typedef struct remote_rdp_config {
     uint8_t redirect_clipboard;
     uint8_t redirect_printers;
     uint8_t redirect_drives;
-    uint8_t reserved[2];
+    uint8_t redirect_microphone;
+    uint8_t redirect_camera;
     void* callback_state;
     remote_rdp_frame_callback frame_callback;
     remote_rdp_state_callback state_callback;
@@ -62,8 +63,13 @@ REMOTE_RDP_EXPORT uint32_t remote_rdp_session_send_wheel(remote_rdp_session* ses
 REMOTE_RDP_EXPORT uint32_t remote_rdp_session_send_key(remote_rdp_session* session,
                                                         uint32_t virtual_key,
                                                         uint8_t down);
+REMOTE_RDP_EXPORT uint32_t remote_rdp_session_send_unicode(remote_rdp_session* session,
+                                                            uint16_t code,
+                                                            uint8_t down);
 REMOTE_RDP_EXPORT uint32_t remote_rdp_session_resize(remote_rdp_session* session,
                                                       uint32_t width, uint32_t height);
+REMOTE_RDP_EXPORT uint32_t remote_rdp_session_set_view_only(remote_rdp_session* session,
+                                                             uint8_t view_only);
 
 #if defined(__cplusplus)
 }

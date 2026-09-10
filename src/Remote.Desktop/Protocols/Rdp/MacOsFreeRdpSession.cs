@@ -29,8 +29,24 @@ internal sealed class MacOsFreeRdpSession : IAsyncDisposable
     public bool SendKey(uint virtualKey, bool down) =>
         _session != nint.Zero && SessionSendKey(_session, virtualKey, down ? (byte)1 : (byte)0) == 0;
 
+    public bool SendUnicodeText(string text)
+    {
+        if (_session == nint.Zero || string.IsNullOrEmpty(text)) return false;
+        var length = Math.Min(text.Length, 2048);
+        for (var index = 0; index < length; index++)
+        {
+            var code = text[index];
+            if (SessionSendUnicode(_session, code, 1) != 0 ||
+                SessionSendUnicode(_session, code, 0) != 0) return false;
+        }
+        return true;
+    }
+
     public bool Resize(int width, int height) => _session != nint.Zero &&
         SessionResize(_session, checked((uint)width), checked((uint)height)) == 0;
+
+    public bool SetViewOnly(bool viewOnly) => _session != nint.Zero &&
+        SessionSetViewOnly(_session, viewOnly ? (byte)1 : (byte)0) == 0;
 
     public MacOsFreeRdpSession()
     {
@@ -39,7 +55,7 @@ internal sealed class MacOsFreeRdpSession : IAsyncDisposable
         _stateCallback = HandleState;
         try
         {
-            if (GetCapabilities(out var capabilities) != 0 || capabilities.AbiVersion != 3 ||
+            if (GetCapabilities(out var capabilities) != 0 || capabilities.AbiVersion != 4 ||
                 capabilities.SupportsFramebuffer == 0)
                 throw new InvalidOperationException("內嵌 FreeRDP bridge 版本不相容，請重新建置應用程式。");
             _session = SessionNew();
@@ -194,7 +210,7 @@ internal sealed class MacOsFreeRdpSession : IAsyncDisposable
         public uint Width, Height;
         public byte ViewOnly, AllowUntrustedCertificate, UseAllMonitors;
         public byte RedirectClipboard, RedirectPrinters, RedirectDrives;
-        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 2)] public byte[] Reserved;
+        public byte RedirectMicrophone, RedirectCamera;
         public nint CallbackState;
         public FrameCallback Frame;
         public StateCallback State;
@@ -228,7 +244,9 @@ internal sealed class MacOsFreeRdpSession : IAsyncDisposable
                 RedirectClipboard = request.Settings.RedirectClipboard ? (byte)1 : (byte)0,
                 RedirectPrinters = request.Settings.RedirectPrinters ? (byte)1 : (byte)0,
                 RedirectDrives = request.Settings.RedirectDrives ? (byte)1 : (byte)0,
-                Reserved = new byte[2], Frame = frame, State = state,
+                RedirectMicrophone = request.Settings.RedirectMicrophone ? (byte)1 : (byte)0,
+                RedirectCamera = request.Settings.RedirectCamera ? (byte)1 : (byte)0,
+                Frame = frame, State = state,
             };
         }
         public void Dispose()
@@ -266,5 +284,7 @@ internal sealed class MacOsFreeRdpSession : IAsyncDisposable
     [DllImport(LibraryName, EntryPoint = "remote_rdp_session_send_mouse")] private static extern uint SessionSendMouse(nint session, ushort x, ushort y, byte buttonMask);
     [DllImport(LibraryName, EntryPoint = "remote_rdp_session_send_wheel")] private static extern uint SessionSendWheel(nint session, ushort x, ushort y, short delta);
     [DllImport(LibraryName, EntryPoint = "remote_rdp_session_send_key")] private static extern uint SessionSendKey(nint session, uint virtualKey, byte down);
+    [DllImport(LibraryName, EntryPoint = "remote_rdp_session_send_unicode")] private static extern uint SessionSendUnicode(nint session, ushort code, byte down);
     [DllImport(LibraryName, EntryPoint = "remote_rdp_session_resize")] private static extern uint SessionResize(nint session, uint width, uint height);
+    [DllImport(LibraryName, EntryPoint = "remote_rdp_session_set_view_only")] private static extern uint SessionSetViewOnly(nint session, byte viewOnly);
 }

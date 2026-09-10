@@ -1,6 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using Remote.Application.Sessions;
 using Remote.Application.Connections;
+using Remote.Protocols;
 
 namespace Remote.Desktop.ViewModels;
 
@@ -10,7 +11,7 @@ public sealed partial class SessionTabViewModel(
     string? displayName = null) : ViewModelBase
 {
     public SessionId SessionId { get; } = sessionId;
-    public ConnectionProfile Connection { get; } = connection;
+    public ConnectionProfile Connection { get; private set; } = connection;
     public string ConnectionName { get; } = displayName ?? connection.Name;
     public string ConnectionDetail => $"{Connection.Endpoint.Host}:{GetPort(Connection)}";
     public string ProtocolLabel => Connection.ProtocolId.ToUpperInvariant();
@@ -20,6 +21,18 @@ public sealed partial class SessionTabViewModel(
 
     [ObservableProperty]
     private bool isSelected;
+
+    [ObservableProperty]
+    private bool isViewOnly = connection.DefaultAccessMode is SessionAccessMode.ViewOnly;
+
+    public void SetViewOnly(bool value)
+    {
+        IsViewOnly = value;
+        Connection = Connection with
+        {
+            DefaultAccessMode = value ? SessionAccessMode.ViewOnly : SessionAccessMode.Interactive,
+        };
+    }
 
     private static int GetPort(ConnectionProfile connection) => connection.Endpoint.Port >= 0
         ? connection.Endpoint.Port

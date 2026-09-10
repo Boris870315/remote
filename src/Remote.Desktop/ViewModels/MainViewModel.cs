@@ -70,6 +70,7 @@ public sealed partial class MainViewModel : ViewModelBase
     public event Func<SessionId, RdpExternalLaunchRequest, Task>? EmbeddedRdpRequested;
 
     public event Action<string>? VncClipboardTextReceived;
+    public event Action<SessionId, bool>? SessionViewOnlyChanged;
     public event Func<SessionId, Task>? EmbeddedRdpCloseRequested;
     public event Func<SessionId, Uri, bool, Task>? EmbeddedWebRequested;
     public event Func<SessionId, Uri, Task>? EmbeddedWebNavigateRequested;
@@ -497,6 +498,10 @@ public sealed partial class MainViewModel : ViewModelBase
 
     public bool SelectedRedirectsDrives => SelectedRdpSettings.RedirectDrives;
 
+    public bool SelectedRedirectsMicrophone => SelectedRdpSettings.RedirectMicrophone;
+
+    public bool SelectedRedirectsCamera => SelectedRdpSettings.RedirectCamera;
+
     private RdpConnectionSettings SelectedRdpSettings => SelectedConnection is { Profile.ProtocolId: "rdp" } connection
         ? RdpConnectionSettings.FromProtocolSettings(connection.Profile.ProtocolSettings)
         : new RdpConnectionSettings();
@@ -536,7 +541,9 @@ public sealed partial class MainViewModel : ViewModelBase
         bool useAllMonitors,
         bool redirectClipboard,
         bool redirectPrinters,
-        bool redirectDrives)
+        bool redirectDrives,
+        bool redirectMicrophone,
+        bool redirectCamera)
     {
         if (SelectedConnection is not { Profile.ProtocolId: "rdp" } selected)
         {
@@ -548,7 +555,9 @@ public sealed partial class MainViewModel : ViewModelBase
         if (selected.Profile.Display.MonitorSelection == monitorSelection &&
             current.RedirectClipboard == redirectClipboard &&
             current.RedirectPrinters == redirectPrinters &&
-            current.RedirectDrives == redirectDrives)
+            current.RedirectDrives == redirectDrives &&
+            current.RedirectMicrophone == redirectMicrophone &&
+            current.RedirectCamera == redirectCamera)
         {
             return;
         }
@@ -558,6 +567,8 @@ public sealed partial class MainViewModel : ViewModelBase
             RedirectClipboard = redirectClipboard,
             RedirectPrinters = redirectPrinters,
             RedirectDrives = redirectDrives,
+            RedirectMicrophone = redirectMicrophone,
+            RedirectCamera = redirectCamera,
         };
         var updated = selected with
         {
@@ -1503,6 +1514,8 @@ public sealed partial class MainViewModel : ViewModelBase
         OnPropertyChanged(nameof(SelectedRedirectsClipboard));
         OnPropertyChanged(nameof(SelectedRedirectsPrinters));
         OnPropertyChanged(nameof(SelectedRedirectsDrives));
+        OnPropertyChanged(nameof(SelectedRedirectsMicrophone));
+        OnPropertyChanged(nameof(SelectedRedirectsCamera));
         OnPropertyChanged(nameof(HasSelectedConnection));
         OnPropertyChanged(nameof(ShowConnectionDetails));
         OnPropertyChanged(nameof(RequiresSessionCredentialInput));
@@ -3203,6 +3216,22 @@ public sealed partial class MainViewModel : ViewModelBase
         var result = _launchPolicy.Validate(_protocol, mode);
         AccessModeLabel = IsViewOnly ? "VIEW ONLY" : "INTERACTIVE";
         StatusDetail = result.Detail;
+        if (SelectedSessionTab is not { } tab || tab.IsViewOnly == IsViewOnly) return;
+        tab.SetViewOnly(IsViewOnly);
+        SessionViewOnlyChanged?.Invoke(tab.SessionId, IsViewOnly);
+        if (!string.Equals(tab.ProtocolLabel, "RDP", StringComparison.OrdinalIgnoreCase)) return;
+        var settings = RdpConnectionSettings.FromProtocolSettings(tab.Connection.ProtocolSettings);
+        var hasDevices = settings.RedirectPrinters || settings.RedirectDrives ||
+                         settings.RedirectMicrophone || settings.RedirectCamera;
+        if (IsViewOnly && hasDevices)
+        {
+            SessionStatusLabel = "VIEW ONLY 已立即阻擋輸入；正在重新連線以卸除裝置重新導向";
+            _ = ReconnectSelectedSessionAsync();
+        }
+        else if (!IsViewOnly && hasDevices)
+        {
+            SessionStatusLabel = "已恢復互動；重新連線後才會恢復裝置重新導向";
+        }
     }
 
     private static ConnectionProfile CreateConnection(string name, string protocolId, string endpoint) => new()

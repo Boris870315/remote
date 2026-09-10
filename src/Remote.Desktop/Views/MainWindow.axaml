@@ -51,6 +51,7 @@
       </Border>
       <Grid x:Name="SessionWorkspace" Grid.Column="2" RowDefinitions="40,*" Background="#0D1220">
         <Border x:Name="SessionTabs" Background="#141B29" BorderBrush="#293248" BorderThickness="0,0,0,1">
+          <Grid ColumnDefinitions="*,Auto">
           <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
             <ItemsControl ItemsSource="{Binding SessionTabs}">
               <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
@@ -64,6 +65,7 @@
                       <TextBlock Text="{Binding ConnectionName}" VerticalAlignment="Center"/>
                       <TextBlock Text="{Binding ProtocolLabel}" Foreground="#8FA0B8" FontSize="10" VerticalAlignment="Center"/>
                       <TextBlock Text="{Binding StateLabel}" Foreground="#A7E0BA" FontSize="10" VerticalAlignment="Center"/>
+                      <Border Background="#493F78" CornerRadius="4" Padding="5,2" IsVisible="{Binding IsViewOnly}"><TextBlock Text="VIEW ONLY" Foreground="#D5D2FF" FontSize="8" FontWeight="Bold"/></Border>
                         </StackPanel>
                       </Button>
                       <Button Content="×" Width="30" Background="Transparent" BorderThickness="0" Foreground="#A9B8CE"
@@ -74,6 +76,10 @@
               </ItemsControl.ItemTemplate>
             </ItemsControl>
           </ScrollViewer>
+          <Button Grid.Column="1" Width="38" Height="32" Margin="5,3,7,3"
+                  Content="⟳" FontSize="20" Padding="0" Classes="tool"
+                  ToolTip.Tip="重新整理目前工作階段畫面" Click="RefreshSession"/>
+          </Grid>
         </Border>
         <Border Grid.Row="1" Margin="10" CornerRadius="9" BorderBrush="#334762" BorderThickness="1" Background="#172941" ClipToBounds="True">
           <Grid>
@@ -112,17 +118,27 @@
           <StackPanel Spacing="6"><Grid ColumnDefinitions="*,Auto"><TextBlock Text="帳密來源" FontSize="10" Foreground="#7F8DA5"/><Button Grid.Column="1" Content="管理" Classes="tool" Command="{Binding BeginEditConnectionCommand}"/></Grid><Border Background="#20293B" BorderBrush="#414C68" BorderThickness="1" CornerRadius="8" Padding="10"><StackPanel Spacing="5"><TextBlock Text="{Binding SelectedCredentialName}" FontSize="12"/><TextBlock Text="{Binding SelectedCredentialUsername}" FontSize="10" Foreground="#8290A7"/><Border HorizontalAlignment="Left" Background="#493F78" CornerRadius="5" Padding="6,3"><TextBlock Text="{Binding SelectedCredentialSourceLabel}" Foreground="#C9C6FF" FontSize="9"/></Border></StackPanel></Border></StackPanel>
           <StackPanel Spacing="8">
             <Grid ColumnDefinitions="*,Auto"><TextBlock Text="工作階段權限" FontSize="10" Foreground="#7F8DA5"/><Button Grid.Column="1" Content="編輯權限" Classes="tool" Command="{Binding BeginEditConnectionCommand}"/></Grid>
-            <ToggleSwitch x:Name="InspectorAllMonitors" IsChecked="{Binding SelectedUsesAllMonitors, Mode=OneWay}" Content="跨全部螢幕" Tapped="UpdateInspectorRdpSettings"/>
             <ToggleSwitch IsChecked="{Binding IsViewOnly}" Content="View Only"/>
             <StackPanel Spacing="6" IsVisible="{Binding IsRdpSelected}">
               <TextBlock Text="裝置重新導向" FontSize="10" Foreground="#7F8DA5"/>
-              <CheckBox x:Name="InspectorRedirectClipboard" IsChecked="{Binding SelectedRedirectsClipboard, Mode=OneWay}" Content="文字剪貼簿" Tapped="UpdateInspectorRdpSettings"/>
+              <CheckBox x:Name="InspectorRedirectClipboard" IsChecked="{Binding SelectedRedirectsClipboard, Mode=OneWay}" Content="剪貼簿" Tapped="UpdateInspectorRdpSettings"/>
               <CheckBox x:Name="InspectorRedirectPrinters" IsChecked="{Binding SelectedRedirectsPrinters, Mode=OneWay}" Content="印表機" Tapped="UpdateInspectorRdpSettings"/>
               <CheckBox x:Name="InspectorRedirectDrives" IsChecked="{Binding SelectedRedirectsDrives, Mode=OneWay}" Content="磁碟機" Tapped="UpdateInspectorRdpSettings"/>
+              <CheckBox x:Name="InspectorRedirectMicrophone" IsChecked="{Binding SelectedRedirectsMicrophone, Mode=OneWay}" Content="麥克風" Tapped="UpdateInspectorRdpSettings"/>
+              <CheckBox x:Name="InspectorRedirectCamera" IsChecked="{Binding SelectedRedirectsCamera, Mode=OneWay}" Content="相機與其他視訊擷取裝置" Tapped="UpdateInspectorRdpSettings"/>
             </StackPanel>
             <TextBlock Text="{Binding StatusDetail}" FontSize="10" Foreground="#A9B8CE" TextWrapping="Wrap"/>
           </StackPanel>
-          <StackPanel Spacing="7"><TextBlock Text="工作階段控制" FontSize="10" Foreground="#7F8DA5"/><Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="7" RowSpacing="7"><Button Content="重新整理" Classes="tool" Click="RefreshSession"/><Button Grid.Column="1" Content="全螢幕" Classes="tool" Click="ToggleFullScreen"/><ComboBox Grid.Row="1" ItemsSource="{Binding DisplayScaleOptions}" SelectedItem="{Binding SelectedDisplayScaleOption}" SelectionChanged="ApplyDisplayScale"/><ComboBox Grid.Row="1" Grid.Column="1" ItemsSource="{Binding MonitorOptions}" SelectedItem="{Binding SelectedMonitorOption}" SelectionChanged="ApplyMonitorSelection"/></Grid><Border HorizontalAlignment="Left" Background="#493F78" CornerRadius="6" Padding="8,4" IsVisible="{Binding IsViewOnly}"><TextBlock Text="VIEW ONLY" Foreground="#D5D2FF" FontWeight="Bold" FontSize="10"/></Border></StackPanel>
+          <StackPanel Spacing="7">
+            <TextBlock Text="工作階段控制" FontSize="10" Foreground="#7F8DA5"/>
+            <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="7" RowSpacing="7">
+              <TextBlock Text="畫面比例" FontSize="9" Foreground="#7F8DA5"/>
+              <TextBlock Grid.Column="1" Text="遠端顯示範圍" FontSize="9" Foreground="#7F8DA5"/>
+              <ComboBox Grid.Row="1" ItemsSource="{Binding DisplayScaleOptions}" SelectedItem="{Binding SelectedDisplayScaleOption}" SelectionChanged="ApplyDisplayScale"/>
+              <ComboBox Grid.Row="1" Grid.Column="1" ItemsSource="{Binding MonitorOptions}" SelectedItem="{Binding SelectedMonitorOption}" SelectionChanged="ApplyMonitorSelection"/>
+            </Grid>
+            <Border HorizontalAlignment="Left" Background="#493F78" CornerRadius="6" Padding="8,4" IsVisible="{Binding IsViewOnly}"><TextBlock Text="VIEW ONLY" Foreground="#D5D2FF" FontWeight="Bold" FontSize="10"/></Border>
+          </StackPanel>
           <StackPanel Spacing="6" IsVisible="{Binding RequiresSessionCredentialInput}">
             <TextBlock Text="本次工作階段帳密（連線後清除密碼）" FontSize="10" Foreground="#7F8DA5"/>
             <TextBox Text="{Binding SessionUsername}" PlaceholderText="使用者名稱"/>
@@ -179,7 +195,7 @@
                 <TextBlock Text="外部 RDP 用戶端無法可靠執行 View Only；啟用時必須使用後續內嵌 Host。" FontSize="10" Foreground="#E5B96F" TextWrapping="Wrap" IsVisible="{Binding EditViewOnly}"/>
                 <StackPanel Spacing="6" IsVisible="{Binding IsEditingRdp}">
                   <TextBlock Text="裝置重新導向" FontSize="10" Foreground="#7F8DA5"/>
-                  <CheckBox IsChecked="{Binding EditRedirectClipboard}" Content="文字剪貼簿"/>
+                  <CheckBox IsChecked="{Binding EditRedirectClipboard}" Content="剪貼簿"/>
                   <CheckBox IsChecked="{Binding EditRedirectPrinters}" Content="印表機"/>
                   <CheckBox IsChecked="{Binding EditRedirectDrives}" Content="磁碟機"/>
                   <CheckBox IsChecked="{Binding EditRedirectMicrophone}" Content="麥克風"/>

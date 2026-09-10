@@ -33,7 +33,7 @@
   <Target Name="BuildMacOsFreeRdpBridge" BeforeTargets="Build"
           Condition="$([MSBuild]::IsOSPlatform('OSX'))">
     <MakeDir Directories="$(TargetDir)" />
-    <Exec Command="clang -dynamiclib -O2 -fvisibility=hidden -I/opt/homebrew/include/freerdp3 -I/opt/homebrew/include/winpr3 &quot;$(MSBuildProjectDirectory)/../../native/macos/remote_freerdp_bridge.c&quot; -L/opt/homebrew/lib -lfreerdp-client3 -lfreerdp3 -lwinpr3 -Wl,-rpath,/opt/homebrew/lib -o &quot;$(TargetDir)libremote-freerdp.dylib&quot;" />
+    <Exec Command="clang -dynamiclib -O2 -fvisibility=hidden -I/opt/homebrew/include/freerdp3 -I/opt/homebrew/include/winpr3 &quot;$(MSBuildProjectDirectory)/../../native/macos/remote_freerdp_bridge.c&quot; &quot;$(MSBuildProjectDirectory)/../../native/macos/remote_clipboard.m&quot; -framework AppKit -L/opt/homebrew/lib -lfreerdp-client3 -lfreerdp3 -lwinpr3 -Wl,-rpath,/opt/homebrew/lib -o &quot;$(TargetDir)libremote-freerdp.dylib&quot;" />
   </Target>
 
   <Target Name="BundleMacOsFreeRdpRuntime" AfterTargets="Publish"

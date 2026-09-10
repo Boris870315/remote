@@ -1,4 +1,5 @@
 #include "remote_freerdp_bridge.h"
+#include "remote_clipboard.h"
 
 #include <freerdp/freerdp.h>
 #include <freerdp/codec/color.h>
@@ -9,6 +10,7 @@
 #include <freerdp/client.h>
 #include <freerdp/client/channels.h>
 #include <freerdp/client/disp.h>
+#include <freerdp/client/cliprdr.h>
 #include <freerdp/gdi/gdi.h>
 #include <freerdp/input.h>
 #include <freerdp/scancode.h>
@@ -18,6 +20,7 @@
 #include <winpr/input.h>
 #include <winpr/sysinfo.h>
 #include <stdlib.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <string.h>
 #include <pthread.h>
@@ -40,13 +43,16 @@ struct remote_rdp_session {
         int16_t wheel_delta;
         uint16_t x;
         uint16_t y;
+        uint16_t unicode_code;
         uint32_t virtual_key;
-    } input_queue[512];
+    } input_queue[8192];
     size_t input_head;
     size_t input_count;
     uint8_t input_focused;
+    atomic_bool view_only_runtime;
     uint8_t display_control_ready;
     DispClientContext* display_control;
+    remote_clipboard* clipboard;
     uint8_t has_frame;
     uint8_t awaiting_full_refresh;
     uint8_t frame_pending;
@@ -62,7 +68,8 @@ struct remote_rdp_session {
 enum {
     REMOTE_INPUT_MOUSE = 1,
     REMOTE_INPUT_WHEEL = 2,
-    REMOTE_INPUT_KEY = 3
+    REMOTE_INPUT_KEY = 3,
+    REMOTE_INPUT_UNICODE = 4
 };
 
 typedef struct remote_context {
@@ -101,6 +108,9 @@ static void remote_channel_connected(void* context, const ChannelConnectedEventA
         session->display_control = event->pInterface;
         session->display_control->custom = session;
         session->display_control->DisplayControlCaps = remote_display_control_caps;
+    } else if (session && session->config.redirect_clipboard && event && event->name &&
+               strcmp(event->name, CLIPRDR_SVC_CHANNEL_NAME) == 0 && event->pInterface) {
+        remote_clipboard_attach(session->clipboard, event->pInterface);
     }
 }
 
@@ -110,6 +120,9 @@ static void remote_channel_disconnected(void* context, const ChannelDisconnected
     if (session && event && event->name && strcmp(event->name, DISP_DVC_CHANNEL_NAME) == 0) {
         session->display_control_ready = 0;
         session->display_control = NULL;
+    } else if (session && event && event->name &&
+               strcmp(event->name, CLIPRDR_SVC_CHANNEL_NAME) == 0) {
+        remote_clipboard_detach(session->clipboard, event->pInterface);
     }
     freerdp_client_OnChannelDisconnectedEventHandler(context, event);
 }
@@ -236,6 +249,12 @@ static BOOL remote_desktop_resize(rdpContext* context) {
 
 static BOOL remote_pre_connect(freerdp* instance) {
     if (!instance || !instance->context || !instance->context->pubSub) return FALSE;
+    /* Custom clients must load the add-ins collected in rdpSettings themselves.
+       Without this call the device records exist, but no RDPDR/AUDIN/URBDRC
+       channel is opened and Windows therefore never receives an announcement. */
+    if (!freerdp_client_load_addins(instance->context->channels,
+                                    instance->context->settings))
+        return FALSE;
     if (PubSub_SubscribeChannelConnected(instance->context->pubSub,
                                          remote_channel_connected) < 0)
         return FALSE;
@@ -317,13 +336,20 @@ remote_rdp_session* remote_rdp_session_new(void) {
     (void)pthread_once(&addin_provider_once, register_addin_provider);
     remote_rdp_session* session = calloc(1, sizeof(*session));
     if (!session) return NULL;
+    session->clipboard = remote_clipboard_new();
+    if (!session->clipboard) {
+        free(session);
+        return NULL;
+    }
     if (pthread_mutex_init(&session->state_mutex, NULL) != 0) {
+        remote_clipboard_free(session->clipboard);
         free(session);
         return NULL;
     }
     session->input_event = CreateEvent(NULL, TRUE, FALSE, NULL);
     if (!session->input_event) {
         pthread_mutex_destroy(&session->state_mutex);
+        remote_clipboard_free(session->clipboard);
         free(session);
         return NULL;
     }
@@ -360,6 +386,7 @@ void remote_rdp_session_free(remote_rdp_session* session) {
         freerdp_client_context_free(session->client_context);
     }
     CloseHandle(session->input_event);
+    remote_clipboard_free(session->clipboard);
     pthread_mutex_destroy(&session->state_mutex);
     memset(session, 0, sizeof(*session));
     free(session);
@@ -402,8 +429,8 @@ static void apply_pending_resize(remote_rdp_session* session) {
 static BOOL enqueue_input(remote_rdp_session* session, const struct remote_input_event* event) {
     BOOL accepted = FALSE;
     pthread_mutex_lock(&session->state_mutex);
-    if (session->input_count < 512) {
-        const size_t tail = (session->input_head + session->input_count) % 512;
+    if (session->input_count < 8192) {
+        const size_t tail = (session->input_head + session->input_count) % 8192;
         session->input_queue[tail] = *event;
         session->input_count++;
         accepted = TRUE;
@@ -423,7 +450,7 @@ static BOOL process_pending_input(remote_rdp_session* session) {
             return TRUE;
         }
         event = session->input_queue[session->input_head];
-        session->input_head = (session->input_head + 1) % 512;
+        session->input_head = (session->input_head + 1) % 8192;
         session->input_count--;
         pthread_mutex_unlock(&session->state_mutex);
 
@@ -460,6 +487,9 @@ static BOOL process_pending_input(remote_rdp_session* session) {
             uint16_t flags = event.down ? 0u : KBD_FLAGS_RELEASE;
             if (RDP_SCANCODE_EXTENDED(scan_code)) flags |= KBD_FLAGS_EXTENDED;
             (void)input->KeyboardEvent(input, flags, RDP_SCANCODE_CODE(scan_code));
+        } else if (event.type == REMOTE_INPUT_UNICODE && input->UnicodeKeyboardEvent) {
+            const uint16_t flags = event.down ? 0u : KBD_FLAGS_RELEASE;
+            (void)input->UnicodeKeyboardEvent(input, flags, event.unicode_code);
         }
     }
 }
@@ -470,7 +500,21 @@ const char* remote_rdp_session_last_error(const remote_rdp_session* session) {
 
 static BOOL configure(remote_rdp_session* session, const remote_rdp_config* config) {
     rdpSettings* settings = session->instance->context->settings;
-    return freerdp_settings_set_string(settings, FreeRDP_ServerHostname, config->hostname) &&
+    const char* printer[] = { "printer" };
+    const char* home = getenv("HOME");
+    const char* home_drive[] = { "drive", "MacHome", home ? home : "/Users" };
+    const char* volumes_drive[] = { "drive", "MacVolumes", "/Volumes" };
+    const char* microphone[] = { "audin", "sys:mac" };
+    const char* camera[] = { "urbdrc", "auto" };
+    const BOOL redirects_ok =
+        (!config->redirect_printers || freerdp_client_add_device_channel(settings, 1, printer)) &&
+        (!config->redirect_drives ||
+         (freerdp_client_add_device_channel(settings, 3, home_drive) &&
+          freerdp_client_add_device_channel(settings, 3, volumes_drive))) &&
+        (!config->redirect_microphone || freerdp_client_add_dynamic_channel(settings, 2, microphone)) &&
+        (!config->redirect_camera || freerdp_client_add_dynamic_channel(settings, 2, camera));
+    return redirects_ok &&
+           freerdp_settings_set_string(settings, FreeRDP_ServerHostname, config->hostname) &&
            freerdp_settings_set_uint32(settings, FreeRDP_ServerPort, config->port ? config->port : 3389) &&
            freerdp_settings_set_string(settings, FreeRDP_Username, config->username ? config->username : "") &&
            freerdp_settings_set_string(settings, FreeRDP_Password, config->password ? config->password : "") &&
@@ -498,10 +542,18 @@ static BOOL configure(remote_rdp_session* session, const remote_rdp_config* conf
                                      config->use_all_monitors != 0) &&
            freerdp_settings_set_bool(settings, FreeRDP_SpanMonitors,
                                      config->use_all_monitors != 0) &&
-           freerdp_settings_set_bool(settings, FreeRDP_RedirectClipboard, FALSE) &&
-           freerdp_settings_set_bool(settings, FreeRDP_RedirectPrinters, FALSE) &&
-           freerdp_settings_set_bool(settings, FreeRDP_RedirectDrives, FALSE) &&
-           freerdp_settings_set_bool(settings, FreeRDP_DeviceRedirection, FALSE) &&
+           freerdp_settings_set_bool(settings, FreeRDP_RedirectClipboard,
+                                     config->redirect_clipboard != 0) &&
+           freerdp_settings_set_bool(settings, FreeRDP_RedirectPrinters,
+                                     config->redirect_printers != 0) &&
+           freerdp_settings_set_bool(settings, FreeRDP_RedirectDrives,
+                                     config->redirect_drives != 0) &&
+           freerdp_settings_set_bool(settings, FreeRDP_AudioCapture,
+                                     config->redirect_microphone != 0) &&
+           freerdp_settings_set_bool(settings, FreeRDP_DeviceRedirection,
+                                     config->redirect_printers != 0 ||
+                                     config->redirect_drives != 0 ||
+                                     config->redirect_camera != 0) &&
            freerdp_settings_set_bool(settings, FreeRDP_IgnoreCertificate,
                                      config->allow_untrusted_certificate != 0);
 }
@@ -509,6 +561,9 @@ static BOOL configure(remote_rdp_session* session, const remote_rdp_config* conf
 uint32_t remote_rdp_session_connect(remote_rdp_session* session, const remote_rdp_config* config) {
     if (!session || !session->instance || !config || !config->hostname) return 1u;
     session->config = *config;
+    atomic_store(&session->view_only_runtime, config->view_only != 0);
+    remote_clipboard_set_view_only(session->clipboard,
+                                   atomic_load(&session->view_only_runtime));
     session->config.use_all_monitors = 0;
     session->stopping = 0;
     session->input_focused = 0;
@@ -551,8 +606,9 @@ uint32_t remote_rdp_session_connect(remote_rdp_session* session, const remote_rd
             break;
         }
         count++;
-        DWORD wait_result = WaitForMultipleObjects(
-            count, handles, FALSE, session->frame_pending ? 16u : INFINITE);
+        const DWORD timeout = session->frame_pending ? 16u
+            : session->config.redirect_clipboard ? 250u : INFINITE;
+        DWORD wait_result = WaitForMultipleObjects(count, handles, FALSE, timeout);
         if (wait_result == WAIT_FAILED) {
             disconnect_error = freerdp_get_last_error(session->instance->context);
             if (!disconnect_error) disconnect_error = 3u;
@@ -561,6 +617,7 @@ uint32_t remote_rdp_session_connect(remote_rdp_session* session, const remote_rd
             break;
         }
         if (wait_result == WAIT_TIMEOUT) {
+            remote_clipboard_poll(session->clipboard);
             // Some servers omit frame markers. Marked frames get a slightly
             // longer safety timeout so an incomplete protocol frame is not shown,
             // while an absent END marker can never freeze the UI indefinitely.
@@ -572,6 +629,7 @@ uint32_t remote_rdp_session_connect(remote_rdp_session* session, const remote_rd
             }
             continue;
         }
+        remote_clipboard_poll(session->clipboard);
         // Input is latency-sensitive. Handle it before draining a burst of
         // graphics/network events so pointer and keyboard events cannot sit
         // behind a large desktop repaint.
@@ -623,7 +681,7 @@ uint32_t remote_rdp_session_send_mouse(remote_rdp_session* session, uint16_t x, 
                                        uint8_t button_mask) {
     if (!session || !session->instance || !session->instance->context ||
         !session->instance->context->input) return 1u;
-    if (session->config.view_only) return 2u;
+    if (atomic_load(&session->view_only_runtime)) return 2u;
     const struct remote_input_event event = {
         .type = REMOTE_INPUT_MOUSE, .button_mask = button_mask, .x = x, .y = y
     };
@@ -634,7 +692,7 @@ uint32_t remote_rdp_session_send_wheel(remote_rdp_session* session, uint16_t x, 
                                        int16_t delta) {
     if (!session || !session->instance || !session->instance->context ||
         !session->instance->context->input) return 1u;
-    if (session->config.view_only) return 2u;
+    if (atomic_load(&session->view_only_runtime)) return 2u;
     const struct remote_input_event event = {
         .type = REMOTE_INPUT_WHEEL, .wheel_delta = delta, .x = x, .y = y
     };
@@ -645,9 +703,20 @@ uint32_t remote_rdp_session_send_key(remote_rdp_session* session, uint32_t virtu
                                      uint8_t down) {
     if (!session || !session->instance || !session->instance->context ||
         !session->instance->context->input) return 1u;
-    if (session->config.view_only) return 2u;
+    if (atomic_load(&session->view_only_runtime)) return 2u;
     const struct remote_input_event event = {
         .type = REMOTE_INPUT_KEY, .down = down, .virtual_key = virtual_key
+    };
+    return enqueue_input(session, &event) ? 0u : 3u;
+}
+
+uint32_t remote_rdp_session_send_unicode(remote_rdp_session* session, uint16_t code,
+                                         uint8_t down) {
+    if (!session || !session->instance || !session->instance->context ||
+        !session->instance->context->input) return 1u;
+    if (atomic_load(&session->view_only_runtime)) return 2u;
+    const struct remote_input_event event = {
+        .type = REMOTE_INPUT_UNICODE, .down = down, .unicode_code = code
     };
     return enqueue_input(session, &event) ? 0u : 3u;
 }
@@ -661,5 +730,19 @@ uint32_t remote_rdp_session_resize(remote_rdp_session* session, uint32_t width, 
     session->pending_height = height;
     pthread_mutex_unlock(&session->state_mutex);
     SetEvent(session->input_event);
+    return 0u;
+}
+
+uint32_t remote_rdp_session_set_view_only(remote_rdp_session* session, uint8_t view_only) {
+    if (!session) return 1u;
+    pthread_mutex_lock(&session->state_mutex);
+    atomic_store(&session->view_only_runtime, view_only != 0);
+    if (atomic_load(&session->view_only_runtime)) {
+        session->input_head = 0;
+        session->input_count = 0;
+    }
+    pthread_mutex_unlock(&session->state_mutex);
+    remote_clipboard_set_view_only(session->clipboard,
+                                   atomic_load(&session->view_only_runtime));
     return 0u;
 }
