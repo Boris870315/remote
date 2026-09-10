@@ -32,6 +32,12 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
 
     public event Action<string>? UnexpectedlyDisconnected;
 
+    public void SetViewOnly(bool viewOnly)
+    {
+        if (!OperatingSystem.IsWindows() || _window == nint.Zero) return;
+        EnableWindow(_window, !viewOnly);
+    }
+
     public void SetSessionVisible(bool visible)
     {
         IsVisible = visible;
@@ -105,8 +111,8 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
             SetComProperty(advanced, "RedirectClipboard", permissions.RedirectClipboard);
             SetComProperty(advanced, "RedirectPrinters", permissions.RedirectPrinters);
             SetComProperty(advanced, "RedirectDrives", permissions.RedirectDrives);
-            TrySetComProperty(advanced, "AudioCaptureRedirectionMode", permissions.RedirectMicrophone ? 1u : 0u);
-            TrySetComProperty(advanced, "RedirectDevices", permissions.RedirectCamera);
+            SetComProperty(advanced, "AudioCaptureRedirectionMode", permissions.RedirectMicrophone);
+            SetComProperty(advanced, "RedirectDevices", permissions.RedirectCamera);
             SetComProperty(advanced, "AudioRedirectionMode", (uint)request.Settings.AudioMode);
             TrySetComProperty(
                 advanced,

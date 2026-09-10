@@ -143,6 +143,8 @@ public partial class MainWindow : Window
 
     private void HandleSessionViewOnlyChanged(SessionId sessionId, bool viewOnly)
     {
+        if (_rdpHosts.TryGetValue(sessionId, out var windowsHost))
+            windowsHost.SetViewOnly(viewOnly);
         if (!_macRdpSessions.TryGetValue(sessionId, out var runtime)) return;
         runtime.Session.SetViewOnly(viewOnly);
         if (!viewOnly) return;

@@ -3221,14 +3221,15 @@ public sealed partial class MainViewModel : ViewModelBase
         SessionViewOnlyChanged?.Invoke(tab.SessionId, IsViewOnly);
         if (!string.Equals(tab.ProtocolLabel, "RDP", StringComparison.OrdinalIgnoreCase)) return;
         var settings = RdpConnectionSettings.FromProtocolSettings(tab.Connection.ProtocolSettings);
-        var hasDevices = settings.RedirectPrinters || settings.RedirectDrives ||
-                         settings.RedirectMicrophone || settings.RedirectCamera;
-        if (IsViewOnly && hasDevices)
+        var hasRedirectedDataOrDevices = settings.RedirectClipboard || settings.RedirectPrinters ||
+                                         settings.RedirectDrives || settings.RedirectMicrophone ||
+                                         settings.RedirectCamera;
+        if (IsViewOnly && hasRedirectedDataOrDevices)
         {
             SessionStatusLabel = "VIEW ONLY 已立即阻擋輸入；正在重新連線以卸除裝置重新導向";
             _ = ReconnectSelectedSessionAsync();
         }
-        else if (!IsViewOnly && hasDevices)
+        else if (!IsViewOnly && hasRedirectedDataOrDevices)
         {
             SessionStatusLabel = "已恢復互動；重新連線後才會恢復裝置重新導向";
         }
