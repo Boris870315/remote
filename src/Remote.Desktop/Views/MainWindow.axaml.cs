@@ -18,6 +18,8 @@ namespace Remote.Desktop.Views;
 public partial class MainWindow : Window
 {
     private bool _isSessionFullScreen;
+    private bool _shutdownCompleted;
+    private bool _shutdownInProgress;
     private bool _isConnectionTreeCollapsed;
     private bool _isInspectorCollapsed;
     private byte _vncButtonMask;
@@ -31,6 +33,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        SessionWorkspace.SizeChanged += (_, _) => ScheduleTerminalResize();
         _terminalResizeTimer = new DispatcherTimer(
             TimeSpan.FromMilliseconds(200),
             DispatcherPriority.Background,
@@ -52,6 +55,7 @@ public partial class MainWindow : Window
             RefreshMonitorOptions();
             ApplyAdaptiveLayout();
         };
+        Closing += HandleClosing;
         Closed += HandleClosed;
         KeyDown += HandleWindowKeyDown;
         PointerPressed += (_, _) => _viewModel?.RecordUserActivity();
@@ -83,14 +87,27 @@ public partial class MainWindow : Window
         return string.Equals(button?.Content?.ToString(), "顯示", StringComparison.Ordinal) ? button : null;
     }
 
-    private async void HandleClosed(object? sender, EventArgs e)
+    private async void HandleClosing(object? sender, WindowClosingEventArgs e)
+    {
+        if (_shutdownCompleted) return;
+        e.Cancel = true;
+        if (_shutdownInProgress) return;
+        _shutdownInProgress = true;
+        try
+        {
+            if (_viewModel is not null) await _viewModel.ShutdownAsync();
+        }
+        finally
+        {
+            _shutdownCompleted = true;
+            Close();
+        }
+    }
+
+    private void HandleClosed(object? sender, EventArgs e)
     {
         _vaultTimer.Stop();
         _terminalResizeTimer.Stop();
-        if (_viewModel is not null)
-        {
-            await _viewModel.ShutdownAsync();
-        }
     }
 
     protected override void OnDataContextChanged(EventArgs e)
@@ -253,7 +270,14 @@ public partial class MainWindow : Window
     {
         var session = new MacOsFreeRdpSession();
         var sink = new AvaloniaFreeRdpFrameSink(frame =>
-            _viewModel?.SetEmbeddedRdpFrame(sessionId, frame));
+        {
+            _viewModel?.SetEmbeddedRdpFrame(sessionId, frame);
+            // WriteableBitmap keeps the same object identity while its pixels change.
+            // Avalonia therefore needs an explicit visual invalidation; otherwise the
+            // latest RDP frame may remain hidden until a layout resize repaints it.
+            if (_viewModel?.SelectedSessionTab?.SessionId == sessionId)
+                RemoteSurface.InvalidateVisual();
+        });
         var runtime = new MacOsRdpRuntime(session, sink);
         session.FrameReceived += sink.Publish;
         session.StateChanged += (state, errorCode, message) =>

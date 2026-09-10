@@ -50,35 +50,49 @@ internal sealed class AvaloniaFreeRdpFrameSink(Action<WriteableBitmap?> frameCha
             _pending = [];
         }
 
-        foreach (var frame in pending)
+        try
         {
-            try
+            var latest = pending[^1];
+            var bitmap = _bitmap;
+            if (bitmap is null ||
+                bitmap.PixelSize.Width != latest.Width ||
+                bitmap.PixelSize.Height != latest.Height)
             {
-                var pixels = frame.Pixels;
-                var width = frame.Width;
-                var height = frame.Height;
-                var stride = frame.Stride;
-                if (_bitmap is null || _bitmap.PixelSize.Width != width || _bitmap.PixelSize.Height != height)
-                {
-                    _bitmap?.Dispose();
-                    _bitmap = new WriteableBitmap(new PixelSize(width, height), new Vector(96, 96),
-                        PixelFormat.Bgra8888, AlphaFormat.Opaque);
-                }
+                bitmap?.Dispose();
+                bitmap = new WriteableBitmap(
+                    new PixelSize(latest.Width, latest.Height),
+                    new Vector(96, 96), PixelFormat.Bgra8888, AlphaFormat.Opaque);
+                _bitmap = bitmap;
+            }
 
-                using var framebuffer = _bitmap.Lock();
-                var rowBytes = stride;
-                for (var row = 0; row < frame.DirtyHeight; row++)
-                {
-                    Marshal.Copy(pixels, row * stride,
-                        IntPtr.Add(framebuffer.Address,
-                            ((frame.Y + row) * framebuffer.RowBytes) + (frame.X * 4)), rowBytes);
-                }
-                frameChanged(_bitmap);
-            }
-            finally
+            // Lock once per UI render pass. FreeRDP can produce many small dirty
+            // rectangles between two Avalonia frames; locking for every rectangle
+            // serializes the render thread and makes interaction visibly stutter.
+            using (var framebuffer = bitmap.Lock())
             {
-                ArrayPool<byte>.Shared.Return(frame.Pixels);
+                foreach (var frame in pending)
+                {
+                    // A resize supersedes patches produced for the previous surface.
+                    if (frame.Width != latest.Width || frame.Height != latest.Height) continue;
+
+                    for (var row = 0; row < frame.DirtyHeight; row++)
+                    {
+                        Marshal.Copy(frame.Pixels, row * frame.Stride,
+                            IntPtr.Add(framebuffer.Address,
+                                ((frame.Y + row) * framebuffer.RowBytes) + (frame.X * 4)),
+                            frame.Stride);
+                    }
+                }
             }
+
+            // Every pending dirty rectangle is now represented in the bitmap.
+            // Notify Avalonia once so rendering cannot fall behind by repainting
+            // every intermediate rectangle as a separate stale frame.
+            frameChanged(_bitmap);
+        }
+        finally
+        {
+            foreach (var frame in pending) ArrayPool<byte>.Shared.Return(frame.Pixels);
         }
 
         lock (_gate)

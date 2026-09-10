@@ -8,6 +8,7 @@
 #include <freerdp/addin.h>
 #include <freerdp/client.h>
 #include <freerdp/client/channels.h>
+#include <freerdp/client/disp.h>
 #include <freerdp/gdi/gdi.h>
 #include <freerdp/input.h>
 #include <freerdp/scancode.h>
@@ -15,11 +16,11 @@
 #include <freerdp/update.h>
 #include <winpr/synch.h>
 #include <winpr/input.h>
+#include <winpr/sysinfo.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <pthread.h>
-#include <time.h>
 
 struct remote_rdp_session {
     freerdp* instance;
@@ -44,8 +45,14 @@ struct remote_rdp_session {
     size_t input_head;
     size_t input_count;
     uint8_t input_focused;
-    uint64_t last_frame_time_ms;
+    uint8_t display_control_ready;
+    DispClientContext* display_control;
     uint8_t has_frame;
+    uint8_t awaiting_full_refresh;
+    uint8_t frame_pending;
+    uint8_t frame_marker_active;
+    uint64_t last_frame_time_ms;
+    pSurfaceFrameMarker gdi_surface_frame_marker;
     int32_t dirty_left;
     int32_t dirty_top;
     int32_t dirty_right;
@@ -73,10 +80,79 @@ static remote_rdp_session* owner_from_context(rdpContext* context) {
     return context ? ((remote_context*)context)->owner : NULL;
 }
 
+static UINT remote_display_control_caps(DispClientContext* context, UINT32 max_monitors,
+                                        UINT32 area_factor_a, UINT32 area_factor_b) {
+    (void)max_monitors;
+    (void)area_factor_a;
+    (void)area_factor_b;
+    remote_rdp_session* session = context ? context->custom : NULL;
+    if (!session) return 1u;
+    session->display_control_ready = 1;
+    SetEvent(session->input_event);
+    return 0u;
+}
+
+static void remote_channel_connected(void* context, const ChannelConnectedEventArgs* event) {
+    freerdp_client_OnChannelConnectedEventHandler(context, event);
+    rdpContext* rdp_context = context;
+    remote_rdp_session* session = owner_from_context(rdp_context);
+    if (session && event && event->name &&
+        strcmp(event->name, DISP_DVC_CHANNEL_NAME) == 0 && event->pInterface) {
+        session->display_control = event->pInterface;
+        session->display_control->custom = session;
+        session->display_control->DisplayControlCaps = remote_display_control_caps;
+    }
+}
+
+static void remote_channel_disconnected(void* context, const ChannelDisconnectedEventArgs* event) {
+    rdpContext* rdp_context = context;
+    remote_rdp_session* session = owner_from_context(rdp_context);
+    if (session && event && event->name && strcmp(event->name, DISP_DVC_CHANNEL_NAME) == 0) {
+        session->display_control_ready = 0;
+        session->display_control = NULL;
+    }
+    freerdp_client_OnChannelDisconnectedEventHandler(context, event);
+}
+
 static BOOL remote_begin_paint(rdpContext* context) {
     if (context && context->gdi && context->gdi->primary && context->gdi->primary->hdc &&
         context->gdi->primary->hdc->hwnd && context->gdi->primary->hdc->hwnd->invalid)
         context->gdi->primary->hdc->hwnd->invalid->null = TRUE;
+    return TRUE;
+}
+
+static BOOL remote_publish_pending_frame(rdpContext* context, BOOL force) {
+    remote_rdp_session* session = owner_from_context(context);
+    if (!session || !context->gdi || !session->config.frame_callback ||
+        !session->frame_pending)
+        return TRUE;
+    const int32_t desktop_width = context->gdi->width;
+    const int32_t desktop_height = context->gdi->height;
+    if (session->awaiting_full_refresh &&
+        (session->dirty_left > 0 || session->dirty_top > 0 ||
+         session->dirty_right < desktop_width || session->dirty_bottom < desktop_height))
+        return TRUE;
+    const uint64_t now_ms = winpr_GetTickCount64();
+    if (!force && session->last_frame_time_ms && now_ms - session->last_frame_time_ms < 16u)
+        return TRUE;
+    if (session->awaiting_full_refresh) {
+        session->awaiting_full_refresh = 0;
+        session->dirty_left = 0;
+        session->dirty_top = 0;
+        session->dirty_right = desktop_width;
+        session->dirty_bottom = desktop_height;
+    }
+    session->config.frame_callback(session->config.callback_state, context->gdi->primary_buffer,
+                                   (uint32_t)desktop_width, (uint32_t)desktop_height,
+                                   context->gdi->stride,
+                                   (uint32_t)session->dirty_left, (uint32_t)session->dirty_top,
+                                   (uint32_t)(session->dirty_right - session->dirty_left),
+                                   (uint32_t)(session->dirty_bottom - session->dirty_top));
+    session->has_frame = 1;
+    session->frame_pending = 0;
+    session->last_frame_time_ms = now_ms;
+    session->dirty_left = session->dirty_top = 0;
+    session->dirty_right = session->dirty_bottom = 0;
     return TRUE;
 }
 
@@ -90,7 +166,7 @@ static BOOL remote_end_paint(rdpContext* context) {
     int32_t top = 0;
     int32_t right = desktop_width;
     int32_t bottom = desktop_height;
-    if (session->has_frame && invalid && !invalid->null) {
+    if ((session->has_frame || session->awaiting_full_refresh) && invalid && !invalid->null) {
         left = invalid->x;
         top = invalid->y;
         right = invalid->x + invalid->w;
@@ -113,41 +189,60 @@ static BOOL remote_end_paint(rdpContext* context) {
         if (right > session->dirty_right) session->dirty_right = right;
         if (bottom > session->dirty_bottom) session->dirty_bottom = bottom;
     }
-    struct timespec now = { 0 };
-    if (clock_gettime(CLOCK_MONOTONIC, &now) == 0) {
-        const uint64_t now_ms = ((uint64_t)now.tv_sec * 1000u) +
-                                ((uint64_t)now.tv_nsec / 1000000u);
-        if (session->last_frame_time_ms && now_ms - session->last_frame_time_ms < 33u)
-            return TRUE;
-        session->last_frame_time_ms = now_ms;
+    session->frame_pending = 1;
+    // A server frame marker groups multiple drawing orders into one visual frame.
+    // Publishing in the middle of that group exposes a half-old/half-new desktop.
+    if (session->frame_marker_active) return TRUE;
+    return remote_publish_pending_frame(context, FALSE);
+}
+
+static BOOL remote_surface_frame_marker(rdpContext* context,
+                                        const SURFACE_FRAME_MARKER* marker) {
+    remote_rdp_session* session = owner_from_context(context);
+    if (!session || !marker) return FALSE;
+    BOOL result = TRUE;
+    if (session->gdi_surface_frame_marker)
+        result = session->gdi_surface_frame_marker(context, marker);
+    if (marker->frameAction == SURFACECMD_FRAMEACTION_BEGIN) {
+        session->frame_marker_active = 1;
+    } else if (marker->frameAction == SURFACECMD_FRAMEACTION_END) {
+        session->frame_marker_active = 0;
+        // Present exactly once at the protocol frame boundary. This is both
+        // smoother and visually atomic during window transitions.
+        (void)remote_publish_pending_frame(context, TRUE);
     }
-    session->config.frame_callback(session->config.callback_state, context->gdi->primary_buffer,
-                                   (uint32_t)context->gdi->width, (uint32_t)context->gdi->height,
-                                   context->gdi->stride,
-                                   (uint32_t)session->dirty_left, (uint32_t)session->dirty_top,
-                                   (uint32_t)(session->dirty_right - session->dirty_left),
-                                   (uint32_t)(session->dirty_bottom - session->dirty_top));
-    session->has_frame = 1;
-    session->dirty_left = session->dirty_top = 0;
-    session->dirty_right = session->dirty_bottom = 0;
-    return TRUE;
+    return result;
 }
 
 static BOOL remote_desktop_resize(rdpContext* context) {
-    return context && context->gdi && gdi_resize(context->gdi,
+    if (!context || !context->gdi || !gdi_resize(context->gdi,
         freerdp_settings_get_uint32(context->settings, FreeRDP_DesktopWidth),
-        freerdp_settings_get_uint32(context->settings, FreeRDP_DesktopHeight));
+        freerdp_settings_get_uint32(context->settings, FreeRDP_DesktopHeight))) return FALSE;
+    remote_rdp_session* session = owner_from_context(context);
+    if (session) {
+        session->has_frame = 0;
+        session->awaiting_full_refresh = 1;
+        session->dirty_left = session->dirty_top = 0;
+        session->dirty_right = session->dirty_bottom = 0;
+        if (context->update && context->update->RefreshRect) {
+            RECTANGLE_16 area = { 0 };
+            area.right = (UINT16)(context->gdi->width - 1);
+            area.bottom = (UINT16)(context->gdi->height - 1);
+            (void)context->update->RefreshRect(context, 1u, &area);
+        }
+    }
+    return TRUE;
 }
 
 static BOOL remote_pre_connect(freerdp* instance) {
     if (!instance || !instance->context || !instance->context->pubSub) return FALSE;
     if (PubSub_SubscribeChannelConnected(instance->context->pubSub,
-                                         freerdp_client_OnChannelConnectedEventHandler) < 0)
+                                         remote_channel_connected) < 0)
         return FALSE;
     if (PubSub_SubscribeChannelDisconnected(instance->context->pubSub,
-                                            freerdp_client_OnChannelDisconnectedEventHandler) < 0) {
+                                            remote_channel_disconnected) < 0) {
         PubSub_UnsubscribeChannelConnected(instance->context->pubSub,
-                                           freerdp_client_OnChannelConnectedEventHandler);
+                                           remote_channel_connected);
         return FALSE;
     }
     return TRUE;
@@ -158,15 +253,20 @@ static BOOL remote_post_connect(freerdp* instance) {
     instance->context->update->BeginPaint = remote_begin_paint;
     instance->context->update->EndPaint = remote_end_paint;
     instance->context->update->DesktopResize = remote_desktop_resize;
+    remote_rdp_session* session = owner_from_context(instance->context);
+    if (session) {
+        session->gdi_surface_frame_marker = instance->context->update->SurfaceFrameMarker;
+        instance->context->update->SurfaceFrameMarker = remote_surface_frame_marker;
+    }
     return TRUE;
 }
 
 static void remote_post_disconnect(freerdp* instance) {
     if (!instance || !instance->context) return;
     PubSub_UnsubscribeChannelConnected(instance->context->pubSub,
-                                       freerdp_client_OnChannelConnectedEventHandler);
+                                       remote_channel_connected);
     PubSub_UnsubscribeChannelDisconnected(instance->context->pubSub,
-                                          freerdp_client_OnChannelDisconnectedEventHandler);
+                                          remote_channel_disconnected);
     if (instance->context->gdi) gdi_free(instance);
 }
 
@@ -266,7 +366,8 @@ void remote_rdp_session_free(remote_rdp_session* session) {
 }
 
 static void apply_pending_resize(remote_rdp_session* session) {
-    if (!session->config.use_all_monitors) return;
+    if (session->config.use_all_monitors || !session->display_control_ready ||
+        !session->display_control || !session->display_control->SendMonitorLayout) return;
     uint32_t width = 0;
     uint32_t height = 0;
     pthread_mutex_lock(&session->state_mutex);
@@ -275,11 +376,20 @@ static void apply_pending_resize(remote_rdp_session* session) {
     pthread_mutex_unlock(&session->state_mutex);
     if (!width || !height) return;
 
-    MONITOR_DEF monitor = { 0 };
-    monitor.right = (INT32)width - 1;
-    monitor.bottom = (INT32)height - 1;
-    monitor.flags = DISPLAY_CONTROL_MONITOR_PRIMARY;
-    if (!freerdp_display_send_monitor_layout(session->instance->context, 1u, &monitor)) return;
+    const rdpSettings* settings = session->instance->context->settings;
+    DISPLAY_CONTROL_MONITOR_LAYOUT monitor = { 0 };
+    monitor.Flags = DISPLAY_CONTROL_MONITOR_PRIMARY;
+    monitor.Width = width;
+    monitor.Height = height;
+    monitor.PhysicalWidth = width;
+    monitor.PhysicalHeight = height;
+    monitor.Orientation = freerdp_settings_get_uint16(settings, FreeRDP_DesktopOrientation);
+    monitor.DesktopScaleFactor =
+        freerdp_settings_get_uint32(settings, FreeRDP_DesktopScaleFactor);
+    monitor.DeviceScaleFactor =
+        freerdp_settings_get_uint32(settings, FreeRDP_DeviceScaleFactor);
+    if (session->display_control->SendMonitorLayout(
+            session->display_control, 1u, &monitor) != 0u) return;
 
     pthread_mutex_lock(&session->state_mutex);
     if (session->pending_width == width && session->pending_height == height) {
@@ -368,11 +478,22 @@ static BOOL configure(remote_rdp_session* session, const remote_rdp_config* conf
            freerdp_settings_set_uint32(settings, FreeRDP_DesktopWidth, config->width) &&
            freerdp_settings_set_uint32(settings, FreeRDP_DesktopHeight, config->height) &&
            freerdp_settings_set_uint32(settings, FreeRDP_ColorDepth, 32) &&
-           freerdp_settings_set_bool(settings, FreeRDP_FastPathInput, FALSE) &&
-           freerdp_settings_set_bool(settings, FreeRDP_SupportDisplayControl,
-                                     config->use_all_monitors != 0) &&
-           freerdp_settings_set_bool(settings, FreeRDP_DynamicResolutionUpdate,
-                                     config->use_all_monitors != 0) &&
+           freerdp_settings_set_bool(settings, FreeRDP_NetworkAutoDetect, TRUE) &&
+           freerdp_settings_set_bool(settings, FreeRDP_CompressionEnabled, TRUE) &&
+           freerdp_settings_set_bool(settings, FreeRDP_FastPathOutput, TRUE) &&
+           freerdp_settings_set_bool(settings, FreeRDP_FastPathInput, TRUE) &&
+           freerdp_settings_set_bool(settings, FreeRDP_BitmapCacheEnabled, TRUE) &&
+           freerdp_settings_set_bool(settings, FreeRDP_NSCodec, TRUE) &&
+           freerdp_settings_set_bool(settings, FreeRDP_SurfaceCommandsEnabled, TRUE) &&
+           freerdp_settings_set_bool(settings, FreeRDP_SupportGraphicsPipeline, TRUE) &&
+           freerdp_settings_set_bool(settings, FreeRDP_GfxProgressive, TRUE) &&
+           freerdp_settings_set_bool(settings, FreeRDP_GfxH264, TRUE) &&
+           freerdp_settings_set_bool(settings, FreeRDP_GfxAVC444, TRUE) &&
+           freerdp_settings_set_bool(settings, FreeRDP_RefreshRect, TRUE) &&
+           freerdp_settings_set_bool(settings, FreeRDP_FrameMarkerCommandEnabled, TRUE) &&
+           freerdp_settings_set_bool(settings, FreeRDP_SurfaceFrameMarkerEnabled, TRUE) &&
+           freerdp_settings_set_bool(settings, FreeRDP_SupportDisplayControl, TRUE) &&
+           freerdp_settings_set_bool(settings, FreeRDP_DynamicResolutionUpdate, TRUE) &&
            freerdp_settings_set_bool(settings, FreeRDP_UseMultimon,
                                      config->use_all_monitors != 0) &&
            freerdp_settings_set_bool(settings, FreeRDP_SpanMonitors,
@@ -391,8 +512,13 @@ uint32_t remote_rdp_session_connect(remote_rdp_session* session, const remote_rd
     session->config.use_all_monitors = 0;
     session->stopping = 0;
     session->input_focused = 0;
-    session->last_frame_time_ms = 0;
+    session->display_control_ready = 0;
+    session->display_control = NULL;
     session->has_frame = 0;
+    session->awaiting_full_refresh = 0;
+    session->frame_pending = 0;
+    session->frame_marker_active = 0;
+    session->last_frame_time_ms = 0;
     session->dirty_left = session->dirty_top = 0;
     session->dirty_right = session->dirty_bottom = 0;
     if (!configure(session, &session->config)) {
@@ -425,12 +551,34 @@ uint32_t remote_rdp_session_connect(remote_rdp_session* session, const remote_rd
             break;
         }
         count++;
-        DWORD wait_result = WaitForMultipleObjects(count, handles, FALSE, INFINITE);
+        DWORD wait_result = WaitForMultipleObjects(
+            count, handles, FALSE, session->frame_pending ? 16u : INFINITE);
         if (wait_result == WAIT_FAILED) {
             disconnect_error = freerdp_get_last_error(session->instance->context);
             if (!disconnect_error) disconnect_error = 3u;
             snprintf(session->last_error, sizeof(session->last_error),
                      "RDP event wait failed; HRESULT=0x%08x", disconnect_error);
+            break;
+        }
+        if (wait_result == WAIT_TIMEOUT) {
+            // Some servers omit frame markers. Marked frames get a slightly
+            // longer safety timeout so an incomplete protocol frame is not shown,
+            // while an absent END marker can never freeze the UI indefinitely.
+            const uint64_t now_ms = winpr_GetTickCount64();
+            const uint64_t age_ms = now_ms - session->last_frame_time_ms;
+            if (!session->frame_marker_active || age_ms >= 50u) {
+                session->frame_marker_active = 0;
+                (void)remote_publish_pending_frame(session->instance->context, TRUE);
+            }
+            continue;
+        }
+        // Input is latency-sensitive. Handle it before draining a burst of
+        // graphics/network events so pointer and keyboard events cannot sit
+        // behind a large desktop repaint.
+        if (!process_pending_input(session)) {
+            disconnect_error = 3u;
+            snprintf(session->last_error, sizeof(session->last_error),
+                     "RDP input processing failed; HRESULT=0x%08x", disconnect_error);
             break;
         }
         if (!freerdp_check_event_handles(session->instance->context)) {
@@ -441,12 +589,6 @@ uint32_t remote_rdp_session_connect(remote_rdp_session* session, const remote_rd
             snprintf(session->last_error, sizeof(session->last_error),
                      "RDP event processing failed; HRESULT=0x%08x; serverError=0x%08x; ultimatum=%d",
                      disconnect_error, server_error, ultimatum);
-            break;
-        }
-        if (!process_pending_input(session)) {
-            disconnect_error = 3u;
-            snprintf(session->last_error, sizeof(session->last_error),
-                     "RDP input processing failed; HRESULT=0x%08x", disconnect_error);
             break;
         }
         apply_pending_resize(session);
@@ -471,6 +613,10 @@ void remote_rdp_session_disconnect(remote_rdp_session* session) {
     if (!session || !session->instance) return;
     session->stopping = 1;
     freerdp_abort_connect_context(session->instance->context);
+    // Wake the connected-session event loop immediately. abort_connect is mainly
+    // intended for connection setup and does not reliably wake an established
+    // session that is blocked in WaitForMultipleObjects.
+    SetEvent(session->input_event);
 }
 
 uint32_t remote_rdp_session_send_mouse(remote_rdp_session* session, uint16_t x, uint16_t y,
