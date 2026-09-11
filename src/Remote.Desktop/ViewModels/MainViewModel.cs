@@ -3419,7 +3419,15 @@ public sealed partial class MainViewModel : ViewModelBase
         // deliberately secret-free stage/HRESULT diagnostic when one is available.
         var safeDiagnostic = exception.Data["SafeDiagnostic"] as string
             ?? $"{category} operation failed ({exception.GetType().Name}).";
-        await _errorLog.WriteAsync(category, code, safeDiagnostic, exception.GetType().Name);
+        try
+        {
+            await _errorLog.WriteAsync(category, code, safeDiagnostic, exception.GetType().Name);
+        }
+        catch
+        {
+            // Error reporting must remain best effort. A locked or unavailable
+            // log file must not become a second unhandled UI exception.
+        }
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
             ErrorDialogTitle = $"{category} 錯誤";

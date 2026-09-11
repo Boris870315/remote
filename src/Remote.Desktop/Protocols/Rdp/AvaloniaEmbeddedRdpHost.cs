@@ -45,8 +45,13 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
         _ = ShowWindow(_window, visible ? SwShow : SwHide);
         if (visible)
         {
-            ResizeNativeSurface(Bounds.Size);
+            ResizeNativeSurface();
             _ = BringWindowToTop(_window);
+            Dispatcher.UIThread.Post(() =>
+            {
+                ResizeNativeSurface();
+                ScheduleDisplayResize();
+            }, DispatcherPriority.Render);
         }
     }
 
@@ -86,7 +91,7 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
             // infer the destination computer name and display HOST\\username.
             client.Domain = request.Domain ?? string.Empty;
             stage = "set-display";
-            var initialPixelSize = GetPhysicalPixelSize(Bounds.Size);
+            var initialPixelSize = GetNativeClientPixelSize();
             client.DesktopWidth = Math.Max(640, initialPixelSize.Width);
             client.DesktopHeight = Math.Max(480, initialPixelSize.Height);
             var selectedMonitorIndex = Math.Max(0, request.Display.MonitorIndex ?? 0);
@@ -243,7 +248,7 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
         // revisions recreate the desktop as a blank surface during Avalonia
         // full-screen and layout transitions. SmartSizing keeps the existing
         // session visible while the native host follows the new bounds.
-        ResizeNativeSurface(Bounds.Size);
+        ResizeNativeSurface();
         if (!_hasConnected || _useMultimon || _rdpClient is null) return;
 
         // Coalesce Avalonia's intermediate layout sizes. Newer RDP controls can
@@ -257,7 +262,7 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
             {
                 _displayResizeTimer?.Stop();
                 if (!OperatingSystem.IsWindows() || !_hasConnected || _useMultimon || _rdpClient is null) return;
-                var pixelSize = GetPhysicalPixelSize(Bounds.Size);
+                var pixelSize = GetNativeClientPixelSize();
                 if (pixelSize == _lastSessionDisplaySize || pixelSize.Width < 200 || pixelSize.Height < 200) return;
                 if (RdpActiveXNativeSettings.TryUpdateSessionDisplaySettings(_rdpClient, pixelSize))
                 {
@@ -323,6 +328,7 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
         {
             _rdpClient = Marshal.GetObjectForIUnknown(unknown);
             _hostReady.TrySetResult();
+            Dispatcher.UIThread.Post(ResizeNativeSurface, DispatcherPriority.Render);
         }
         finally
         {
@@ -334,30 +340,23 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
     protected override Size ArrangeOverride(Size finalSize)
     {
         var arranged = base.ArrangeOverride(finalSize);
-        ResizeNativeSurface(finalSize);
+        // NativeControlHost owns the outer HWND geometry. Only size the ActiveX
+        // child after Avalonia has arranged that HWND; resizing the outer HWND a
+        // second time applies DPI scaling twice and duplicates/crops the desktop.
+        Dispatcher.UIThread.Post(ResizeNativeSurface, DispatcherPriority.Render);
         return arranged;
     }
 
-    private void ResizeNativeSurface(Size size)
+    private void ResizeNativeSurface()
     {
         if (!OperatingSystem.IsWindows() || _window == nint.Zero) return;
-        // Avalonia layout uses device-independent pixels while SetWindowPos
-        // requires physical pixels. Without this conversion, a 200% Windows
-        // display makes the RDP HWND exactly half the intended width/height.
-        var pixelSize = GetPhysicalPixelSize(size);
-        var width = pixelSize.Width;
-        var height = pixelSize.Height;
-        _ = SetWindowPos(
-            _window,
-            nint.Zero,
-            0,
-            0,
-            width,
-            height,
-            SwpNoZOrder | SwpNoActivate | SwpShowWindow);
-        // AtlAxWin can resize without propagating the new client rectangle to
-        // the hosted RDP ActiveX window. mRemoteNG handles the equivalent AxHost
-        // issue by explicitly sizing the control to its containing panel.
+        if (!GetClientRect(_window, out var clientRect)) return;
+        var width = clientRect.Right - clientRect.Left;
+        var height = clientRect.Bottom - clientRect.Top;
+        if (width < 1 || height < 1) return;
+
+        // AtlAxWin does not consistently propagate its client rectangle to the
+        // hosted RDP window, especially on first display and DPI transitions.
         var activeXWindow = GetWindow(_window, GwChild);
         if (activeXWindow != nint.Zero)
         {
@@ -372,6 +371,17 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
         }
         _ = InvalidateRect(_window, nint.Zero, false);
         _ = UpdateWindow(_window);
+    }
+
+    private PixelSize GetNativeClientPixelSize()
+    {
+        if (_window != nint.Zero && GetClientRect(_window, out var clientRect))
+        {
+            var width = clientRect.Right - clientRect.Left;
+            var height = clientRect.Bottom - clientRect.Top;
+            if (width > 0 && height > 0) return new PixelSize(width, height);
+        }
+        return GetPhysicalPixelSize(Bounds.Size);
     }
 
     private PixelSize GetPhysicalPixelSize(Size size)
@@ -524,8 +534,21 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
     private const int SwHide = 0;
     private const int SwShow = 5;
 
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativeRect
+    {
+        public int Left;
+        public int Top;
+        public int Right;
+        public int Bottom;
+    }
+
     [DllImport("user32.dll")]
     private static extern nint GetWindow(nint window, uint command);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetClientRect(nint window, out NativeRect rectangle);
 
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]

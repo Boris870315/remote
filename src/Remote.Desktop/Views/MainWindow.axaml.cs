@@ -166,7 +166,7 @@ public partial class MainWindow : Window
         {
             host = new AvaloniaEmbeddedRdpHost();
             host.UnexpectedlyDisconnected += reason =>
-                _ = _viewModel?.HandleEmbeddedRdpFailureAsync(sessionId, reason);
+                Dispatcher.UIThread.Post(() => _ = HandleUnexpectedRdpDisconnectAsync(sessionId, reason));
             _rdpHosts.Add(sessionId, host);
             EmbeddedRdpSurfaces.Children.Add(host);
         }
@@ -176,6 +176,8 @@ public partial class MainWindow : Window
         {
             await host.ConnectAsync(request);
             ShowSelectedRdpHost();
+            Dispatcher.UIThread.Post(() => host.SetSessionVisible(
+                _viewModel?.SelectedSessionTab?.SessionId == sessionId), DispatcherPriority.Render);
         }
         catch
         {
@@ -185,6 +187,25 @@ public partial class MainWindow : Window
                 EmbeddedRdpSurfaces.Children.Remove(failedHost);
             }
             throw;
+        }
+    }
+
+    private async Task HandleUnexpectedRdpDisconnectAsync(SessionId sessionId, string reason)
+    {
+        try
+        {
+            if (_rdpHosts.Remove(sessionId, out var host))
+            {
+                await host.DisconnectAsync();
+                EmbeddedRdpSurfaces.Children.Remove(host);
+            }
+            if (_viewModel is not null)
+                await _viewModel.HandleEmbeddedRdpFailureAsync(sessionId, reason);
+        }
+        catch
+        {
+            // A disconnect may race with tab/application shutdown. The RDP host
+            // is already detached; never let a late diagnostic tear down the UI.
         }
     }
 
