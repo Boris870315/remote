@@ -11,13 +11,14 @@ public sealed class RfbClient(
     IRfbFrameSink frameSink) : IAsyncDisposable
 {
     private const int MaximumClipboardBytes = 16 * 1024 * 1024;
+    private const long MaximumFramebufferBytes = 256L * 1024 * 1024;
     private const int RawEncoding = 0;
     private const int CopyRectEncoding = 1;
     private const int HextileEncoding = 5;
     private const int DesktopSizeEncoding = -223;
     private readonly SemaphoreSlim _writeLock = new(1, 1);
     private RfbTransport? _transport;
-    private SessionAccessMode _accessMode;
+    private int _accessMode;
     private ushort _width;
     private ushort _height;
 
@@ -59,20 +60,23 @@ public sealed class RfbClient(
             var serverInfo = await PerformHandshakeAsync(transport.Stream, options, connectToken)
                 .ConfigureAwait(false);
             _transport = transport;
-            _accessMode = options.AccessMode;
+            SetAccessMode(options.AccessMode);
             _width = serverInfo.Width;
             _height = serverInfo.Height;
+            ValidateDesktopSize(_width, _height);
             await ConfigureFramebufferAsync(connectToken).ConfigureAwait(false);
             await frameSink.DesktopSizeChangedAsync(_width, _height, connectToken).ConfigureAwait(false);
             return serverInfo;
         }
         catch (OperationCanceledException exception) when (timeout.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
         {
+            _transport = null;
             await transport.DisposeAsync().ConfigureAwait(false);
             throw new TimeoutException($"VNC handshake timed out after {options.ConnectTimeout.TotalSeconds:0} seconds.", exception);
         }
         catch
         {
+            _transport = null;
             await transport.DisposeAsync().ConfigureAwait(false);
             throw;
         }
@@ -84,20 +88,32 @@ public sealed class RfbClient(
         await RequestFramebufferUpdateAsync(false, cancellationToken).ConfigureAwait(false);
         while (!cancellationToken.IsCancellationRequested)
         {
-            await ProcessServerMessageAsync(stream, cancellationToken).ConfigureAwait(false);
-            await RequestFramebufferUpdateAsync(true, cancellationToken).ConfigureAwait(false);
+            if (await ProcessServerMessageAsync(stream, cancellationToken).ConfigureAwait(false))
+            {
+                await RequestFramebufferUpdateAsync(true, cancellationToken).ConfigureAwait(false);
+            }
         }
     }
 
-    public Task ReceiveNextServerMessageAsync(CancellationToken cancellationToken = default) =>
-        ProcessServerMessageAsync(GetStream(), cancellationToken);
+    public async Task ReceiveNextServerMessageAsync(CancellationToken cancellationToken = default) =>
+        _ = await ProcessServerMessageAsync(GetStream(), cancellationToken).ConfigureAwait(false);
+
+    public void SetAccessMode(SessionAccessMode accessMode)
+    {
+        if (accessMode is not SessionAccessMode.Interactive and not SessionAccessMode.ViewOnly)
+        {
+            throw new ArgumentOutOfRangeException(nameof(accessMode));
+        }
+
+        Volatile.Write(ref _accessMode, (int)accessMode);
+    }
 
     public async Task<bool> SendKeyAsync(
         uint keySym,
         bool isDown,
         CancellationToken cancellationToken = default)
     {
-        if (_accessMode is SessionAccessMode.ViewOnly)
+        if (IsViewOnly())
         {
             return false;
         }
@@ -116,7 +132,7 @@ public sealed class RfbClient(
         ushort y,
         CancellationToken cancellationToken = default)
     {
-        if (_accessMode is SessionAccessMode.ViewOnly)
+        if (IsViewOnly())
         {
             return false;
         }
@@ -135,7 +151,7 @@ public sealed class RfbClient(
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(text);
-        if (_accessMode is SessionAccessMode.ViewOnly)
+        if (IsViewOnly())
         {
             return false;
         }
@@ -164,7 +180,9 @@ public sealed class RfbClient(
             _transport = null;
         }
 
-        _writeLock.Dispose();
+        // SemaphoreSlim owns no unmanaged resource unless its wait handle is
+        // requested. Keeping it alive avoids racing a pending write's finally
+        // block while session shutdown disposes the network stream.
     }
 
     private static async Task<RfbServerInfo> PerformHandshakeAsync(
@@ -285,22 +303,22 @@ public sealed class RfbClient(
         await WriteAsync(encodings, cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task ProcessServerMessageAsync(Stream stream, CancellationToken cancellationToken)
+    private async Task<bool> ProcessServerMessageAsync(Stream stream, CancellationToken cancellationToken)
     {
         var messageType = await RfbBinary.ReadByteAsync(stream, cancellationToken).ConfigureAwait(false);
         switch (messageType)
         {
             case 0:
                 await ProcessFramebufferUpdateAsync(stream, cancellationToken).ConfigureAwait(false);
-                break;
+                return true;
             case 1:
                 await SkipColorMapAsync(stream, cancellationToken).ConfigureAwait(false);
-                break;
+                return false;
             case 2:
-                break;
+                return false;
             case 3:
                 await ProcessServerCutTextAsync(stream, cancellationToken).ConfigureAwait(false);
-                break;
+                return false;
             default:
                 throw new InvalidDataException($"Unsupported RFB server message type {messageType}.");
         }
@@ -310,6 +328,7 @@ public sealed class RfbClient(
     {
         _ = await RfbBinary.ReadByteAsync(stream, cancellationToken).ConfigureAwait(false);
         var rectangleCount = await RfbBinary.ReadUInt16Async(stream, cancellationToken).ConfigureAwait(false);
+        await frameSink.FramebufferUpdateStartedAsync(cancellationToken).ConfigureAwait(false);
         for (var index = 0; index < rectangleCount; index++)
         {
             var x = await RfbBinary.ReadUInt16Async(stream, cancellationToken).ConfigureAwait(false);
@@ -319,16 +338,19 @@ public sealed class RfbClient(
             var encoding = await RfbBinary.ReadInt32Async(stream, cancellationToken).ConfigureAwait(false);
             if (encoding == DesktopSizeEncoding)
             {
+                ValidateDesktopSize(width, height);
                 _width = width;
                 _height = height;
                 await frameSink.DesktopSizeChangedAsync(width, height, cancellationToken).ConfigureAwait(false);
                 continue;
             }
 
+            ValidateRectangleBounds(x, y, width, height);
             if (encoding == CopyRectEncoding)
             {
                 var sourceX = await RfbBinary.ReadUInt16Async(stream, cancellationToken).ConfigureAwait(false);
                 var sourceY = await RfbBinary.ReadUInt16Async(stream, cancellationToken).ConfigureAwait(false);
+                ValidateRectangleBounds(sourceX, sourceY, width, height);
                 await frameSink.RectangleCopiedAsync(
                     new RfbCopyRectangle(x, y, width, height, sourceX, sourceY),
                     cancellationToken).ConfigureAwait(false);
@@ -361,6 +383,8 @@ public sealed class RfbClient(
                 new RfbRectangle(x, y, width, height, pixels),
                 cancellationToken).ConfigureAwait(false);
         }
+
+        await frameSink.FramebufferUpdateCompletedAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task<byte[]> ReadHextileAsync(
@@ -504,6 +528,25 @@ public sealed class RfbClient(
 
     private Stream GetStream() => _transport?.Stream
         ?? throw new InvalidOperationException("The VNC client is not connected.");
+
+    private bool IsViewOnly() =>
+        (SessionAccessMode)Volatile.Read(ref _accessMode) is SessionAccessMode.ViewOnly;
+
+    private static void ValidateDesktopSize(ushort width, ushort height)
+    {
+        if (width == 0 || height == 0 || (long)width * height * 4 > MaximumFramebufferBytes)
+        {
+            throw new InvalidDataException($"The VNC desktop size {width} × {height} is invalid or too large.");
+        }
+    }
+
+    private void ValidateRectangleBounds(ushort x, ushort y, ushort width, ushort height)
+    {
+        if ((long)x + width > _width || (long)y + height > _height)
+        {
+            throw new InvalidDataException("The VNC update rectangle exceeds the desktop bounds.");
+        }
+    }
 
     private static byte SelectSecurityType(ReadOnlySpan<byte> available, bool passwordIsEmpty)
     {

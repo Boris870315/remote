@@ -592,8 +592,8 @@ public partial class MainWindow : Window
 
         var wheelMask = e.Delta.Y > 0 ? (byte)8 : e.Delta.Y < 0 ? (byte)16 : (byte)0;
         if (wheelMask == 0) return;
-        var pressed = await _viewModel.SendVncPointerAsync(wheelMask, x, y);
-        var released = await _viewModel.SendVncPointerAsync(0, x, y);
+        var pressed = await _viewModel.SendVncPointerAsync((byte)(_vncButtonMask | wheelMask), x, y);
+        var released = await _viewModel.SendVncPointerAsync(_vncButtonMask, x, y);
         e.Handled = pressed && released;
     }
 
@@ -611,10 +611,10 @@ public partial class MainWindow : Window
         }
 
         var point = e.GetCurrentPoint(RemoteSurface);
-        _vncButtonMask = point.Properties.IsLeftButtonPressed ? (byte)1
-            : point.Properties.IsMiddleButtonPressed ? (byte)2
-            : point.Properties.IsRightButtonPressed ? (byte)4
-            : (byte)0;
+        _vncButtonMask = (byte)(
+            (point.Properties.IsLeftButtonPressed ? 1 : 0) |
+            (point.Properties.IsMiddleButtonPressed ? 2 : 0) |
+            (point.Properties.IsRightButtonPressed ? 4 : 0));
         if (!TryMapRemotePoint(point.Position, out var x, out var y))
         {
             return;
@@ -775,7 +775,8 @@ public partial class MainWindow : Window
             return false;
         }
 
-        var mode = _viewModel?.SelectedConnection?.Profile.Display.ScaleMode ??
+        var mode = _viewModel?.SelectedSessionTab?.Connection.Display.ScaleMode ??
+            _viewModel?.SelectedConnection?.Profile.Display.ScaleMode ??
             Remote.Application.Connections.DisplayScaleMode.Fit;
         var widthScale = RemoteSurface.Bounds.Width / frame.PixelSize.Width;
         var heightScale = RemoteSurface.Bounds.Height / frame.PixelSize.Height;

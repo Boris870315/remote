@@ -14,6 +14,18 @@ public sealed class AvaloniaRfbFrameSink(Action<WriteableBitmap?> frameChanged) 
     private ushort _width;
     private ushort _height;
     private WriteableBitmap? _bitmap;
+    private bool _framebufferUpdateInProgress;
+
+    public ValueTask FramebufferUpdateStartedAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (_gate)
+        {
+            _framebufferUpdateInProgress = true;
+        }
+
+        return ValueTask.CompletedTask;
+    }
 
     public ValueTask DesktopSizeChangedAsync(ushort width, ushort height, CancellationToken cancellationToken)
     {
@@ -24,7 +36,7 @@ public sealed class AvaloniaRfbFrameSink(Action<WriteableBitmap?> frameChanged) 
             _pixels = new byte[checked(width * height * 4)];
         }
 
-        return PublishAsync(cancellationToken);
+        return PublishUnlessUpdatingAsync(cancellationToken);
     }
 
     public ValueTask RectangleUpdatedAsync(RfbRectangle rectangle, CancellationToken cancellationToken)
@@ -45,7 +57,7 @@ public sealed class AvaloniaRfbFrameSink(Action<WriteableBitmap?> frameChanged) 
             }
         }
 
-        return PublishAsync(cancellationToken);
+        return PublishUnlessUpdatingAsync(cancellationToken);
     }
 
     public ValueTask RectangleCopiedAsync(RfbCopyRectangle rectangle, CancellationToken cancellationToken)
@@ -75,6 +87,16 @@ public sealed class AvaloniaRfbFrameSink(Action<WriteableBitmap?> frameChanged) 
                         ((rectangle.Y + row) * desktopRowBytes) + (rectangle.X * 4),
                         rowBytes));
             }
+        }
+
+        return PublishUnlessUpdatingAsync(cancellationToken);
+    }
+
+    public ValueTask FramebufferUpdateCompletedAsync(CancellationToken cancellationToken)
+    {
+        lock (_gate)
+        {
+            _framebufferUpdateInProgress = false;
         }
 
         return PublishAsync(cancellationToken);
@@ -124,5 +146,18 @@ public sealed class AvaloniaRfbFrameSink(Action<WriteableBitmap?> frameChanged) 
 
             frameChanged(_bitmap);
         });
+    }
+
+    private ValueTask PublishUnlessUpdatingAsync(CancellationToken cancellationToken)
+    {
+        lock (_gate)
+        {
+            if (_framebufferUpdateInProgress)
+            {
+                return ValueTask.CompletedTask;
+            }
+        }
+
+        return PublishAsync(cancellationToken);
     }
 }

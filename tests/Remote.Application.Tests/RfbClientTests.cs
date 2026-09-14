@@ -20,6 +20,20 @@ public sealed class RfbClientTests
     }
 
     [Fact]
+    public async Task Connect_WhenDesktopIsTooLarge_RejectsAndClearsConnectedState()
+    {
+        var stream = new ScriptedDuplexStream(BuildServerScript(width: ushort.MaxValue, height: ushort.MaxValue));
+        await using var client = new RfbClient(new ScriptedTransportFactory(stream), new RecordingFrameSink());
+
+        await Assert.ThrowsAsync<InvalidDataException>(() => client.ConnectAsync(new RfbConnectionOptions
+        {
+            Endpoint = new Uri("vnc://server.example"),
+        }));
+
+        Assert.False(client.IsConnected);
+    }
+
+    [Fact]
     public async Task Connect_Rfb38WithoutAuthentication_ConfiguresRawFramebuffer()
     {
         var stream = new ScriptedDuplexStream(BuildServerScript());
@@ -67,6 +81,23 @@ public sealed class RfbClientTests
     }
 
     [Fact]
+    public async Task SetAccessMode_ImmediatelyUpdatesProtocolInputGate()
+    {
+        var stream = new ScriptedDuplexStream(BuildServerScript());
+        await using var client = new RfbClient(new ScriptedTransportFactory(stream), new RecordingFrameSink());
+        await client.ConnectAsync(new RfbConnectionOptions { Endpoint = new Uri("vnc://server.example") });
+        var bytesBeforeInput = stream.Written.Length;
+
+        client.SetAccessMode(SessionAccessMode.ViewOnly);
+        Assert.False(await client.SendKeyAsync(0x41, true));
+        Assert.Equal(bytesBeforeInput, stream.Written.Length);
+
+        client.SetAccessMode(SessionAccessMode.Interactive);
+        Assert.True(await client.SendKeyAsync(0x41, true));
+        Assert.Equal(bytesBeforeInput + 8, stream.Written.Length);
+    }
+
+    [Fact]
     public async Task ReceiveRawRectangle_ConvertsUnusedByteToOpaqueAlpha()
     {
         var update = new byte[]
@@ -84,6 +115,8 @@ public sealed class RfbClientTests
 
         var rectangle = Assert.Single(sink.Rectangles);
         Assert.Equal([10, 20, 30, 255], rectangle.BgraPixels);
+        Assert.Equal(1, sink.StartedUpdates);
+        Assert.Equal(1, sink.CompletedUpdates);
     }
 
     [Fact]
@@ -240,11 +273,44 @@ public sealed class RfbClientTests
         Assert.Equal("café", received);
     }
 
+    [Fact]
+    public async Task RunAsync_ServerClipboardDoesNotQueueAnotherFramebufferRequest()
+    {
+        var serverCutText = new byte[] { 3, 0, 0, 0, 0, 0, 0, 1, 65 };
+        var stream = new ScriptedDuplexStream(BuildServerScript(serverCutText));
+        await using var client = new RfbClient(new ScriptedTransportFactory(stream), new RecordingFrameSink());
+        await client.ConnectAsync(new RfbConnectionOptions { Endpoint = new Uri("vnc://server.example") });
+        var bytesBeforeRun = stream.Written.Length;
+
+        await Assert.ThrowsAsync<EndOfStreamException>(() => client.RunAsync());
+
+        Assert.Equal(bytesBeforeRun + 10, stream.Written.Length);
+    }
+
+    [Fact]
+    public async Task ReceiveRectangleOutsideDesktop_RejectsBeforeReadingPixelPayload()
+    {
+        var update = new byte[]
+        {
+            0, 0, 0, 1,
+            3, 32, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0,
+        };
+        var stream = new ScriptedDuplexStream(BuildServerScript(update));
+        await using var client = new RfbClient(new ScriptedTransportFactory(stream), new RecordingFrameSink());
+        await client.ConnectAsync(new RfbConnectionOptions { Endpoint = new Uri("vnc://server.example") });
+
+        var error = await Assert.ThrowsAsync<InvalidDataException>(() => client.ReceiveNextServerMessageAsync());
+
+        Assert.Contains("exceeds the desktop bounds", error.Message, StringComparison.Ordinal);
+    }
+
     private static byte[] BuildServerScript(
         byte[]? trailingMessage = null,
         int minor = 8,
         byte securityType = 1,
-        byte[]? challenge = null)
+        byte[]? challenge = null,
+        ushort width = 800,
+        ushort height = 600)
     {
         using var stream = new MemoryStream();
         stream.Write(Encoding.ASCII.GetBytes($"RFB 003.{minor:000}\n"));
@@ -266,8 +332,8 @@ public sealed class RfbClientTests
         {
             WriteUInt32(stream, 0);
         }
-        WriteUInt16(stream, 800);
-        WriteUInt16(stream, 600);
+        WriteUInt16(stream, width);
+        WriteUInt16(stream, height);
         stream.Write(new byte[16]);
         var name = "Test Desktop"u8.ToArray();
         WriteUInt32(stream, (uint)name.Length);
@@ -326,6 +392,16 @@ public sealed class RfbClientTests
 
         public List<RfbCopyRectangle> Copies { get; } = [];
 
+        public int StartedUpdates { get; private set; }
+
+        public int CompletedUpdates { get; private set; }
+
+        public ValueTask FramebufferUpdateStartedAsync(CancellationToken cancellationToken)
+        {
+            StartedUpdates++;
+            return ValueTask.CompletedTask;
+        }
+
         public ValueTask DesktopSizeChangedAsync(ushort width, ushort height, CancellationToken cancellationToken)
         {
             Width = width;
@@ -342,6 +418,12 @@ public sealed class RfbClientTests
         public ValueTask RectangleCopiedAsync(RfbCopyRectangle rectangle, CancellationToken cancellationToken)
         {
             Copies.Add(rectangle);
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask FramebufferUpdateCompletedAsync(CancellationToken cancellationToken)
+        {
+            CompletedUpdates++;
             return ValueTask.CompletedTask;
         }
     }

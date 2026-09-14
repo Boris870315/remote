@@ -33,9 +33,13 @@ public sealed record RfbCopyRectangle(ushort X, ushort Y, ushort Width, ushort H
 
 public interface IRfbFrameSink
 {
+    ValueTask FramebufferUpdateStartedAsync(CancellationToken cancellationToken);
+
     ValueTask DesktopSizeChangedAsync(ushort width, ushort height, CancellationToken cancellationToken);
 
     ValueTask RectangleUpdatedAsync(RfbRectangle rectangle, CancellationToken cancellationToken);
 
     ValueTask RectangleCopiedAsync(RfbCopyRectangle rectangle, CancellationToken cancellationToken);
+
+    ValueTask FramebufferUpdateCompletedAsync(CancellationToken cancellationToken);
 }

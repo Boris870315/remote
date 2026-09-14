@@ -3174,6 +3174,11 @@ public sealed partial class MainViewModel : ViewModelBase
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
         }
+        catch (Exception exception) when (
+            cancellationToken.IsCancellationRequested &&
+            exception is IOException or ObjectDisposedException)
+        {
+        }
         catch (Exception exception) when (exception is IOException or InvalidDataException or NotSupportedException)
         {
             SetSessionState(sessionId, SessionState.Faulted, exception.Message);
@@ -3234,6 +3239,10 @@ public sealed partial class MainViewModel : ViewModelBase
         StatusDetail = result.Detail;
         if (SelectedSessionTab is not { } tab || tab.IsViewOnly == IsViewOnly) return;
         tab.SetViewOnly(IsViewOnly);
+        if (_vncSessions.TryGetValue(tab.SessionId, out var vnc))
+        {
+            vnc.Client.SetAccessMode(mode);
+        }
         SessionViewOnlyChanged?.Invoke(tab.SessionId, IsViewOnly);
         if (!string.Equals(tab.ProtocolLabel, "RDP", StringComparison.OrdinalIgnoreCase)) return;
         var settings = RdpConnectionSettings.FromProtocolSettings(tab.Connection.ProtocolSettings);
