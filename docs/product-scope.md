@@ -12,6 +12,7 @@ This is the short implementation contract distilled from the product grilling. `
 - Shared View Only policy, local error log, and modal notification for actionable failures such as rejected credentials and connection timeout.
 - Adaptive wide, compact, narrow, and portrait layouts with independently collapsible Connection tree and inspector.
 - Per-Connection Fit, Fill, 100%, and Scroll display modes; single-monitor and all-monitor selection where the protocol host supports them.
+- Embedded RDP on Windows and macOS with per-Session display, input suppression, clipboard policy, selected device redirection, and independent lifecycle.
 - Local encrypted backup is optional and disabled by default. Credential deletion is permanent and clears references.
 
 ## Generation 2
@@ -19,7 +20,6 @@ This is the short implementation contract distilled from the product grilling. `
 - Windows Hello and Touch ID quick unlock, with Master Password fallback.
 - Multiple Vaults.
 - A separately controllable tab or native window for every remote monitor.
-- Cross-platform embedded RDP when a host can meet packaging, credential, display, and View Only requirements.
 - Modern encrypted VNC security such as VeNCrypt/TLS after certificate trust UX is specified.
 
 ## Acceptance boundary

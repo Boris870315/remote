@@ -67,8 +67,11 @@ Git 歷史備份：同目錄的 `mac-remote.bundle`。
 - 頂部「已連線」狀態現在依選取 Session 的實際狀態顯示，不會在連線中或失敗後保持亮起。
 - 右側 Connection 詳細資料加入垂直捲動，低高度視窗仍可操作工作階段帳號與密碼欄位。
 - 延遲到達的原生斷線通知在分頁已關閉後會被忽略，避免重複錯誤。
+- Windows 會優先使用已安裝的 RDP Client 12／11，再回退至 10；相機改用專屬 Camera redirection collection，不再以一般 PnP 裝置開關代替。
+- Windows 內嵌模式已套用 Remote Credential Guard，啟用時不把 Vault 密碼注入 ActiveX；系統管理工作階段使用新版屬性並保留舊版回退。
+- Fit／Fill 與 100%／Scroll 會即時切換 ActiveX Smart Sizing；縮放與 macOS 貼上權限改以目前 Session 分頁的快照為準，不會誤用左側 Connection 選取項目。
 - 本機 GUI 已驗收 ActiveX 建立、連線中狀態、30 秒逾時提示、錯誤紀錄、失敗分頁清理、最大化與側欄尺寸調整，以及連線中關閉 App；關閉後沒有殘留程序。
-- `dotnet test Remote.slnx --no-build --nologo`：新增狀態與關閉回歸測試後共 130 通過，0 失敗、0 略過。
+- `dotnet test Remote.slnx --nologo`：新增狀態、關閉與作用中分頁縮放回歸測試後共 131 通過，0 失敗、0 略過。
 - 既有測試主機 `10.20.0.24:3389` 於 2026-09-14 從 Windows 不可達；遠端畫面、鍵鼠、剪貼簿、裝置重新導向及 View Only 的端到端驗收仍待可用 RDP 主機。
 
 啟動：
@@ -88,6 +91,6 @@ dotnet run --project src/Remote.Desktop/Remote.Desktop.csproj
 
 Windows 錯誤紀錄：`%LOCALAPPDATA%\Remote\Logs\errors.jsonl`。
 
-## 已知文件落差
+## 文件狀態
 
-`docs/adr/0002-rdp-host-strategy.md` 仍描述 macOS 使用外部 RDP、FreeRDP 留待未來；`docs/product-scope.md` 也仍把跨平台內嵌 RDP 列在第二代。這與後續已提交的 macOS FreeRDP 實作不符。交接保留原始決策文件，後續應更新 ADR 的演進紀錄，避免照舊文件把已完成能力退回外部啟動。
+`docs/adr/0002-rdp-host-strategy.md` 與 `docs/product-scope.md` 已更新為 Windows ActiveX 與 macOS FreeRDP 都採內嵌 Session 的現況。

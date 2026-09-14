@@ -122,6 +122,7 @@ public partial class MainWindow : Window
             _viewModel.EmbeddedWebCloseRequested -= CloseEmbeddedWebAsync;
             _viewModel.VncClipboardTextReceived -= HandleVncClipboardTextReceived;
             _viewModel.SessionViewOnlyChanged -= HandleSessionViewOnlyChanged;
+            _viewModel.SessionDisplayScaleChanged -= HandleSessionDisplayScaleChanged;
         }
 
         base.OnDataContextChanged(e);
@@ -136,6 +137,7 @@ public partial class MainWindow : Window
             _viewModel.EmbeddedWebCloseRequested += CloseEmbeddedWebAsync;
             _viewModel.VncClipboardTextReceived += HandleVncClipboardTextReceived;
             _viewModel.SessionViewOnlyChanged += HandleSessionViewOnlyChanged;
+            _viewModel.SessionDisplayScaleChanged += HandleSessionDisplayScaleChanged;
         }
 
         ApplyAdaptiveLayout();
@@ -150,6 +152,16 @@ public partial class MainWindow : Window
         if (!viewOnly) return;
         runtime.ControlDown = runtime.AltDown = runtime.ShiftDown = false;
         runtime.SuppressPasteKeyUp = false;
+    }
+
+    private void HandleSessionDisplayScaleChanged(
+        SessionId sessionId,
+        Remote.Application.Connections.DisplayScaleMode scaleMode)
+    {
+        if (_rdpHosts.TryGetValue(sessionId, out var windowsHost))
+            windowsHost.SetDisplayScaleMode(scaleMode);
+        if (_viewModel?.SelectedSessionTab?.SessionId == sessionId)
+            ApplyRemoteSurfaceScale();
     }
 
     private async Task ConnectEmbeddedRdpAsync(
@@ -428,7 +440,8 @@ public partial class MainWindow : Window
 
     private void ApplyRemoteSurfaceScale()
     {
-        var mode = _viewModel?.SelectedConnection?.Profile.Display.ScaleMode ??
+        var mode = _viewModel?.SelectedSessionTab?.Connection.Display.ScaleMode ??
+            _viewModel?.SelectedConnection?.Profile.Display.ScaleMode ??
             Remote.Application.Connections.DisplayScaleMode.Fit;
         var scroll = mode is Remote.Application.Connections.DisplayScaleMode.Scroll;
         RemoteSurfaceScroller.HorizontalScrollBarVisibility = scroll ? ScrollBarVisibility.Auto : ScrollBarVisibility.Disabled;
@@ -632,7 +645,9 @@ public partial class MainWindow : Window
     {
         if (_viewModel?.IsViewOnly is true) { e.Handled = true; return; }
         if (e.Key is Key.V && TryGetSelectedMacRdp(out var macRdp) &&
-            _viewModel?.SelectedRedirectsClipboard is true &&
+            _viewModel?.SelectedSessionTab is { } selectedTab &&
+            Remote.Infrastructure.Protocols.Rdp.RdpConnectionSettings
+                .FromProtocolSettings(selectedTab.Connection.ProtocolSettings).RedirectClipboard &&
             (e.KeyModifiers.HasFlag(KeyModifiers.Meta) ||
              e.KeyModifiers.HasFlag(KeyModifiers.Control)))
         {

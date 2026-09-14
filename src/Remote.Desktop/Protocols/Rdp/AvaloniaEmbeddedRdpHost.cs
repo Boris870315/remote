@@ -7,6 +7,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Platform;
 using Avalonia.Threading;
+using Remote.Application.Connections;
 using Remote.Infrastructure.Protocols.Rdp;
 
 namespace Remote.Desktop.Protocols.Rdp;
@@ -17,7 +18,12 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
     private const uint WsChild = 0x40000000;
     private const uint WsVisible = 0x10000000;
     private const uint WsClipSiblings = 0x04000000;
-    private const string MsRdpClient10NotSafeForScripting = "{A0C63C30-F08D-4AB4-907C-34905D770C7D}";
+    private static readonly string[] RdpClientClassIds =
+    [
+        "{3F859AA3-C2D4-4FAA-B0E4-FD0C9C4E5E3A}", // MsRdpClient12NotSafeForScripting
+        "{1DF7C823-B2D4-4B54-975A-F2AC5D7CF8B8}", // MsRdpClient11NotSafeForScripting
+        "{A0C63C30-F08D-4AB4-907C-34905D770C7D}", // MsRdpClient10NotSafeForScripting
+    ];
     private nint _window;
     private object? _rdpClient;
     private readonly TaskCompletionSource _hostReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -28,6 +34,7 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
     private bool _disconnectRequested;
     private int _connectingTicks;
     private bool _useMultimon;
+    private DisplayScaleMode _displayScaleMode = DisplayScaleMode.Fit;
     private PixelSize _lastSessionDisplaySize;
 
     public event Action<string>? UnexpectedlyDisconnected;
@@ -37,6 +44,18 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
         if (!OperatingSystem.IsWindows() || _window == nint.Zero) return;
         EnableWindow(_window, !viewOnly);
     }
+
+    public void SetDisplayScaleMode(DisplayScaleMode scaleMode)
+    {
+        _displayScaleMode = scaleMode;
+        if (!OperatingSystem.IsWindows() || _rdpClient is null) return;
+        var advanced = ((IMsTscAxDispatch)_rdpClient).AdvancedSettings;
+        TrySetComProperty(advanced, "SmartSizing", UsesSmartSizing(scaleMode));
+        ResizeNativeSurface();
+    }
+
+    internal static bool UsesSmartSizing(DisplayScaleMode scaleMode) =>
+        scaleMode is DisplayScaleMode.Fit or DisplayScaleMode.Fill;
 
     public void SetSessionVisible(bool visible)
     {
@@ -91,6 +110,7 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
             // infer the destination computer name and display HOST\\username.
             client.Domain = request.Domain ?? string.Empty;
             stage = "set-display";
+            _displayScaleMode = request.Display.ScaleMode;
             var initialPixelSize = GetNativeClientPixelSize();
             client.DesktopWidth = Math.Max(640, initialPixelSize.Width);
             client.DesktopHeight = Math.Max(480, initialPixelSize.Height);
@@ -111,18 +131,29 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
             var permissions = RdpSessionPermissionPolicy.Resolve(request.AccessMode, request.Settings);
             stage = "set-security-and-redirection";
             SetComProperty(advanced, "RDPPort", request.Endpoint.IsDefaultPort ? 3389 : request.Endpoint.Port);
-            SetComProperty(advanced, "SmartSizing", true);
-            SetComProperty(advanced, "ConnectToServerConsole", request.Settings.ConnectAsAdministrator);
+            SetComProperty(advanced, "SmartSizing", UsesSmartSizing(_displayScaleMode));
+            if (!TrySetComProperty(advanced, "ConnectToAdministerServer", request.Settings.ConnectAsAdministrator))
+                SetComProperty(advanced, "ConnectToServerConsole", request.Settings.ConnectAsAdministrator);
             SetComProperty(advanced, "RedirectClipboard", permissions.RedirectClipboard);
             SetComProperty(advanced, "RedirectPrinters", permissions.RedirectPrinters);
             SetComProperty(advanced, "RedirectDrives", permissions.RedirectDrives);
             SetComProperty(advanced, "AudioCaptureRedirectionMode", permissions.RedirectMicrophone);
-            SetComProperty(advanced, "RedirectDevices", permissions.RedirectCamera);
+            if (permissions.RedirectCamera && !RdpActiveXNativeSettings.TryRedirectAllCameras(clientObject))
+            {
+                throw new NotSupportedException(
+                    "此 Windows RDP 控制項不支援相機重新導向；請更新 Windows Remote Desktop 元件。");
+            }
             SetComProperty(advanced, "AudioRedirectionMode", (uint)request.Settings.AudioMode);
             TrySetComProperty(
                 advanced,
                 "AuthenticationLevel",
                 GetAuthenticationLevel(request.Settings.CertificatePolicy));
+            if (request.Settings.UseRemoteGuard)
+            {
+                stage = "enable-remote-credential-guard";
+                RdpActiveXNativeSettings.SetExtendedBoolean(
+                    clientObject, "RedirectedAuthentication", true);
+            }
             if (!string.IsNullOrWhiteSpace(request.Settings.GatewayHost))
             {
                 stage = "set-gateway";
@@ -131,7 +162,7 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
                 SetComProperty(transport, "GatewayUsageMethod", 1u);
                 SetComProperty(transport, "GatewayProfileUsageMethod", 1u);
             }
-            if (request.PasswordUtf8 is { Length: > 0 })
+            if (!request.Settings.UseRemoteGuard && request.PasswordUtf8 is { Length: > 0 })
             {
                 stage = "set-credential";
                 var clearTextPassword = System.Text.Encoding.UTF8.GetString(request.PasswordUtf8.Span);
@@ -300,31 +331,38 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
             throw new InvalidOperationException("Windows ATL ActiveX host initialization failed.");
         }
 
-        _window = CreateWindowExW(
-            0,
-            "AtlAxWin",
-            MsRdpClient10NotSafeForScripting,
-            WsChild | WsVisible | WsClipSiblings,
-            0,
-            0,
-            1,
-            1,
-            parent.Handle,
-            nint.Zero,
-            nint.Zero,
-            nint.Zero);
-        if (_window == nint.Zero)
+        nint unknown = nint.Zero;
+        var result = unchecked((int)0x80004005);
+        foreach (var classId in RdpClientClassIds)
         {
-            throw new InvalidOperationException($"Windows could not create the embedded RDP host ({Marshal.GetLastWin32Error()}).");
-        }
-
-        var result = AtlAxGetControl(_window, out var unknown);
-        if (result < 0 || unknown == nint.Zero)
-        {
+            _window = CreateWindowExW(
+                0,
+                "AtlAxWin",
+                classId,
+                WsChild | WsVisible | WsClipSiblings,
+                0,
+                0,
+                1,
+                1,
+                parent.Handle,
+                nint.Zero,
+                nint.Zero,
+                nint.Zero);
+            if (_window == nint.Zero) continue;
+            result = AtlAxGetControl(_window, out unknown);
+            if (result >= 0 && unknown != nint.Zero) break;
+            if (unknown != nint.Zero)
+            {
+                Marshal.Release(unknown);
+                unknown = nint.Zero;
+            }
             DestroyWindow(_window);
             _window = nint.Zero;
-            Marshal.ThrowExceptionForHR(result);
         }
+
+        if (_window == nint.Zero || unknown == nint.Zero)
+            throw new InvalidOperationException(
+                $"Windows could not create a supported embedded RDP host (HRESULT=0x{result:X8}).");
 
         try
         {
@@ -603,6 +641,9 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
     {
         private const int RegkindNone = 2;
         private static readonly Guid NonScriptable5Id = new("4F6996D5-D7B1-412C-B0FF-063718566907");
+        private static readonly Guid NonScriptable7Id = new("71B4A60A-FE21-46D8-A39B-8E32BA0C5ECC");
+        private static readonly Guid CameraCollectionId = new("AE45252B-AAAB-4504-B681-649D6073A37A");
+        private static readonly Guid CameraConfigId = new("09750604-D625-47C1-9FCD-F09F735705D7");
         private static readonly Guid RdpClient9Id = new("28904001-04B6-436C-A55B-0AF1A0883DC9");
 
         public static bool TryUpdateSessionDisplaySettings(object client, PixelSize size)
@@ -645,6 +686,13 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
             Marshal.ThrowExceptionForHR(extendedSettings.SetProperty("SelectedMonitors", ref value));
         }
 
+        public static void SetExtendedBoolean(object client, string propertyName, bool enabled)
+        {
+            var extendedSettings = (IMsRdpExtendedSettings)client;
+            object value = enabled;
+            Marshal.ThrowExceptionForHR(extendedSettings.SetProperty(propertyName, ref value));
+        }
+
         public static void SetUseMultimon(object client, bool enabled)
         {
             var typeLibrary = LoadRdpTypeLibrary();
@@ -674,6 +722,83 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
             }
         }
 
+        public static bool TryRedirectAllCameras(object client)
+        {
+            nint unknown = nint.Zero;
+            nint nonScriptable = nint.Zero;
+            nint collection = nint.Zero;
+            ITypeLib? typeLibrary = null;
+            try
+            {
+                typeLibrary = LoadRdpTypeLibrary();
+                unknown = Marshal.GetIUnknownForObject(client);
+                if (Marshal.QueryInterface(unknown, in NonScriptable7Id, out nonScriptable) < 0)
+                    return false;
+
+                var nonScriptableInfo = GetTypeInfo(typeLibrary, NonScriptable7Id);
+                var getCollectionOffset = FindPropertyGetterOffset(
+                    nonScriptableInfo, "CameraRedirConfigCollection");
+                var getCollection = GetVtableDelegate<GetInterface>(nonScriptable, getCollectionOffset);
+                if (getCollection(nonScriptable, out collection) < 0 || collection == nint.Zero)
+                    return false;
+
+                var collectionInfo = GetTypeInfo(typeLibrary, CameraCollectionId);
+                Marshal.ThrowExceptionForHR(GetVtableDelegate<InvokeNoArgs>(collection,
+                    FindMethodOffset(collectionInfo, "Rescan"))(collection));
+
+                collectionInfo = GetTypeInfo(typeLibrary, CameraCollectionId);
+                Marshal.ThrowExceptionForHR(GetVtableDelegate<PutVariantBool>(collection,
+                    FindPropertySetterOffset(collectionInfo, "RedirectByDefault"))(collection, -1));
+
+                collectionInfo = GetTypeInfo(typeLibrary, CameraCollectionId);
+                var getCount = GetVtableDelegate<GetUInt32>(collection,
+                    FindPropertyGetterOffset(collectionInfo, "Count"));
+                Marshal.ThrowExceptionForHR(getCount(collection, out var count));
+
+                for (uint index = 0; index < count; index++)
+                {
+                    collectionInfo = GetTypeInfo(typeLibrary, CameraCollectionId);
+                    var getCamera = GetVtableDelegate<GetInterfaceByIndex>(collection,
+                        FindPropertyGetterOffset(collectionInfo, "ByIndex"));
+                    nint camera = nint.Zero;
+                    try
+                    {
+                        Marshal.ThrowExceptionForHR(getCamera(collection, index, out camera));
+                        if (camera == nint.Zero) continue;
+                        var cameraInfo = GetTypeInfo(typeLibrary, CameraConfigId);
+                        var setRedirected = GetVtableDelegate<PutVariantBool>(camera,
+                            FindPropertySetterOffset(cameraInfo, "Redirected"));
+                        Marshal.ThrowExceptionForHR(setRedirected(camera, -1));
+                    }
+                    finally
+                    {
+                        if (camera != nint.Zero) Marshal.Release(camera);
+                    }
+                }
+                return true;
+            }
+            catch (Exception exception) when (IsComInvocationException(exception) || exception is TypeLoadException)
+            {
+                return false;
+            }
+            finally
+            {
+                if (collection != nint.Zero) Marshal.Release(collection);
+                if (nonScriptable != nint.Zero) Marshal.Release(nonScriptable);
+                if (unknown != nint.Zero) Marshal.Release(unknown);
+                if (typeLibrary is not null && Marshal.IsComObject(typeLibrary))
+                    Marshal.FinalReleaseComObject(typeLibrary);
+            }
+        }
+
+        private static TDelegate GetVtableDelegate<TDelegate>(nint instance, int offset)
+            where TDelegate : Delegate
+        {
+            var vtable = Marshal.ReadIntPtr(instance);
+            var functionPointer = Marshal.ReadIntPtr(vtable, offset);
+            return Marshal.GetDelegateForFunctionPointer<TDelegate>(functionPointer);
+        }
+
         private static ITypeLib LoadRdpTypeLibrary()
         {
             var typeLibraryPath = Path.Combine(
@@ -683,11 +808,20 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
             return typeLibrary;
         }
 
+        private static ITypeInfo GetTypeInfo(ITypeLib typeLibrary, Guid interfaceId)
+        {
+            typeLibrary.GetTypeInfoOfGuid(ref interfaceId, out var typeInfo);
+            return typeInfo;
+        }
+
         private static int FindMethodOffset(ITypeInfo typeInfo, string methodName) =>
             FindFunctionOffset(typeInfo, methodName, INVOKEKIND.INVOKE_FUNC);
 
         private static int FindPropertySetterOffset(ITypeInfo typeInfo, string propertyName)
             => FindFunctionOffset(typeInfo, propertyName, INVOKEKIND.INVOKE_PROPERTYPUT);
+
+        private static int FindPropertyGetterOffset(ITypeInfo typeInfo, string propertyName)
+            => FindFunctionOffset(typeInfo, propertyName, INVOKEKIND.INVOKE_PROPERTYGET);
 
         private static int FindFunctionOffset(ITypeInfo typeInfo, string functionName, INVOKEKIND invokeKind)
         {
@@ -727,6 +861,18 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
 
         [UnmanagedFunctionPointer(CallingConvention.StdCall)]
         private delegate int PutVariantBool(nint self, short enabled);
+
+        [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+        private delegate int GetInterface(nint self, out nint value);
+
+        [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+        private delegate int GetInterfaceByIndex(nint self, uint index, out nint value);
+
+        [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+        private delegate int GetUInt32(nint self, out uint value);
+
+        [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+        private delegate int InvokeNoArgs(nint self);
 
         [UnmanagedFunctionPointer(CallingConvention.StdCall)]
         private delegate int UpdateSessionDisplaySettings(

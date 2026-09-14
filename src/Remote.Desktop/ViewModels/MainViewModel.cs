@@ -71,6 +71,7 @@ public sealed partial class MainViewModel : ViewModelBase
 
     public event Action<string>? VncClipboardTextReceived;
     public event Action<SessionId, bool>? SessionViewOnlyChanged;
+    public event Action<SessionId, DisplayScaleMode>? SessionDisplayScaleChanged;
     public event Func<SessionId, Task>? EmbeddedRdpCloseRequested;
     public event Func<SessionId, Uri, bool, Task>? EmbeddedWebRequested;
     public event Func<SessionId, Uri, Task>? EmbeddedWebNavigateRequested;
@@ -1290,6 +1291,11 @@ public sealed partial class MainViewModel : ViewModelBase
         SelectedConnection = updated;
         RebuildConnectionTree(updated.Profile.Id);
         if (!IsVaultLocked) await SaveWorkspaceAsync();
+        if (SelectedSessionTab is { } activeTab && activeTab.Connection.Id == updated.Profile.Id)
+        {
+            activeTab.SetDisplayScaleMode(scaleMode);
+            SessionDisplayScaleChanged?.Invoke(activeTab.SessionId, scaleMode);
+        }
         SessionStatusLabel = $"顯示縮放已設定為 {SelectedDisplayScaleOption}";
     }
 

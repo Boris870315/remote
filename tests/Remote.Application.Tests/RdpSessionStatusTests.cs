@@ -1,4 +1,5 @@
 using Remote.Application.Sessions;
+using Remote.Application.Connections;
 using Remote.Desktop.ViewModels;
 
 namespace Remote.Application.Tests;
@@ -116,5 +117,31 @@ public sealed class RdpSessionStatusTests
         Assert.Empty(viewModel.SessionTabs);
         Assert.False(viewModel.IsRdpSessionActive);
         Assert.False(viewModel.IsSessionConnected);
+    }
+
+    [Fact]
+    public async Task DisplayScaleChange_UpdatesTheOpenRdpTabAndNotifiesItsHost()
+    {
+        if (!OperatingSystem.IsWindows() && !OperatingSystem.IsMacOS()) return;
+        var viewModel = new MainViewModel();
+        viewModel.EmbeddedRdpRequested += (_, _) => Task.CompletedTask;
+        await viewModel.OpenSelectedSessionCommand.ExecuteAsync(null);
+        var tab = Assert.Single(viewModel.SessionTabs);
+        SessionId? changedSession = null;
+        DisplayScaleMode? changedMode = null;
+        viewModel.SessionDisplayScaleChanged += (sessionId, scaleMode) =>
+        {
+            changedSession = sessionId;
+            changedMode = scaleMode;
+        };
+
+        viewModel.SelectedDisplayScaleOption = "100%";
+        await viewModel.ApplyDisplayScaleCommand.ExecuteAsync(null);
+
+        Assert.Equal(DisplayScaleMode.ActualSize, tab.Connection.Display.ScaleMode);
+        Assert.Equal(tab.SessionId, changedSession);
+        Assert.Equal(DisplayScaleMode.ActualSize, changedMode);
+
+        await viewModel.CloseSessionTabCommand.ExecuteAsync(tab);
     }
 }

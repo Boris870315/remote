@@ -34,6 +34,14 @@ public sealed partial class SessionTabViewModel(
         };
     }
 
+    public void SetDisplayScaleMode(DisplayScaleMode value)
+    {
+        Connection = Connection with
+        {
+            Display = Connection.Display with { ScaleMode = value },
+        };
+    }
+
     private static int GetPort(ConnectionProfile connection) => connection.Endpoint.Port >= 0
         ? connection.Endpoint.Port
         : connection.ProtocolId.ToLowerInvariant() switch
