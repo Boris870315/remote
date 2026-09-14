@@ -79,6 +79,7 @@ public sealed partial class MainViewModel : ViewModelBase
     public ObservableCollection<SessionTabViewModel> SessionTabs { get; } = [];
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsSessionConnected))]
     private SessionTabViewModel? selectedSessionTab;
 
     public MainViewModel()
@@ -515,8 +516,10 @@ public sealed partial class MainViewModel : ViewModelBase
 
     public bool IsVncSessionActive => _vncClient?.IsConnected is true;
 
-    public bool IsSessionConnected =>
-        RemoteFrame is not null || IsTerminalActive || IsWebSessionActive || IsRdpSessionActive;
+    private SessionState? SelectedSessionState => _sessionWorkspace.Sessions
+        .FirstOrDefault(session => session.Id == SelectedSessionTab?.SessionId)?.State;
+
+    public bool IsSessionConnected => SelectedSessionState is SessionState.Connected;
 
     public bool UsesWindowsEmbeddedRdpSurface => IsRdpSessionActive && OperatingSystem.IsWindows();
 
@@ -2212,7 +2215,7 @@ public sealed partial class MainViewModel : ViewModelBase
                 or TimeoutException or System.Net.Sockets.SocketException)
         {
             SetSessionState(session.Id, SessionState.Faulted, exception.Message);
-            IsRdpSessionActive = false;
+            if (SelectedSessionTab?.SessionId == session.Id) IsRdpSessionActive = false;
             SessionStatusLabel = exception.Message;
             await ReportMajorErrorAsync("RDP", "session-launch-failed", $"無法連線到 {connection.Endpoint.Host}:{connection.Endpoint.Port}。{exception.Message}", exception);
         }
@@ -2271,7 +2274,8 @@ public sealed partial class MainViewModel : ViewModelBase
         RemoteFrame = null;
         IsTerminalActive = false;
         IsWebSessionActive = false;
-        IsRdpSessionActive = string.Equals(tab.ProtocolLabel, "RDP", StringComparison.OrdinalIgnoreCase);
+        IsRdpSessionActive = string.Equals(tab.ProtocolLabel, "RDP", StringComparison.OrdinalIgnoreCase) &&
+            SelectedSessionState is SessionState.Connecting or SessionState.Connected;
         if (_vncSessions.TryGetValue(tab.SessionId, out var vnc))
         {
             _vncClient = vnc.Client;
@@ -2386,6 +2390,12 @@ public sealed partial class MainViewModel : ViewModelBase
     {
         var session = _sessionWorkspace.SetState(sessionId, state, failureDetail);
         UpdateSessionTab(sessionId, state);
+        if (SelectedSessionTab?.SessionId == sessionId)
+        {
+            OnPropertyChanged(nameof(IsSessionConnected));
+            if (session.ProtocolId == "rdp")
+                IsRdpSessionActive = state is SessionState.Connecting or SessionState.Connected;
+        }
         return session;
     }
 
@@ -3438,6 +3448,8 @@ public sealed partial class MainViewModel : ViewModelBase
 
     public async Task HandleEmbeddedRdpFailureAsync(SessionId sessionId, string reason)
     {
+        // A native disconnect notification can arrive after its tab was closed.
+        if (!SessionTabs.Any(tab => tab.SessionId == sessionId)) return;
         try
         {
             SetSessionState(sessionId, SessionState.Faulted, reason);

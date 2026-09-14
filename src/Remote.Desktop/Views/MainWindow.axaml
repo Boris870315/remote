@@ -111,7 +111,8 @@
       </Grid>
       <Border x:Name="Inspector" Grid.Column="3" Background="#171F2E" BorderBrush="#293248" BorderThickness="1,0,0,0" Padding="16">
         <Grid>
-          <StackPanel Spacing="16" IsVisible="{Binding ShowConnectionDetails}">
+          <ScrollViewer IsVisible="{Binding ShowConnectionDetails}" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+            <StackPanel Spacing="16">
           <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6"><StackPanel><TextBlock Text="{Binding SelectedConnection.Name, FallbackValue=Windows Prod}" FontSize="16" FontWeight="SemiBold"/><TextBlock Text="{Binding SelectedConnection.Protocol, FallbackValue=RDP}" FontSize="11" Foreground="#8290A7"/></StackPanel><Button Grid.Column="1" Content="編輯" Classes="tool" Command="{Binding BeginEditConnectionCommand}"/><Button Grid.Column="2" Content="🗑" Classes="tool" Foreground="#FF9AA9" ToolTip.Tip="刪除連線" Command="{Binding RequestDeleteConnectionCommand}"/></Grid>
           <StackPanel Spacing="5"><TextBlock Text="主機" FontSize="10" Foreground="#7F8DA5"/><TextBlock Text="{Binding SelectedConnection.Endpoint, FallbackValue=10.20.0.24:3389}" FontSize="12"/></StackPanel>
           <StackPanel Spacing="5"><TextBlock Text="Favorite 與 Tags" FontSize="10" Foreground="#7F8DA5"/><TextBlock Text="{Binding SelectedConnection.TagsDisplay}" FontSize="11" Foreground="#A9B8CE" TextWrapping="Wrap"/></StackPanel>
@@ -150,7 +151,8 @@
             <CheckBox IsChecked="{Binding TrustUnknownHostKey}" Content="僅本次明確信任未知 Host Key"/>
             <TextBlock Text="若未填已知指紋，必須勾選明確信任；成功後會顯示實際 SHA256 指紋。" FontSize="9" Foreground="#E5B96F" TextWrapping="Wrap"/>
           </StackPanel>
-        </StackPanel>
+            </StackPanel>
+          </ScrollViewer>
         <StackPanel Spacing="16" IsVisible="{Binding HasSelectedFolder}">
           <StackPanel>
             <TextBlock Text="{Binding SelectedFolder.Name}" FontSize="18" FontWeight="SemiBold"/>

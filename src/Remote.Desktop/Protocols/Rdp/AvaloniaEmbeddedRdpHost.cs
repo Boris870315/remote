@@ -193,7 +193,9 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
             {
                 var client = (IMsTscAxDispatch)_rdpClient;
                 var connected = client.Connected;
-                if (connected != 0)
+                // IMsTscAx.Connected: 0 = disconnected, 1 = connected,
+                // 2 = still connecting. A pending handshake is not success.
+                if (connected == 1)
                 {
                     _hasConnected = true;
                     _connectionReady?.TrySetResult();
@@ -204,7 +206,7 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
                 {
                     _connectingTicks++;
                     var disconnectReason = TryGetExtendedDisconnectReason(_rdpClient);
-                    if (disconnectReason > 2)
+                    if (connected == 0 && disconnectReason > 2)
                     {
                         _connectionMonitor?.Stop();
                         var rejected = new InvalidOperationException(
