@@ -12,7 +12,7 @@ This is the short implementation contract distilled from the product grilling. `
 - Shared View Only policy, local error log, and modal notification for actionable failures such as rejected credentials and connection timeout.
 - Adaptive wide, compact, narrow, and portrait layouts with independently collapsible Connection tree and inspector.
 - Per-Connection Fit, Fill, 100%, and Scroll display modes; single-monitor and all-monitor selection where the protocol host supports them.
-- Embedded RDP on Windows and macOS with per-Session display, input suppression, clipboard policy, selected device redirection, and independent lifecycle.
+- Embedded RDP and VNC on Windows and macOS with per-Session display, input suppression, clipboard policy, scaling, and independent lifecycle; RDP also supports selected device redirection.
 - Local encrypted backup is optional and disabled by default. Credential deletion is permanent and clears references.
 
 ## Generation 2

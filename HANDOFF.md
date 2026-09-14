@@ -70,9 +70,12 @@ Git 歷史備份：同目錄的 `mac-remote.bundle`。
 - Windows 會優先使用已安裝的 RDP Client 12／11，再回退至 10；相機改用專屬 Camera redirection collection，不再以一般 PnP 裝置開關代替。
 - Windows 內嵌模式已套用 Remote Credential Guard，啟用時不把 Vault 密碼注入 ActiveX；系統管理工作階段使用新版屬性並保留舊版回退。
 - Fit／Fill 與 100%／Scroll 會即時切換 ActiveX Smart Sizing；縮放與 macOS 貼上權限改以目前 Session 分頁的快照為準，不會誤用左側 Connection 選取項目。
+- Windows／macOS 共用的內嵌 VNC 已補強：動態 View Only 會立即更新 RFB 輸入閘門；多矩形更新只發布一次完整畫面；伺服器剪貼簿與 Bell 不會累積畫面請求；異常桌面大小與越界矩形會在配置記憶體前拒絕。
+- VNC 鍵盤支援 F1–F24、數字鍵盤、導航鍵、系統鍵與常用標點；滑鼠支援組合按鍵及按住拖曳時的滾輪。macOS 會把 Command 同步為遠端 Control，Command+V 會先同步 RFB 剪貼簿再送出貼上快捷鍵。
 - 本機 GUI 已驗收 ActiveX 建立、連線中狀態、30 秒逾時提示、錯誤紀錄、失敗分頁清理、最大化與側欄尺寸調整，以及連線中關閉 App；關閉後沒有殘留程序。
-- `dotnet test Remote.slnx --nologo`：新增狀態、關閉與作用中分頁縮放回歸測試後共 131 通過，0 失敗、0 略過。
+- `dotnet test Remote.slnx --nologo`：RDP 與 VNC 修正後共 141 通過，0 失敗、0 略過。
 - 既有測試主機 `10.20.0.24:3389` 於 2026-09-14 從 Windows 不可達；遠端畫面、鍵鼠、剪貼簿、裝置重新導向及 View Only 的端到端驗收仍待可用 RDP 主機。
+- Mac `192.168.50.215` 可由 Windows ping 與 SSH 存取，但 `5900/tcp` 尚未監聽；macOS 14.5 的螢幕共享服務未啟用，且 SSH 帳號執行 `sudo` 需要互動式管理員授權，因此 VNC 實機驗收需先在 Mac「系統設定 → 一般 → 共享」開啟螢幕共享及 VNC viewer 密碼。
 
 啟動：
 

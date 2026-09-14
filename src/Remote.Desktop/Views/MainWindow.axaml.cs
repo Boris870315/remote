@@ -26,6 +26,7 @@ public partial class MainWindow : Window
     private MainViewModel? _viewModel;
     private readonly Dictionary<SessionId, AvaloniaEmbeddedRdpHost> _rdpHosts = [];
     private readonly Dictionary<SessionId, MacOsRdpRuntime> _macRdpSessions = [];
+    private readonly Dictionary<SessionId, VncModifierState> _vncModifierStates = [];
     private readonly Dictionary<SessionId, NativeWebView> _webViews = [];
     private readonly DispatcherTimer _vaultTimer;
     private readonly DispatcherTimer _terminalResizeTimer;
@@ -145,6 +146,10 @@ public partial class MainWindow : Window
 
     private void HandleSessionViewOnlyChanged(SessionId sessionId, bool viewOnly)
     {
+        if (viewOnly && _vncModifierStates.TryGetValue(sessionId, out var vncState))
+        {
+            vncState.ControlDown = vncState.AltDown = vncState.ShiftDown = false;
+        }
         if (_rdpHosts.TryGetValue(sessionId, out var windowsHost))
             windowsHost.SetViewOnly(viewOnly);
         if (!_macRdpSessions.TryGetValue(sessionId, out var runtime)) return;
@@ -664,7 +669,9 @@ public partial class MainWindow : Window
             }
         }
 
-        if (e.Key is Key.V && e.KeyModifiers.HasFlag(KeyModifiers.Control) &&
+        if (e.Key is Key.V &&
+            (e.KeyModifiers.HasFlag(KeyModifiers.Control) ||
+             e.KeyModifiers.HasFlag(KeyModifiers.Meta)) &&
             _viewModel?.IsVncSessionActive is true)
         {
             var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
@@ -725,11 +732,77 @@ public partial class MainWindow : Window
             if (virtualKey is not null) e.Handled = macRdp.Session.SendKey(virtualKey.Value, isDown);
             return;
         }
+        if (_viewModel?.IsVncSessionActive is not true)
+        {
+            return;
+        }
+
+        if (OperatingSystem.IsMacOS() && _viewModel.SelectedSessionTab is { } vncTab)
+        {
+            if (!_vncModifierStates.TryGetValue(vncTab.SessionId, out var state))
+            {
+                state = new VncModifierState();
+                _vncModifierStates.Add(vncTab.SessionId, state);
+            }
+
+            var isControlKey = e.Key is Key.LeftCtrl or Key.RightCtrl or Key.LWin or Key.RWin;
+            var isAltKey = e.Key is Key.LeftAlt or Key.RightAlt;
+            var isShiftKey = e.Key is Key.LeftShift or Key.RightShift;
+            var wantsControl = isControlKey
+                ? isDown
+                : e.KeyModifiers.HasFlag(KeyModifiers.Control) ||
+                  e.KeyModifiers.HasFlag(KeyModifiers.Meta);
+            var wantsAlt = isAltKey ? isDown : e.KeyModifiers.HasFlag(KeyModifiers.Alt);
+            var wantsShift = isShiftKey ? isDown : e.KeyModifiers.HasFlag(KeyModifiers.Shift);
+            var modifiersSent = await SynchronizeVncModifiersAsync(state, wantsControl, wantsAlt, wantsShift);
+            if (isControlKey || isAltKey || isShiftKey)
+            {
+                e.Handled = modifiersSent;
+                return;
+            }
+        }
+
         var keySym = RfbKeySymMapper.Map(e.Key);
         if (keySym is not null && _viewModel is not null)
         {
             e.Handled = await _viewModel.SendVncKeyAsync(keySym.Value, isDown);
         }
+    }
+
+    private async Task<bool> SynchronizeVncModifiersAsync(
+        VncModifierState state,
+        bool control,
+        bool alt,
+        bool shift)
+    {
+        if (_viewModel is null) return false;
+        var sent = true;
+        if (state.ControlDown != control)
+        {
+            var changed = await _viewModel.SendVncKeyAsync(0xFFE3, control);
+            sent &= changed;
+            if (changed) state.ControlDown = control;
+        }
+        if (state.AltDown != alt)
+        {
+            var changed = await _viewModel.SendVncKeyAsync(0xFFE9, alt);
+            sent &= changed;
+            if (changed) state.AltDown = alt;
+        }
+        if (state.ShiftDown != shift)
+        {
+            var changed = await _viewModel.SendVncKeyAsync(0xFFE1, shift);
+            sent &= changed;
+            if (changed) state.ShiftDown = shift;
+        }
+        return sent;
+    }
+
+    private sealed class VncModifierState
+    {
+        public bool ControlDown { get; set; }
+        public bool AltDown { get; set; }
+        public bool ShiftDown { get; set; }
     }
 
     private static bool SynchronizeMacRdpModifiers(
