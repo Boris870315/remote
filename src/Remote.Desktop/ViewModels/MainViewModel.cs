@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.Input;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using System.Text;
+using System.Text.Json;
 using Remote.Application;
 using Remote.Application.Connections;
 using Remote.Application.Sessions;
@@ -148,6 +149,27 @@ public sealed partial class MainViewModel : ViewModelBase
     }
 
     public string Title => "Remote";
+
+    public string ApplicationVersion
+    {
+        get
+        {
+            var informationalVersion = typeof(MainViewModel).Assembly
+                .GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
+                .OfType<System.Reflection.AssemblyInformationalVersionAttribute>()
+                .FirstOrDefault()?.InformationalVersion;
+
+            return string.IsNullOrWhiteSpace(informationalVersion)
+                ? "0.0001"
+                : informationalVersion.Split('+', 2)[0];
+        }
+    }
+
+    public string ApplicationVersionLabel => $"版本 {ApplicationVersion}";
+
+    public string ApplicationReleaseStage => ApplicationVersion.StartsWith("0.", StringComparison.Ordinal)
+        ? "開發預覽版本 · 尚未正式發佈"
+        : "正式版本";
 
     public ObservableCollection<ConnectionListItem> Connections { get; }
 
@@ -383,7 +405,7 @@ public sealed partial class MainViewModel : ViewModelBase
     private string webAddress = string.Empty;
 
     [ObservableProperty]
-    private bool isVaultPanelOpen;
+    private bool isVaultPanelOpen = true;
 
     [ObservableProperty]
     private bool isIdentityPanelOpen;
@@ -717,6 +739,7 @@ public sealed partial class MainViewModel : ViewModelBase
 
     partial void OnIsVaultLockedChanged(bool value)
     {
+        IsVaultPanelOpen = value;
         OnPropertyChanged(nameof(VaultStatusLabel));
         OnPropertyChanged(nameof(SelectedCredentialName));
         OnPropertyChanged(nameof(SelectedCredentialUsername));
@@ -832,6 +855,11 @@ public sealed partial class MainViewModel : ViewModelBase
     [RelayCommand]
     private void CloseVaultPanel()
     {
+        if (IsVaultLocked)
+        {
+            return;
+        }
+
         VaultMasterPassword = string.Empty;
         RecoveryKeyInput = string.Empty;
         NewIdentitySecret = string.Empty;
@@ -891,6 +919,7 @@ public sealed partial class MainViewModel : ViewModelBase
             }
             _pendingImportedFolders.Clear();
             _pendingImportedConnections.Clear();
+            IsVaultPanelOpen = false;
         }
         catch (Exception exception) when (exception is WorkspaceUnlockException or InvalidDataException or NotSupportedException)
         {
@@ -1072,7 +1101,7 @@ public sealed partial class MainViewModel : ViewModelBase
         }
     }
 
-    public async Task ImportMRemoteNgAsync(string path)
+    public async Task ImportMRemoteNgAsync(string path, FolderId? targetFolderId = null)
     {
         try
         {
@@ -1100,6 +1129,19 @@ public sealed partial class MainViewModel : ViewModelBase
                 {
                     Credential = ConnectionCredentialReference.None,
                 }).ToArray();
+            if (targetFolderId is { } destinationFolderId)
+            {
+                var importedFolderIds = importedFolders.Select(folder => folder.Id).ToHashSet();
+                importedFolders = importedFolders.Select(folder =>
+                    folder.ParentId is null || !importedFolderIds.Contains(folder.ParentId.Value)
+                        ? folder with { ParentId = destinationFolderId }
+                        : folder).ToArray();
+                importedConnections = importedConnections.Select(connection =>
+                    connection.FolderId is null
+                        ? connection with { FolderId = destinationFolderId }
+                        : connection).ToArray();
+            }
+
             ApplyConnectionImport(importedFolders, importedConnections);
             if (!canImportCredentials)
             {
@@ -1459,6 +1501,172 @@ public sealed partial class MainViewModel : ViewModelBase
     }
 
     [RelayCommand]
+    private void RequestDeleteSelectedItem()
+    {
+        if (SelectedTreeItem?.Folder is not null)
+        {
+            RequestDeleteFolder();
+            return;
+        }
+
+        if (SelectedTreeItem?.Connection is not null)
+        {
+            RequestDeleteConnection();
+            return;
+        }
+
+        SessionStatusLabel = "請先選取要刪除的連線或資料夾";
+    }
+
+    public void BeginNewConnectionInFolder(ConnectionFolder folder)
+    {
+        SelectedTreeItem = FindFolderTreeItem(ConnectionTree, folder.Id);
+        BeginNewConnection();
+    }
+
+    public void PrepareNewSubfolder(ConnectionFolder folder)
+    {
+        SelectedTreeItem = FindFolderTreeItem(ConnectionTree, folder.Id);
+        NewFolderName = string.Empty;
+        SessionStatusLabel = $"請輸入要建立在「{folder.Name}」下的子資料夾名稱";
+    }
+
+    public void PrepareRenameFolder(ConnectionFolder folder)
+    {
+        SelectedTreeItem = FindFolderTreeItem(ConnectionTree, folder.Id);
+        FolderEditorName = folder.Name;
+        SessionStatusLabel = $"可在右側將「{folder.Name}」重新命名";
+    }
+
+    public async Task DuplicateConnectionAsync(ConnectionProfile source)
+    {
+        var copy = source with { Id = ConnectionId.New(), Name = $"{source.Name} 複本" };
+        Connections.Add(new ConnectionListItem(copy, $"{copy.ProtocolId.ToUpperInvariant()} copy", copy.IsFavorite));
+        RebuildConnectionTree(copy.Id);
+        SelectedTreeItem = FindConnectionTreeItem(ConnectionTree, copy.Id);
+        if (!IsVaultLocked)
+        {
+            await SaveWorkspaceAsync();
+        }
+        SessionStatusLabel = $"已複製連線「{source.Name}」";
+    }
+
+    public async Task MoveConnectionAsync(ConnectionProfile source, ConnectionFolder? destination)
+    {
+        var item = Connections.FirstOrDefault(candidate => candidate.Profile.Id == source.Id);
+        if (item is null)
+        {
+            return;
+        }
+
+        var moved = source with { FolderId = destination?.Id };
+        Connections[Connections.IndexOf(item)] = new ConnectionListItem(
+            moved,
+            item.IdentityScope,
+            moved.IsFavorite);
+        RebuildConnectionTree(moved.Id);
+        SelectedTreeItem = FindConnectionTreeItem(ConnectionTree, moved.Id);
+        if (!IsVaultLocked)
+        {
+            await SaveWorkspaceAsync();
+        }
+        SessionStatusLabel = destination is null
+            ? $"已將「{source.Name}」移到最上層"
+            : $"已將「{source.Name}」移到「{destination.Name}」";
+    }
+
+    public async Task OpenAllConnectionsInFolderAsync(ConnectionFolder folder)
+    {
+        var folderIds = GetFolderSubtreeIds(folder.Id);
+        var profiles = Connections
+            .Where(item => item.Profile.FolderId is { } id && folderIds.Contains(id))
+            .Select(item => item.Profile)
+            .ToArray();
+        foreach (var profile in profiles)
+        {
+            await ActivateConnectionFromTreeAsync(profile);
+        }
+        SessionStatusLabel = profiles.Length == 0
+            ? $"「{folder.Name}」沒有可開啟的連線"
+            : $"已開啟「{folder.Name}」內的 {profiles.Length} 個連線";
+    }
+
+    public async Task ExportSelectionAsync(ConnectionTreeDisplayItem selection, string destinationPath)
+    {
+        var folders = Array.Empty<ConnectionFolder>();
+        ConnectionProfile[] connections;
+        if (selection.Folder is { } folder)
+        {
+            var folderIds = GetFolderSubtreeIds(folder.Id);
+            folders = _folders.Where(candidate => folderIds.Contains(candidate.Id)).ToArray();
+            connections = Connections
+                .Where(item => item.Profile.FolderId is { } id && folderIds.Contains(id))
+                .Select(item => item.Profile)
+                .ToArray();
+        }
+        else if (selection.Connection is { } connection)
+        {
+            connections = [connection];
+        }
+        else
+        {
+            return;
+        }
+
+        var payload = new
+        {
+            Format = "remote-selection",
+            SchemaVersion = 1,
+            ExportedAt = DateTimeOffset.Now,
+            Folders = folders.Select(folder => new
+            {
+                Id = folder.Id.Value,
+                folder.Name,
+                ParentId = folder.ParentId?.Value,
+            }),
+            Connections = connections.Select(connection => new
+            {
+                Id = connection.Id.Value,
+                connection.Name,
+                Endpoint = connection.Endpoint.ToString(),
+                connection.ProtocolId,
+                FolderId = connection.FolderId?.Value,
+                CredentialMode = connection.Credential.Kind.ToString(),
+                connection.DefaultAccessMode,
+                connection.Display,
+                ProtocolSettings = connection.ProtocolSettings.Values,
+                connection.IsFavorite,
+                connection.Tags,
+            }),
+        };
+        await File.WriteAllTextAsync(destinationPath, JsonSerializer.Serialize(payload, new JsonSerializerOptions
+        {
+            WriteIndented = true,
+        }));
+        NotificationMessage = $"已匯出：{destinationPath}（不含密碼）";
+        IsNotificationOpen = true;
+        AddAuditEvent(selection.IsFolder ? "已匯出資料夾" : "已匯出連線");
+    }
+
+    private HashSet<FolderId> GetFolderSubtreeIds(FolderId rootId)
+    {
+        var folderIds = new HashSet<FolderId> { rootId };
+        var changed = true;
+        while (changed)
+        {
+            changed = false;
+            foreach (var folder in _folders)
+            {
+                if (folder.ParentId is { } parentId && folderIds.Contains(parentId))
+                {
+                    changed |= folderIds.Add(folder.Id);
+                }
+            }
+        }
+        return folderIds;
+    }
+
+    [RelayCommand]
     private void CancelDeleteConnection() => IsDeleteConnectionConfirmationOpen = false;
 
     [RelayCommand]
@@ -1504,6 +1712,28 @@ public sealed partial class MainViewModel : ViewModelBase
         catch (IOException exception)
         {
             VaultMessage = $"備份失敗：{exception.Message}";
+        }
+    }
+
+    public async Task ExportWorkspaceAsync(string destinationPath)
+    {
+        if (_vault is null || IsVaultLocked || _activeMasterPassword.Length == 0)
+        {
+            SessionStatusLabel = "請先解鎖 Vault，再匯出 Workspace";
+            return;
+        }
+
+        try
+        {
+            await SaveWorkspaceAsync();
+            File.Copy(_workspacePath, destinationPath, overwrite: true);
+            NotificationMessage = $"已匯出加密 Workspace：{destinationPath}";
+            IsNotificationOpen = true;
+            AddAuditEvent("已匯出加密 Workspace");
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            SessionStatusLabel = $"匯出失敗：{exception.Message}";
         }
     }
 

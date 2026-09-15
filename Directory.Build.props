@@ -5,5 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <AnalysisLevel>latest</AnalysisLevel>
+    <!-- Pre-release builds increment as 0.0001, 0.0002, ... until the first official 1.0.0 release. -->
+    <Version>0.0002</Version>
   </PropertyGroup>
 </Project>

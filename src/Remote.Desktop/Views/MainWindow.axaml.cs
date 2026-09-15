@@ -9,6 +9,7 @@ using Remote.Application.Layout;
 using Remote.Desktop.ViewModels;
 using Avalonia.Threading;
 using Avalonia.Platform.Storage;
+using Remote.Application.Connections;
 using Remote.Application.Sessions;
 using Remote.Desktop.Protocols.Rdp;
 using Remote.Desktop.Protocols.Vnc;
@@ -487,8 +488,15 @@ public partial class MainWindow : Window
 
     private void HandleConnectionTreePointerPressed(object? sender, PointerPressedEventArgs e)
     {
-        if (e.Source is not Control source ||
-            !e.GetCurrentPoint(ConnectionTreeView).Properties.IsLeftButtonPressed)
+        if (e.Source is not Control source)
+        {
+            return;
+        }
+
+        var pointer = e.GetCurrentPoint(ConnectionTreeView).Properties;
+        var treeItem = source as TreeViewItem
+            ?? source.GetVisualAncestors().OfType<TreeViewItem>().FirstOrDefault();
+        if (!pointer.IsLeftButtonPressed)
         {
             return;
         }
@@ -500,11 +508,143 @@ public partial class MainWindow : Window
             return;
         }
 
-        var treeItem = source as TreeViewItem
-            ?? source.GetVisualAncestors().OfType<TreeViewItem>().FirstOrDefault();
         if (treeItem?.DataContext is ConnectionTreeDisplayItem { IsFolder: true })
         {
             treeItem.IsExpanded = !treeItem.IsExpanded;
+        }
+    }
+
+    private void HandleConnectionTreeContextRequested(object? sender, ContextRequestedEventArgs e)
+    {
+        if (e.Source is not Control source)
+        {
+            return;
+        }
+
+        var treeItem = source as TreeViewItem
+            ?? source.GetVisualAncestors().OfType<TreeViewItem>().FirstOrDefault();
+        if (treeItem?.DataContext is not ConnectionTreeDisplayItem contextItem)
+        {
+            return;
+        }
+
+        if (_viewModel is not null)
+        {
+            _viewModel.SelectedTreeItem = contextItem;
+        }
+        OpenConnectionTreeContextMenu(treeItem, contextItem);
+        e.Handled = true;
+    }
+
+    private void OpenConnectionTreeContextMenu(TreeViewItem target, ConnectionTreeDisplayItem item)
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        var menu = new ContextMenu();
+        if (item.Connection is { } connection)
+        {
+            var moveMenu = new MenuItem { Header = "移動到資料夾…" };
+            var destinations = new List<object>
+            {
+                CreateMenuItem("最上層", async () => await _viewModel.MoveConnectionAsync(connection, null)),
+                new Separator(),
+            };
+            destinations.AddRange(_viewModel.FolderOptions.Select(folder =>
+                (object)CreateMenuItem(folder.Name, async () => await _viewModel.MoveConnectionAsync(connection, folder))));
+            moveMenu.ItemsSource = destinations;
+
+            menu.ItemsSource = new object[]
+            {
+                CreateMenuItem("連線", async () => await _viewModel.ActivateConnectionFromTreeAsync(connection)),
+                new Separator(),
+                CreateMenuItem("複製連線", async () => await _viewModel.DuplicateConnectionAsync(connection)),
+                moveMenu,
+                CreateMenuItem("匯出此連線…", async () => await ExportSelectionAsync(item)),
+                new Separator(),
+                CreateMenuItem("刪除…", () => _viewModel.RequestDeleteSelectedItemCommand.Execute(null)),
+            };
+        }
+        else if (item.Folder is { } folder)
+        {
+            menu.ItemsSource = new object[]
+            {
+                CreateMenuItem("新增連線", () => _viewModel.BeginNewConnectionInFolder(folder)),
+                CreateMenuItem("新增子資料夾", () => _viewModel.PrepareNewSubfolder(folder)),
+                new Separator(),
+                CreateMenuItem("重新命名", () => _viewModel.PrepareRenameFolder(folder)),
+                CreateMenuItem("在新分頁開啟所有連線", async () => await _viewModel.OpenAllConnectionsInFolderAsync(folder)),
+                new Separator(),
+                CreateMenuItem("匯入到此資料夾…", async () => await ImportMRemoteNgIntoFolderAsync(folder)),
+                CreateMenuItem("匯出此資料夾…", async () => await ExportSelectionAsync(item)),
+                new Separator(),
+                CreateMenuItem("刪除資料夾…", () => _viewModel.RequestDeleteSelectedItemCommand.Execute(null)),
+            };
+        }
+
+        menu.Open(target);
+    }
+
+    private static MenuItem CreateMenuItem(string header, Action action)
+    {
+        var item = new MenuItem { Header = header };
+        item.Click += (_, _) => action();
+        return item;
+    }
+
+    private static MenuItem CreateMenuItem(string header, Func<Task> action)
+    {
+        var item = new MenuItem { Header = header };
+        item.Click += async (_, _) => await action();
+        return item;
+    }
+
+    private async Task ImportMRemoteNgIntoFolderAsync(ConnectionFolder folder)
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = $"匯入到「{folder.Name}」",
+            AllowMultiple = false,
+            FileTypeFilter =
+            [
+                new FilePickerFileType("mRemoteNG Connections") { Patterns = ["*.xml", "*.confCons"] },
+            ],
+        });
+        if (files.FirstOrDefault()?.TryGetLocalPath() is { } path)
+        {
+            await _viewModel.ImportMRemoteNgAsync(path, folder.Id);
+        }
+    }
+
+    private async Task ExportSelectionAsync(ConnectionTreeDisplayItem item)
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        var safeName = string.Concat(item.Name.Select(character =>
+            Path.GetInvalidFileNameChars().Contains(character) ? '_' : character));
+        var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = item.IsFolder ? "匯出資料夾" : "匯出連線",
+            SuggestedFileName = $"{safeName}.remote.json",
+            DefaultExtension = "json",
+            FileTypeChoices =
+            [
+                new FilePickerFileType("Remote Selection") { Patterns = ["*.remote.json"] },
+            ],
+        });
+        if (file?.TryGetLocalPath() is { } path)
+        {
+            await _viewModel.ExportSelectionAsync(item, path);
         }
     }
 
@@ -552,6 +692,30 @@ public partial class MainWindow : Window
         if (file is not null && file.TryGetLocalPath() is { } path)
         {
             await _viewModel.ImportMRemoteNgAsync(path);
+        }
+    }
+
+    private async void ExportWorkspace(object? sender, RoutedEventArgs e)
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = "匯出加密 Remote Workspace",
+            SuggestedFileName = $"Remote-Workspace-{DateTime.Now:yyyyMMdd}.rmtw",
+            DefaultExtension = "rmtw",
+            FileTypeChoices =
+            [
+                new FilePickerFileType("Remote Workspace") { Patterns = ["*.rmtw"] },
+            ],
+        });
+
+        if (file?.TryGetLocalPath() is { } path)
+        {
+            await _viewModel.ExportWorkspaceAsync(path);
         }
     }
 
