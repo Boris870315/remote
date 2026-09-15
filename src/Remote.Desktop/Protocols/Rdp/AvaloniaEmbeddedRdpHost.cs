@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.ComTypes;
 using System.Globalization;
@@ -46,6 +47,9 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
     private int _lastConnectedState = -1;
     private int _lastDisconnectReason = -1;
     private readonly Stopwatch _connectionElapsed = new();
+    private IConnectionPoint? _eventConnectionPoint;
+    private int _eventCookie;
+    private RdpEventSink? _eventSink;
 
     public event Action<string>? UnexpectedlyDisconnected;
     public event Action<RdpHostDiagnostic>? Diagnostic;
@@ -209,6 +213,10 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
                     Marshal.ThrowExceptionForHR(passwordResult);
                 }
             }
+            MoveToStage("tcp-preflight");
+            await ProbeTcpEndpointAsync(
+                request.Endpoint.Host,
+                request.Endpoint.IsDefaultPort ? 3389 : request.Endpoint.Port);
             MoveToStage("connect");
             client.Connect();
             StartConnectionMonitor();
@@ -465,6 +473,7 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
         try
         {
             _rdpClient = Marshal.GetObjectForIUnknown(unknown);
+            AttachEventSink(_rdpClient);
             EmitDiagnostic(
                 "native-host-ready",
                 $"classId={_selectedClassId}; rcwType={_rdpClient.GetType().FullName ?? _rdpClient.GetType().Name}; " +
@@ -544,6 +553,7 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
             EmitDiagnostic("native-host-destroy", $"connected={_hasConnected}; classId={_selectedClassId ?? "unknown"}; {DescribeNativeSurface()}");
             _connectionMonitor?.Stop();
             _displayResizeTimer?.Stop();
+            DetachEventSink();
             if (_rdpClient is not null)
             {
                 TryDisconnect(_rdpClient);
@@ -626,6 +636,108 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
             target,
             arguments,
             CultureInfo.InvariantCulture);
+
+    private async Task ProbeTcpEndpointAsync(string host, int port)
+    {
+        var elapsed = Stopwatch.StartNew();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+        using var client = new TcpClient();
+        try
+        {
+            await client.ConnectAsync(host, port, timeout.Token);
+            EmitDiagnostic("tcp-preflight", $"result=connected; port={port}; elapsedMs={elapsed.ElapsedMilliseconds}");
+        }
+        catch (OperationCanceledException) when (timeout.IsCancellationRequested)
+        {
+            EmitDiagnostic("tcp-preflight", $"result=timeout; port={port}; elapsedMs={elapsed.ElapsedMilliseconds}");
+        }
+        catch (SocketException exception)
+        {
+            EmitDiagnostic(
+                "tcp-preflight",
+                $"result=socket-error; port={port}; socketError={exception.SocketErrorCode}; nativeError={exception.NativeErrorCode}; elapsedMs={elapsed.ElapsedMilliseconds}");
+        }
+        catch (Exception exception)
+        {
+            EmitDiagnostic(
+                "tcp-preflight",
+                $"result=failed; port={port}; exception={exception.GetType().Name}; hresult=0x{exception.HResult:X8}; elapsedMs={elapsed.ElapsedMilliseconds}");
+        }
+    }
+
+    [SupportedOSPlatform("windows")]
+    private void AttachEventSink(object client)
+    {
+        try
+        {
+            var container = (IConnectionPointContainer)client;
+            var eventsInterfaceId = new Guid("336D5562-EFA8-482E-8CB3-C5C0FC7A7DB6");
+            container.FindConnectionPoint(ref eventsInterfaceId, out var connectionPoint);
+            if (connectionPoint is null) throw new COMException("RDP ActiveX returned no event connection point.");
+            _eventConnectionPoint = connectionPoint;
+            var eventSink = new RdpEventSink(this);
+            _eventSink = eventSink;
+            connectionPoint.Advise(eventSink, out _eventCookie);
+            EmitDiagnostic("event-sink", $"result=attached; cookie={_eventCookie}");
+        }
+        catch (Exception exception) when (IsComInvocationException(exception))
+        {
+            var root = GetRootException(exception);
+            EmitDiagnostic("event-sink", $"result=failed; exception={root.GetType().Name}; hresult=0x{root.HResult:X8}");
+            DetachEventSink();
+        }
+    }
+
+    [SupportedOSPlatform("windows")]
+    private void DetachEventSink()
+    {
+        if (_eventConnectionPoint is not null && _eventCookie != 0)
+        {
+            try
+            {
+                _eventConnectionPoint.Unadvise(_eventCookie);
+            }
+            catch (COMException)
+            {
+            }
+        }
+        _eventCookie = 0;
+        _eventSink = null;
+        if (_eventConnectionPoint is not null && Marshal.IsComObject(_eventConnectionPoint))
+        {
+            Marshal.FinalReleaseComObject(_eventConnectionPoint);
+        }
+        _eventConnectionPoint = null;
+    }
+
+    private void HandleNativeDisconnected(int reason)
+    {
+        EmitDiagnostic(
+            "event-disconnected",
+            $"reason={reason}; extendedDisconnectReason={(_rdpClient is null ? 0 : TryGetExtendedDisconnectReason(_rdpClient))}; " +
+            $"disconnectRequested={_disconnectRequested}; elapsedMs={_connectionElapsed.ElapsedMilliseconds}");
+        if (_disconnectRequested) return;
+
+        if (!_hasConnected)
+        {
+            var exception = new InvalidOperationException(RdpDisconnectReasonFormatter.Format(reason));
+            exception.Data["SafeDiagnostic"] =
+                $"Embedded RDP disconnected while connecting; reason={reason}; classId={_selectedClassId ?? "unknown"}.";
+            _connectionReady?.TrySetException(exception);
+            return;
+        }
+        UnexpectedlyDisconnected?.Invoke(RdpDisconnectReasonFormatter.Format(reason));
+    }
+
+    private void HandleNativeFatalError(int errorCode)
+    {
+        EmitDiagnostic("event-fatal-error", $"errorCode={errorCode}; elapsedMs={_connectionElapsed.ElapsedMilliseconds}");
+        if (_disconnectRequested || _hasConnected) return;
+        var exception = new InvalidOperationException($"RDP ActiveX fatal error {errorCode}.");
+        exception.Data["SafeDiagnostic"] =
+            $"Embedded RDP fatal error; errorCode={errorCode}; classId={_selectedClassId ?? "unknown"}.";
+        _connectionReady?.TrySetException(exception);
+    }
 
     private void EmitDiagnostic(string code, string message)
     {
@@ -710,6 +822,60 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
     private static bool IsComInvocationException(Exception exception) =>
         exception is COMException or InvalidCastException or MissingMethodException or TargetException or TargetParameterCountException or ArgumentException ||
         exception is TargetInvocationException { InnerException: { } inner } && IsComInvocationException(inner);
+
+    [ComVisible(true)]
+    [Guid("336D5562-EFA8-482E-8CB3-C5C0FC7A7DB6")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIDispatch)]
+    private interface IMsTscAxEventsSink
+    {
+        [DispId(1)] void OnConnecting();
+        [DispId(2)] void OnConnected();
+        [DispId(3)] void OnLoginComplete();
+        [DispId(4)] void OnDisconnected(int reason);
+        [DispId(10)] void OnFatalError(int errorCode);
+        [DispId(11)] void OnWarning(int warningCode);
+        [DispId(12)] void OnRemoteDesktopSizeChange(int width, int height);
+        [DispId(18)] void OnAuthenticationWarningDisplayed();
+        [DispId(19)] void OnAuthenticationWarningDismissed();
+        [DispId(22)] void OnLogonError(int errorCode);
+        [DispId(27)] void OnStatusInfo(uint statusCode);
+    }
+
+    [ComVisible(true)]
+    [ClassInterface(ClassInterfaceType.None)]
+    private sealed class RdpEventSink(AvaloniaEmbeddedRdpHost host) : IMsTscAxEventsSink
+    {
+        public void OnConnecting() => host.EmitDiagnostic(
+            "event-connecting", $"elapsedMs={host._connectionElapsed.ElapsedMilliseconds}");
+
+        public void OnConnected() => host.EmitDiagnostic(
+            "event-connected", $"elapsedMs={host._connectionElapsed.ElapsedMilliseconds}");
+
+        public void OnLoginComplete() => host.EmitDiagnostic(
+            "event-login-complete", $"elapsedMs={host._connectionElapsed.ElapsedMilliseconds}");
+
+        public void OnDisconnected(int reason) => host.HandleNativeDisconnected(reason);
+
+        public void OnFatalError(int errorCode) => host.HandleNativeFatalError(errorCode);
+
+        public void OnWarning(int warningCode) => host.EmitDiagnostic(
+            "event-warning", $"warningCode={warningCode}; elapsedMs={host._connectionElapsed.ElapsedMilliseconds}");
+
+        public void OnRemoteDesktopSizeChange(int width, int height) => host.EmitDiagnostic(
+            "event-desktop-size", $"remote={width}x{height}; {host.DescribeNativeSurface()}");
+
+        public void OnAuthenticationWarningDisplayed() => host.EmitDiagnostic(
+            "event-authentication-warning", $"displayed=True; elapsedMs={host._connectionElapsed.ElapsedMilliseconds}");
+
+        public void OnAuthenticationWarningDismissed() => host.EmitDiagnostic(
+            "event-authentication-warning", $"displayed=False; elapsedMs={host._connectionElapsed.ElapsedMilliseconds}");
+
+        public void OnLogonError(int errorCode) => host.EmitDiagnostic(
+            "event-logon-error", $"errorCode={errorCode}; hex=0x{errorCode:X8}; elapsedMs={host._connectionElapsed.ElapsedMilliseconds}");
+
+        public void OnStatusInfo(uint statusCode) => host.EmitDiagnostic(
+            "event-status", $"statusCode={statusCode}; hex=0x{statusCode:X8}; elapsedMs={host._connectionElapsed.ElapsedMilliseconds}");
+    }
 
     [ComImport]
     [Guid("8C11EFAE-92C3-11D1-BC1E-00C04FA31489")]
