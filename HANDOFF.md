@@ -77,6 +77,7 @@ Git 歷史備份：同目錄的 `mac-remote.bundle`。
 - 既有測試主機 `10.20.0.24:3389` 於 2026-09-14 從 Windows 不可達；遠端畫面、鍵鼠、剪貼簿、裝置重新導向及 View Only 的端到端驗收仍待可用 RDP 主機。
 - Mac `192.168.50.215` 可由 Windows ping 與 SSH 存取，但 `5900/tcp` 尚未監聽；macOS 14.5 的螢幕共享服務未啟用，且 SSH 帳號執行 `sudo` 需要互動式管理員授權，因此 VNC 實機驗收需先在 Mac「系統設定 → 一般 → 共享」開啟螢幕共享及 VNC viewer 密碼。
 - 已在 Mac 暫時啟動一次性 RFB 3.8 測試服務，並由 Windows 使用正式 `RfbClient` 跨機驗證握手、BGRA 畫面、鍵盤、滑鼠及雙向剪貼簿；Windows 與 Mac 日誌皆通過。一次性服務與測試檔已清除。這項測試涵蓋實際 TCP/RFB 路徑，但 macOS 桌面擷取仍待上述系統螢幕共享開關啟用後驗收。
+- 另以 macOS 14.5 內建螢幕共享做真實伺服器測試：正式 `RfbClient` 成功完成 VNC Authentication、取得 `2940 × 1912` 桌面尺寸，動態 View Only 在傳輸層阻擋輸入，恢復互動後鍵盤、游標與 ClientCutText 均成功寫入連線。由命令列啟用 Remote Management 時，macOS 僅回傳黑色畫面且未確認 ServerCutText；因此真實桌面像素與 Apple 伺服器雙向剪貼簿仍未通過。測試期間 Google Remote Desktop 一度無法登入，之後已恢復；臨時 Remote Management、Legacy VNC、一次性密碼及測試檔均已停用或清除，`5900/tcp` 已關閉，SSH 保持可用。
 
 啟動：
 
