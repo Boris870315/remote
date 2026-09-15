@@ -2,12 +2,14 @@
 
 交接日期：2026-09-14（Asia/Taipei）。後續溝通使用繁體中文。
 
+> 目前發行狀態：Windows 初版尚未驗收。Windows RDP 尚未完成實機連線，Windows 介面也尚未經使用者逐項驗收；建置成功與自動化測試通過不能視為介面或端到端驗收完成。
+
 ## 已接手的版本
 
 - Windows 工作區：`F:\code\remote`。
 - Windows 接手分支：`codex/mac-handoff`。
 - Mac 正式 Git 工作區：`/Users/chenbaihan/Desktop/remote`。
-- Mac 分支：`codex/mac-handoff`，已同步到 `9427790`。
+- Mac 分支：`codex/mac-handoff`，持續與此分支同步。
 - 交接基準：`8b7d588fad9c92dafecbdf1269fa9b6a1a57ef48`，`fix: stabilize embedded Windows RDP rendering`。
 - Mac 的 `/Users/chenbaihan/remote new` 是非 Git 工作副本；交接時其所有對應受追蹤檔案與正式 Git 工作區一致。
 - Mac 正式工作樹乾淨。Windows 原本的 `main` 保留，既有未追蹤 `.vs/` 保留。
@@ -59,7 +61,7 @@ Git 歷史備份：同目錄的 `mac-remote.bundle`。
 - `src/Remote.Infrastructure/Diagnostics/LocalErrorLog.cs`
 - `native/macos/remote_freerdp_bridge.c` 與 `native/macos/remote_clipboard.m`
 
-## 本次 Windows 驗證
+## 本次 Windows 工程驗證（非介面驗收）
 
 - .NET SDK：10.0.400。
 - `dotnet build Remote.slnx --nologo`：成功，0 警告、0 錯誤。
@@ -68,13 +70,14 @@ Git 歷史備份：同目錄的 `mac-remote.bundle`。
 - 右側 Connection 詳細資料加入垂直捲動，低高度視窗仍可操作工作階段帳號與密碼欄位。
 - 延遲到達的原生斷線通知在分頁已關閉後會被忽略，避免重複錯誤。
 - Windows 會優先使用已安裝的 RDP Client 12／11，再回退至 10；相機改用專屬 Camera redirection collection，不再以一般 PnP 裝置開關代替。
+- RDP 憑證策略預設改為相容公司內部／自簽憑證的模式，仍可在 Connection 設定中選擇只允許受信任憑證；缺少 RDP 使用者名稱或密碼時會在建立 ActiveX 前顯示可執行的修正提示。
 - Windows 內嵌模式已套用 Remote Credential Guard，啟用時不把 Vault 密碼注入 ActiveX；系統管理工作階段使用新版屬性並保留舊版回退。
 - Fit／Fill 與 100%／Scroll 會即時切換 ActiveX Smart Sizing；縮放與 macOS 貼上權限改以目前 Session 分頁的快照為準，不會誤用左側 Connection 選取項目。
 - Windows／macOS 共用的內嵌 VNC 已補強：動態 View Only 會立即更新 RFB 輸入閘門；多矩形更新只發布一次完整畫面；伺服器剪貼簿與 Bell 不會累積畫面請求；異常桌面大小與越界矩形會在配置記憶體前拒絕。
 - VNC 鍵盤支援 F1–F24、數字鍵盤、導航鍵、系統鍵與常用標點；滑鼠支援組合按鍵及按住拖曳時的滾輪。macOS 會把 Command 同步為遠端 Control，Command+V 會先同步 RFB 剪貼簿再送出貼上快捷鍵。
 - VNC 驗證介面已改為只要求密碼，不再顯示或驗證未送往 RFB 伺服器的使用者名稱／網域。標準 RFB 不支援 RDP 式磁碟機重新導向；介面會引導使用 SSH/SFTP 或作業系統共享資料夾交換檔案。
-- 本機 GUI 已驗收 ActiveX 建立、連線中狀態、30 秒逾時提示、錯誤紀錄、失敗分頁清理、最大化與側欄尺寸調整，以及連線中關閉 App；關閉後沒有殘留程序。
-- `dotnet test Remote.slnx --nologo`：RDP 與 VNC 修正後共 145 通過，0 失敗、0 略過。
+- 曾以開發環境檢查 ActiveX 建立、連線中狀態、30 秒逾時提示、錯誤紀錄、失敗分頁清理、最大化與側欄尺寸調整，以及連線中關閉 App；這些僅是工程檢查，Windows 介面整體尚未經使用者驗收。
+- `dotnet test Remote.slnx --nologo`：RDP 與 VNC 修正後共 147 通過，0 失敗、0 略過。
 - 既有測試主機 `10.20.0.24:3389` 於 2026-09-14 從 Windows 不可達；遠端畫面、鍵鼠、剪貼簿、裝置重新導向及 View Only 的端到端驗收仍待可用 RDP 主機。
 - Mac `192.168.50.215` 可由 Windows ping 與 SSH 存取，但 `5900/tcp` 尚未監聽；macOS 14.5 的螢幕共享服務未啟用，且 SSH 帳號執行 `sudo` 需要互動式管理員授權，因此 VNC 實機驗收需先在 Mac「系統設定 → 一般 → 共享」開啟螢幕共享及 VNC viewer 密碼。
 - 已在 Mac 暫時啟動一次性 RFB 3.8 測試服務，並由 Windows 使用正式 `RfbClient` 跨機驗證握手、BGRA 畫面、鍵盤、滑鼠及雙向剪貼簿；Windows 與 Mac 日誌皆通過。一次性服務與測試檔已清除。這項測試涵蓋實際 TCP/RFB 路徑，但 macOS 桌面擷取仍待上述系統螢幕共享開關啟用後驗收。
@@ -94,6 +97,8 @@ dotnet run --project src/Remote.Desktop/Remote.Desktop.csproj
 4. 關閉分頁及 App，確認遠端連線確實中斷。
 5. 從遠端強制斷線，確認 UI 可繼續使用、錯誤提示及紀錄正常。
 6. 實測鍵鼠、雙向剪貼簿、裝置重新導向及 View Only 切換。
+
+完整 Windows 初版驗收表：`docs/acceptance/windows-generation-1.md`。所有必要項目通過前，不得標記 Windows 初版、Windows UI 或 RDP 完成。
 
 Windows 錯誤紀錄：`%LOCALAPPDATA%\Remote\Logs\errors.jsonl`。
 Windows RDP 詳細診斷：`%LOCALAPPDATA%\Remote\Logs\rdp-diagnostics.jsonl`；包含 ActiveX 類別與介面探測、連線階段、狀態碼、HRESULT、顯示尺寸及環境版本。端點主機只記錄雜湊，且不記錄帳號、密碼或 Gateway 名稱。

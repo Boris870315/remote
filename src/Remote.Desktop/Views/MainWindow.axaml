@@ -142,7 +142,7 @@
           </StackPanel>
           <StackPanel Spacing="6" IsVisible="{Binding RequiresSessionCredentialInput}">
             <TextBlock Text="{Binding SessionCredentialInputLabel}" FontSize="10" Foreground="#7F8DA5"/>
-            <TextBox Text="{Binding SessionUsername}" PlaceholderText="使用者名稱" IsVisible="{Binding RequiresSessionUsernameInput}"/>
+            <TextBox Text="{Binding SessionUsername}" PlaceholderText="{Binding SessionUsernamePlaceholder}" IsVisible="{Binding RequiresSessionUsernameInput}"/>
             <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6"><TextBox Text="{Binding SessionPassword}" PasswordChar="{Binding EditableSecretMask}" PlaceholderText="密碼"/><Button Grid.Column="1" Content="顯示" Classes="tool" Command="{Binding RevealEditableSecretsCommand}"/></Grid>
           </StackPanel>
           <StackPanel Spacing="6" IsVisible="{Binding IsSshSelected}">
@@ -211,6 +211,7 @@
                   <ComboBox ItemsSource="{Binding RdpAudioModeOptions}" SelectedItem="{Binding EditRdpAudioMode}"/>
                   <TextBlock Text="伺服器憑證" FontSize="10" Foreground="#7F8DA5"/>
                   <ComboBox ItemsSource="{Binding RdpCertificatePolicyOptions}" SelectedItem="{Binding EditRdpCertificatePolicy}"/>
+                  <TextBlock Text="公司內部 RDP 常使用自簽憑證；若 mRemoteNG 可連線而 Remote 顯示憑證錯誤，請使用相容模式。" FontSize="9" Foreground="#A9B8CE" TextWrapping="Wrap"/>
                 </StackPanel>
               </StackPanel>
             </Border>

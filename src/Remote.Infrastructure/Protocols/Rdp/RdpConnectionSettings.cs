@@ -23,7 +23,7 @@ public sealed record RdpConnectionSettings
 
     public RdpAudioMode AudioMode { get; init; } = RdpAudioMode.PlayLocally;
 
-    public RdpCertificatePolicy CertificatePolicy { get; init; } = RdpCertificatePolicy.RequireTrusted;
+    public RdpCertificatePolicy CertificatePolicy { get; init; } = RdpCertificatePolicy.PromptOnUntrusted;
 
     public void Validate()
     {
@@ -68,7 +68,7 @@ public sealed record RdpConnectionSettings
             AudioMode = (RdpAudioMode)settings.GetInteger(Keys.AudioMode, (int)RdpAudioMode.PlayLocally),
             CertificatePolicy = Enum.TryParse<RdpCertificatePolicy>(settings.Get(Keys.CertificatePolicy), out var policy)
                 ? policy
-                : RdpCertificatePolicy.RequireTrusted,
+                : RdpCertificatePolicy.PromptOnUntrusted,
         };
     }
 

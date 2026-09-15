@@ -7,10 +7,33 @@ namespace Remote.Application.Tests;
 public sealed class RdpSessionStatusTests
 {
     [Fact]
+    public async Task MissingCredential_FailsBeforeStartingEmbeddedHost()
+    {
+        var viewModel = new MainViewModel { QuickConnectText = "127.0.0.1:3389" };
+        var hostRequested = false;
+        viewModel.EmbeddedRdpRequested += (_, _) =>
+        {
+            hostRequested = true;
+            return Task.CompletedTask;
+        };
+
+        await viewModel.QuickConnectCommand.ExecuteAsync(null);
+
+        Assert.False(hostRequested);
+        Assert.Contains("沒有可用的登入帳密", viewModel.SessionStatusLabel);
+        Assert.Equal("錯誤", Assert.Single(viewModel.SessionTabs).StateLabel);
+    }
+
+    [Fact]
     public async Task ConnectingSurface_DoesNotReportConnectedUntilHostCompletes()
     {
         if (!OperatingSystem.IsWindows() && !OperatingSystem.IsMacOS()) return;
-        var viewModel = new MainViewModel { QuickConnectText = "127.0.0.1:1" };
+        var viewModel = new MainViewModel
+        {
+            QuickConnectText = "127.0.0.1:1",
+            SessionUsername = "operator",
+            SessionPassword = "secret",
+        };
         var connected = new TaskCompletionSource();
         viewModel.EmbeddedRdpRequested += (_, _) => connected.Task;
         var statusNotifications = 0;
@@ -44,7 +67,12 @@ public sealed class RdpSessionStatusTests
     public async Task SelectedConnectingTab_DoesNotInheritBackgroundConnectedStatus()
     {
         if (!OperatingSystem.IsWindows() && !OperatingSystem.IsMacOS()) return;
-        var viewModel = new MainViewModel { QuickConnectText = "127.0.0.1:1" };
+        var viewModel = new MainViewModel
+        {
+            QuickConnectText = "127.0.0.1:1",
+            SessionUsername = "operator",
+            SessionPassword = "secret",
+        };
         var pending = new Dictionary<SessionId, TaskCompletionSource>();
         viewModel.EmbeddedRdpRequested += (id, _) =>
         {
@@ -98,7 +126,12 @@ public sealed class RdpSessionStatusTests
     public async Task Shutdown_CancelsConnectingRdpAndRemovesItsTab()
     {
         if (!OperatingSystem.IsWindows() && !OperatingSystem.IsMacOS()) return;
-        var viewModel = new MainViewModel { QuickConnectText = "127.0.0.1:1" };
+        var viewModel = new MainViewModel
+        {
+            QuickConnectText = "127.0.0.1:1",
+            SessionUsername = "operator",
+            SessionPassword = "secret",
+        };
         var connecting = new TaskCompletionSource();
         var closeRequested = false;
         viewModel.EmbeddedRdpRequested += (_, _) => connecting.Task;
@@ -123,7 +156,11 @@ public sealed class RdpSessionStatusTests
     public async Task DisplayScaleChange_UpdatesTheOpenRdpTabAndNotifiesItsHost()
     {
         if (!OperatingSystem.IsWindows() && !OperatingSystem.IsMacOS()) return;
-        var viewModel = new MainViewModel();
+        var viewModel = new MainViewModel
+        {
+            SessionUsername = "operator",
+            SessionPassword = "secret",
+        };
         viewModel.EmbeddedRdpRequested += (_, _) => Task.CompletedTask;
         await viewModel.OpenSelectedSessionCommand.ExecuteAsync(null);
         var tab = Assert.Single(viewModel.SessionTabs);

@@ -5,6 +5,15 @@ namespace Remote.Application.Tests;
 public sealed class RdpConnectionSettingsTests
 {
     [Fact]
+    public void Defaults_AllowCommonInternalSelfSignedRdpHosts()
+    {
+        Assert.Equal(RdpCertificatePolicy.PromptOnUntrusted, new RdpConnectionSettings().CertificatePolicy);
+        Assert.Equal(
+            RdpCertificatePolicy.PromptOnUntrusted,
+            RdpConnectionSettings.FromProtocolSettings(new Remote.Application.Connections.ProtocolSettings()).CertificatePolicy);
+    }
+
+    [Fact]
     public void ProtocolSettings_RoundTripsNonSecretRdpOptions()
     {
         var expected = new RdpConnectionSettings

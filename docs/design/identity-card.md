@@ -6,7 +6,7 @@ The Vault is the separately unlockable encrypted container. Its screen owns mast
 
 ## ID Card
 
-An ID Card is a username/password Credential stored inside a Vault. It has a name, one protocol scope, a username, a password, and an optional domain. The first release supports RDP, VNC, SSH2, HTTP, and HTTPS scopes. Terminal uses the local operating-system identity and does not offer an ID Card.
+An ID Card is a protocol-scoped Credential stored inside a Vault. RDP, SSH2, HTTP, and HTTPS use a username, password, and optional domain where applicable. Classic VNC authentication uses a password only and does not expose a username or domain field. Terminal uses the local operating-system identity and does not offer an ID Card.
 
 The ID Card screen is independent from the Vault security screen. When the Vault is locked it shows an unlock route without exposing metadata. When unlocked it supports create, edit, permanent delete, mRemoteNG import, assignment to a Connection, assignment to a Folder, and a usage list containing both direct and inherited consumers.
 

@@ -171,7 +171,11 @@ public sealed partial class MainViewModel : ViewModelBase
     public IReadOnlyList<string> PasswordVisibilityOptions { get; } = ["5 秒", "10 秒", "永久顯示"];
     public IReadOnlyList<string> DisplayScaleOptions { get; } = ["適應視窗", "填滿視窗", "100%", "捲動"];
     public IReadOnlyList<RdpAudioMode> RdpAudioModeOptions { get; } = Enum.GetValues<RdpAudioMode>();
-    public IReadOnlyList<RdpCertificatePolicy> RdpCertificatePolicyOptions { get; } = Enum.GetValues<RdpCertificatePolicy>();
+    public IReadOnlyList<string> RdpCertificatePolicyOptions { get; } =
+    [
+        "相容模式（允許公司內部或自簽憑證）",
+        "嚴格模式（只允許受信任憑證）",
+    ];
 
     public ObservableCollection<ConnectionTreeDisplayItem> ConnectionTree { get; }
 
@@ -321,7 +325,7 @@ public sealed partial class MainViewModel : ViewModelBase
     private RdpAudioMode editRdpAudioMode = RdpAudioMode.PlayLocally;
 
     [ObservableProperty]
-    private RdpCertificatePolicy editRdpCertificatePolicy = RdpCertificatePolicy.RequireTrusted;
+    private string editRdpCertificatePolicy = "相容模式（允許公司內部或自簽憑證）";
 
     [ObservableProperty]
     private string editShellPath = string.Empty;
@@ -534,6 +538,10 @@ public sealed partial class MainViewModel : ViewModelBase
     public string SessionCredentialInputLabel => IsVncSelected
         ? "本次工作階段 VNC 密碼（連線後清除；無密碼驗證時可留空）"
         : "本次工作階段帳密（連線後清除密碼）";
+
+    public string SessionUsernamePlaceholder => IsRdpSelected
+        ? @"使用者名稱（例如 DOMAIN\user）"
+        : "使用者名稱";
 
     public bool IdentityUsesUsername => !string.Equals(NewIdentityProtocol, "vnc", StringComparison.OrdinalIgnoreCase);
 
@@ -1584,6 +1592,7 @@ public sealed partial class MainViewModel : ViewModelBase
         OnPropertyChanged(nameof(RequiresSessionCredentialInput));
         OnPropertyChanged(nameof(RequiresSessionUsernameInput));
         OnPropertyChanged(nameof(SessionCredentialInputLabel));
+        OnPropertyChanged(nameof(SessionUsernamePlaceholder));
         OnPropertyChanged(nameof(SelectedCredentialSourceLabel));
         OnPropertyChanged(nameof(SelectedCredentialSourceHeading));
         OnPropertyChanged(nameof(SelectedCredentialName));
@@ -1677,7 +1686,7 @@ public sealed partial class MainViewModel : ViewModelBase
         EditRedirectCamera = false;
         EditConnectAsAdministrator = false;
         EditRdpAudioMode = RdpAudioMode.PlayLocally;
-        EditRdpCertificatePolicy = RdpCertificatePolicy.RequireTrusted;
+        EditRdpCertificatePolicy = "相容模式（允許公司內部或自簽憑證）";
         EditShellPath = string.Empty;
         EditWorkingDirectory = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         EditIsFavorite = false;
@@ -1721,7 +1730,9 @@ public sealed partial class MainViewModel : ViewModelBase
         EditRedirectCamera = settings.RedirectCamera;
         EditConnectAsAdministrator = settings.ConnectAsAdministrator;
         EditRdpAudioMode = settings.AudioMode;
-        EditRdpCertificatePolicy = settings.CertificatePolicy;
+        EditRdpCertificatePolicy = settings.CertificatePolicy is RdpCertificatePolicy.RequireTrusted
+            ? "嚴格模式（只允許受信任憑證）"
+            : "相容模式（允許公司內部或自簽憑證）";
         var terminalSettings = LocalTerminalOptions.FromProtocolSettings(profile.ProtocolSettings);
         EditShellPath = terminalSettings.ShellPath ?? string.Empty;
         EditWorkingDirectory = terminalSettings.WorkingDirectory;
@@ -1813,7 +1824,9 @@ public sealed partial class MainViewModel : ViewModelBase
             RedirectCamera = EditRedirectCamera,
             ConnectAsAdministrator = EditConnectAsAdministrator,
             AudioMode = EditRdpAudioMode,
-            CertificatePolicy = EditRdpCertificatePolicy,
+            CertificatePolicy = EditRdpCertificatePolicy.StartsWith("嚴格模式", StringComparison.Ordinal)
+                ? RdpCertificatePolicy.RequireTrusted
+                : RdpCertificatePolicy.PromptOnUntrusted,
         };
         try
         {
@@ -2244,6 +2257,19 @@ public sealed partial class MainViewModel : ViewModelBase
                     : Encoding.UTF8.GetBytes(SessionPassword);
             }
 
+            var rdpSettings = RdpConnectionSettings.FromProtocolSettings(connection.ProtocolSettings);
+            if (!rdpSettings.UseRemoteGuard &&
+                (string.IsNullOrWhiteSpace(username) || rdpSecret is not { Length: > 0 }))
+            {
+                const string message = "此 RDP 連線沒有可用的登入帳密。請在右側輸入使用者名稱與密碼，或為連線指派已解鎖的 RDP ID Card。";
+                SetSessionState(session.Id, SessionState.Faulted, message);
+                SessionStatusLabel = message;
+                ErrorDialogTitle = "RDP 登入資料";
+                ErrorDialogMessage = message;
+                IsErrorDialogOpen = true;
+                return;
+            }
+
             var launchRequest = new RdpExternalLaunchRequest
             {
                 Endpoint = connection.Endpoint,
@@ -2252,7 +2278,7 @@ public sealed partial class MainViewModel : ViewModelBase
                 PasswordUtf8 = rdpSecret,
                 AccessMode = connection.DefaultAccessMode,
                 Display = connection.Display,
-                Settings = RdpConnectionSettings.FromProtocolSettings(connection.ProtocolSettings),
+                Settings = rdpSettings,
             };
             if ((OperatingSystem.IsWindows() || OperatingSystem.IsMacOS()) &&
                 EmbeddedRdpRequested is { } embeddedRdpRequested)
