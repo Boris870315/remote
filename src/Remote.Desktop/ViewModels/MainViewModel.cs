@@ -244,6 +244,8 @@ public sealed partial class MainViewModel : ViewModelBase
 
     public bool IsEditingRdp => string.Equals(EditProtocol, "rdp", StringComparison.OrdinalIgnoreCase);
 
+    public bool IsEditingVnc => string.Equals(EditProtocol, "vnc", StringComparison.OrdinalIgnoreCase);
+
     public bool IsEditingNetwork => !string.Equals(EditProtocol, "terminal", StringComparison.OrdinalIgnoreCase);
 
     public bool IsEditingTerminal => string.Equals(EditProtocol, "terminal", StringComparison.OrdinalIgnoreCase);
@@ -273,6 +275,14 @@ public sealed partial class MainViewModel : ViewModelBase
     public bool IsCreatingCredential => EditCredentialSource == "新建並加密儲存到 Vault";
 
     public bool IsPromptingForCredential => EditCredentialSource == "每次連線時輸入";
+
+    public bool EditCredentialUsesUsername => !IsEditingVnc;
+
+    public string ConnectionCredentialEditorTitle => IsEditingVnc ? "VNC 密碼" : "帳號與密碼";
+
+    public string ConnectionCredentialEditorDescription => IsEditingVnc
+        ? "VNC 的傳統驗證只使用密碼，不會傳送使用者名稱。密碼可加密存入 Vault。"
+        : "Vault 是加密保管庫；連線實際使用的是 Vault 裡符合此協定的 ID Card。";
 
     [ObservableProperty]
     private string editHost = string.Empty;
@@ -519,6 +529,18 @@ public sealed partial class MainViewModel : ViewModelBase
         !ConnectionUsesIdentityCard(selected.Profile) &&
         selected.Profile.ProtocolId is "rdp" or "vnc" or "ssh2" or "http" or "https";
 
+    public bool RequiresSessionUsernameInput => RequiresSessionCredentialInput && !IsVncSelected;
+
+    public string SessionCredentialInputLabel => IsVncSelected
+        ? "本次工作階段 VNC 密碼（連線後清除；無密碼驗證時可留空）"
+        : "本次工作階段帳密（連線後清除密碼）";
+
+    public bool IdentityUsesUsername => !string.Equals(NewIdentityProtocol, "vnc", StringComparison.OrdinalIgnoreCase);
+
+    public string IdentitySecretPlaceholder => IdentityUsesUsername
+        ? "密碼；編輯時留空代表保留原密碼"
+        : "VNC 密碼；編輯時留空代表保留原密碼";
+
     public bool ShowSessionPlaceholder => RemoteFrame is null && !IsTerminalActive && !IsWebSessionActive && !IsRdpSessionActive;
 
     public bool IsVncSessionActive => _vncClient?.IsConnected is true;
@@ -623,12 +645,19 @@ public sealed partial class MainViewModel : ViewModelBase
         _ => "每次連線時輸入",
     };
 
+    public string SelectedCredentialSourceHeading => IsVncSelected ? "VNC 密碼來源" : "帳密來源";
+
     public string SelectedCredentialName => TryResolveSelectedCredential()?.Name ?? "尚未解析到 ID Card";
 
     public string SelectedCredentialUsername
     {
         get
         {
+            if (IsVncSelected)
+            {
+                return "僅使用 VNC 密碼";
+            }
+
             var credential = TryResolveSelectedCredential();
             if (credential is null)
             {
@@ -706,11 +735,26 @@ public sealed partial class MainViewModel : ViewModelBase
             _ => EditPort,
         };
         OnPropertyChanged(nameof(IsEditingRdp));
+        OnPropertyChanged(nameof(IsEditingVnc));
         OnPropertyChanged(nameof(IsEditingNetwork));
         OnPropertyChanged(nameof(IsEditingTerminal));
+        OnPropertyChanged(nameof(EditCredentialUsesUsername));
+        OnPropertyChanged(nameof(ConnectionCredentialEditorTitle));
+        OnPropertyChanged(nameof(ConnectionCredentialEditorDescription));
         RefreshCompatibleVaultCredentials();
         OnPropertyChanged(nameof(SelectedCredentialName));
         OnPropertyChanged(nameof(SelectedCredentialUsername));
+    }
+
+    partial void OnNewIdentityProtocolChanged(string value)
+    {
+        OnPropertyChanged(nameof(IdentityUsesUsername));
+        OnPropertyChanged(nameof(IdentitySecretPlaceholder));
+        if (string.Equals(value, "vnc", StringComparison.OrdinalIgnoreCase))
+        {
+            NewIdentityUsername = string.Empty;
+            NewIdentityDomain = string.Empty;
+        }
     }
 
     partial void OnEditCredentialSourceChanged(string value)
@@ -979,8 +1023,10 @@ public sealed partial class MainViewModel : ViewModelBase
             Name = name,
             Kind = CredentialKind.UsernamePassword,
             ProtocolScope = protocol,
-            Username = username,
-            Domain = string.IsNullOrWhiteSpace(NewIdentityDomain) ? null : NewIdentityDomain.Trim(),
+            Username = protocol is "vnc" ? null : username,
+            Domain = protocol is "vnc" || string.IsNullOrWhiteSpace(NewIdentityDomain)
+                ? null
+                : NewIdentityDomain.Trim(),
         };
         byte[]? secret = NewIdentitySecret.Length == 0 || (!isNew && !_identitySecretWasEdited)
             ? null
@@ -1011,7 +1057,9 @@ public sealed partial class MainViewModel : ViewModelBase
             RefreshVaultCredentials();
             await SaveWorkspaceAsync();
             VaultMessage = $"身份卡「{definition.Name}」已加密儲存";
-            NotificationMessage = $"身份卡「{definition.Name}」的帳號與密碼已加密儲存成功。";
+            NotificationMessage = protocol is "vnc"
+                ? $"身份卡「{definition.Name}」的 VNC 密碼已加密儲存成功。"
+                : $"身份卡「{definition.Name}」的帳號與密碼已加密儲存成功。";
             IsNotificationOpen = true;
             AddAuditEvent($"身份卡已儲存：{definition.Name}");
         }
@@ -1534,7 +1582,10 @@ public sealed partial class MainViewModel : ViewModelBase
         OnPropertyChanged(nameof(HasSelectedConnection));
         OnPropertyChanged(nameof(ShowConnectionDetails));
         OnPropertyChanged(nameof(RequiresSessionCredentialInput));
+        OnPropertyChanged(nameof(RequiresSessionUsernameInput));
+        OnPropertyChanged(nameof(SessionCredentialInputLabel));
         OnPropertyChanged(nameof(SelectedCredentialSourceLabel));
+        OnPropertyChanged(nameof(SelectedCredentialSourceHeading));
         OnPropertyChanged(nameof(SelectedCredentialName));
         OnPropertyChanged(nameof(SelectedCredentialUsername));
     }
@@ -1799,12 +1850,16 @@ public sealed partial class MainViewModel : ViewModelBase
         {
             if (_vault is null || IsVaultLocked)
             {
-                ConnectionEditorError = "請先解鎖 Vault，再建立並儲存帳密";
+                ConnectionEditorError = "請先解鎖 Vault，再建立並儲存驗證資料";
                 return;
             }
-            if (string.IsNullOrWhiteSpace(EditCredentialUsername) || EditCredentialPassword.Length == 0)
+            var usernameRequired = !IsEditingVnc;
+            if ((usernameRequired && string.IsNullOrWhiteSpace(EditCredentialUsername)) ||
+                EditCredentialPassword.Length == 0)
             {
-                ConnectionEditorError = "使用者名稱與密碼為必填欄位";
+                ConnectionEditorError = usernameRequired
+                    ? "使用者名稱與密碼為必填欄位"
+                    : "VNC 密碼為必填欄位";
                 return;
             }
 
@@ -1817,8 +1872,8 @@ public sealed partial class MainViewModel : ViewModelBase
                     : EditCredentialName.Trim(),
                 Kind = CredentialKind.UsernamePassword,
                 ProtocolScope = EditProtocol,
-                Username = EditCredentialUsername.Trim(),
-                Domain = string.IsNullOrWhiteSpace(EditCredentialDomain)
+                Username = IsEditingVnc ? null : EditCredentialUsername.Trim(),
+                Domain = IsEditingVnc || string.IsNullOrWhiteSpace(EditCredentialDomain)
                     ? null
                     : EditCredentialDomain.Trim(),
             };

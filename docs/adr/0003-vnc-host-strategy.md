@@ -11,6 +11,8 @@ View Only is enforced inside the RFB client before any keyboard, pointer, or cli
 
 Classic VNC Authentication is supported for compatibility, including the protocol-mandated DES challenge response. A supplied password must never silently downgrade to unauthenticated access. Passwords remain transient memory input and will be provided by the encrypted Vault/Identity Card layer; they are never stored in `ProtocolSettings`. The active Session status identifies whether None or classic VNC Authentication was negotiated and explicitly states that the transport is unencrypted.
 
+Classic RFB/VNC authentication uses a password only; it has no username or domain field. The connection, Session prompt, and VNC-scoped Identity Card UI therefore request only a password. Standard RFB also has no RDP-style drive redirection. Generation 1 exposes text clipboard exchange and directs file transfer to SSH/SFTP or an operating-system network share instead of presenting a misleading drive-sharing option.
+
 ## Security boundary
 
 RFB None and classic VNC Authentication do not encrypt the framebuffer or later input. They are suitable only on a trusted network or inside an SSH/VPN tunnel. A later compatibility increment may add VeNCrypt/TLS after its certificate validation and trust UI are designed. The application must surface this transport-security state instead of implying that classic VNC Authentication encrypts the session.
