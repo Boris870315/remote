@@ -7,11 +7,11 @@
 - Windows 工作區：`F:\code\remote`。
 - Windows 接手分支：`codex/mac-handoff`。
 - Mac 正式 Git 工作區：`/Users/chenbaihan/Desktop/remote`。
-- Mac 分支：`feature/connection-management`。
+- Mac 分支：`codex/mac-handoff`，已同步到 `9427790`。
 - 交接基準：`8b7d588fad9c92dafecbdf1269fa9b6a1a57ef48`，`fix: stabilize embedded Windows RDP rendering`。
 - Mac 的 `/Users/chenbaihan/remote new` 是非 Git 工作副本；交接時其所有對應受追蹤檔案與正式 Git 工作區一致。
 - Mac 正式工作樹乾淨。Windows 原本的 `main` 保留，既有未追蹤 `.vs/` 保留。
-- 使用 SSH 取得並驗證 Git bundle，匯入完整分支歷史；沒有推送遠端。
+- 交接時使用 SSH 取得並驗證 Git bundle，匯入完整分支歷史；目前最新修正已推送 GitLab，Windows 與 Mac 工作副本已同步。
 - Windows `origin` 指向 GitLab；Mac `origin` 指向 GitHub、`gitlab` 指向 GitLab。操作遠端時應先核對 URL，不要只憑遠端名稱。
 - GitLab：`https://gitlab.com/chenbaihan97/remote.git`；GitHub：`https://github.com/Boris870315/remote.git`。
 
