@@ -786,6 +786,44 @@ public partial class MainWindow : Window
         }
     }
 
+    private async void HandleVaultMasterPasswordKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key is not Key.Enter || _viewModel is null)
+        {
+            return;
+        }
+
+        if (sender is TextBox textBox)
+        {
+            _viewModel.VaultMasterPassword = textBox.Text ?? string.Empty;
+        }
+
+        e.Handled = true;
+        if (_viewModel.UnlockVaultCommand.CanExecute(null))
+        {
+            await _viewModel.UnlockVaultCommand.ExecuteAsync(null);
+        }
+    }
+
+    private async void HandleRecoveryKeyInputKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key is not Key.Enter || _viewModel is null)
+        {
+            return;
+        }
+
+        if (sender is TextBox textBox)
+        {
+            _viewModel.RecoveryKeyInput = textBox.Text ?? string.Empty;
+        }
+
+        e.Handled = true;
+        if (_viewModel.UnlockWithRecoveryKeyCommand.CanExecute(null))
+        {
+            await _viewModel.UnlockWithRecoveryKeyCommand.ExecuteAsync(null);
+        }
+    }
+
     private async Task<bool> SynchronizeVncModifiersAsync(
         VncModifierState state,
         bool control,

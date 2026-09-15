@@ -231,11 +231,11 @@
             <StackPanel Spacing="12">
               <StackPanel Spacing="8" IsVisible="{Binding IsVaultLocked}">
                 <TextBlock Text="輸入主密碼以建立或解鎖 Workspace" TextWrapping="Wrap"/>
-                <TextBox Text="{Binding VaultMasterPassword}" PasswordChar="●" PlaceholderText="主密碼（至少 8 個字元）"/>
+                <TextBox Text="{Binding VaultMasterPassword}" PasswordChar="●" PlaceholderText="主密碼（至少 8 個字元）" KeyDown="HandleVaultMasterPasswordKeyDown"/>
                 <Button Content="解鎖 Vault" Command="{Binding UnlockVaultCommand}" Background="#5B5CE2" Foreground="White" Padding="14,9"/>
                 <Border Height="1" Background="#35405A" Margin="0,6"/>
                 <TextBlock Text="或使用 Recovery Key" Foreground="#A9B8CE" FontSize="11"/>
-                <TextBox Text="{Binding RecoveryKeyInput}" PasswordChar="●" PlaceholderText="輸入離線保存的 Recovery Key"/>
+                <TextBox Text="{Binding RecoveryKeyInput}" PasswordChar="●" PlaceholderText="輸入離線保存的 Recovery Key" KeyDown="HandleRecoveryKeyInputKeyDown"/>
                 <Button Content="使用 Recovery Key 解鎖" Command="{Binding UnlockWithRecoveryKeyCommand}" Classes="tool"/>
               </StackPanel>
               <StackPanel Spacing="10" IsVisible="{Binding !IsVaultLocked}">
