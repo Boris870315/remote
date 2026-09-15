@@ -70,6 +70,7 @@ public sealed partial class MainViewModel : ViewModelBase
     public event Func<SessionId, RdpExternalLaunchRequest, Task>? EmbeddedRdpRequested;
 
     public event Action<string>? VncClipboardTextReceived;
+    public event Action<SessionId>? VncFrameUpdated;
     public event Action<SessionId, bool>? SessionViewOnlyChanged;
     public event Action<SessionId, DisplayScaleMode>? SessionDisplayScaleChanged;
     public event Func<SessionId, Task>? EmbeddedRdpCloseRequested;
@@ -3016,7 +3017,11 @@ public sealed partial class MainViewModel : ViewModelBase
         {
             if (runtime is null) return;
             runtime.Frame = frame;
-            if (SelectedSessionTab?.SessionId == sessionId) RemoteFrame = frame;
+            if (SelectedSessionTab?.SessionId == sessionId)
+            {
+                RemoteFrame = frame;
+                VncFrameUpdated?.Invoke(sessionId);
+            }
         });
         var client = new RfbClient(new TcpRfbTransportFactory(), frameSink);
         client.ServerClipboardTextReceived += text =>

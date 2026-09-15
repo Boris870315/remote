@@ -122,6 +122,7 @@ public partial class MainWindow : Window
             _viewModel.EmbeddedWebNavigateRequested -= NavigateEmbeddedWebAsync;
             _viewModel.EmbeddedWebCloseRequested -= CloseEmbeddedWebAsync;
             _viewModel.VncClipboardTextReceived -= HandleVncClipboardTextReceived;
+            _viewModel.VncFrameUpdated -= HandleVncFrameUpdated;
             _viewModel.SessionViewOnlyChanged -= HandleSessionViewOnlyChanged;
             _viewModel.SessionDisplayScaleChanged -= HandleSessionDisplayScaleChanged;
         }
@@ -137,11 +138,20 @@ public partial class MainWindow : Window
             _viewModel.EmbeddedWebNavigateRequested += NavigateEmbeddedWebAsync;
             _viewModel.EmbeddedWebCloseRequested += CloseEmbeddedWebAsync;
             _viewModel.VncClipboardTextReceived += HandleVncClipboardTextReceived;
+            _viewModel.VncFrameUpdated += HandleVncFrameUpdated;
             _viewModel.SessionViewOnlyChanged += HandleSessionViewOnlyChanged;
             _viewModel.SessionDisplayScaleChanged += HandleSessionDisplayScaleChanged;
         }
 
         ApplyAdaptiveLayout();
+    }
+
+    private void HandleVncFrameUpdated(SessionId sessionId)
+    {
+        if (_viewModel?.SelectedSessionTab?.SessionId == sessionId)
+        {
+            RemoteSurface.InvalidateVisual();
+        }
     }
 
     private void HandleSessionViewOnlyChanged(SessionId sessionId, bool viewOnly)

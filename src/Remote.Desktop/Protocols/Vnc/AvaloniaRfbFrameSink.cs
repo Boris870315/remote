@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Media.Imaging;
@@ -15,6 +16,9 @@ public sealed class AvaloniaRfbFrameSink(Action<WriteableBitmap?> frameChanged) 
     private ushort _height;
     private WriteableBitmap? _bitmap;
     private bool _framebufferUpdateInProgress;
+    private PendingFrame? _pendingFrame;
+    private bool _renderScheduled;
+    private bool _disposed;
 
     public ValueTask FramebufferUpdateStartedAsync(CancellationToken cancellationToken)
     {
@@ -104,48 +108,108 @@ public sealed class AvaloniaRfbFrameSink(Action<WriteableBitmap?> frameChanged) 
 
     public void Dispose()
     {
+        lock (_gate)
+        {
+            _disposed = true;
+            if (_pendingFrame is { } pending)
+            {
+                ArrayPool<byte>.Shared.Return(pending.Pixels);
+                _pendingFrame = null;
+            }
+        }
         _bitmap?.Dispose();
         _bitmap = null;
     }
 
-    private async ValueTask PublishAsync(CancellationToken cancellationToken)
+    private ValueTask PublishAsync(CancellationToken cancellationToken)
     {
-        byte[] snapshot;
-        ushort width;
-        ushort height;
+        cancellationToken.ThrowIfCancellationRequested();
+        var scheduleRender = false;
         lock (_gate)
         {
-            snapshot = _pixels.ToArray();
-            width = _width;
-            height = _height;
+            if (_disposed || _pixels.Length == 0)
+            {
+                return ValueTask.CompletedTask;
+            }
+
+            var snapshot = ArrayPool<byte>.Shared.Rent(_pixels.Length);
+            _pixels.AsSpan().CopyTo(snapshot);
+            if (_pendingFrame is { } superseded)
+            {
+                ArrayPool<byte>.Shared.Return(superseded.Pixels);
+            }
+            _pendingFrame = new PendingFrame(snapshot, _width, _height);
+            if (!_renderScheduled)
+            {
+                _renderScheduled = true;
+                scheduleRender = true;
+            }
         }
 
-        await Dispatcher.UIThread.InvokeAsync(() =>
+        if (scheduleRender)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            if (_bitmap is null || _bitmap.PixelSize.Width != width || _bitmap.PixelSize.Height != height)
-            {
-                _bitmap?.Dispose();
-                _bitmap = new WriteableBitmap(
-                    new PixelSize(width, height),
-                    new Vector(96, 96),
-                    PixelFormat.Bgra8888,
-                    AlphaFormat.Opaque);
-            }
+            Dispatcher.UIThread.Post(RenderLatestFrame, DispatcherPriority.Render);
+        }
+        return ValueTask.CompletedTask;
+    }
 
-            using var framebuffer = _bitmap.Lock();
-            var sourceRowBytes = checked(width * 4);
-            for (var row = 0; row < height; row++)
+    private void RenderLatestFrame()
+    {
+        PendingFrame? pending;
+        lock (_gate)
+        {
+            if (_disposed)
             {
-                Marshal.Copy(
-                    snapshot,
-                    row * sourceRowBytes,
-                    IntPtr.Add(framebuffer.Address, row * framebuffer.RowBytes),
-                    sourceRowBytes);
+                _renderScheduled = false;
+                return;
             }
+            pending = _pendingFrame;
+            _pendingFrame = null;
+        }
 
-            frameChanged(_bitmap);
-        });
+        if (pending is not null)
+        {
+            try
+            {
+                if (_bitmap is null ||
+                    _bitmap.PixelSize.Width != pending.Width ||
+                    _bitmap.PixelSize.Height != pending.Height)
+                {
+                    _bitmap?.Dispose();
+                    _bitmap = new WriteableBitmap(
+                        new PixelSize(pending.Width, pending.Height),
+                        new Vector(96, 96),
+                        PixelFormat.Bgra8888,
+                        AlphaFormat.Opaque);
+                }
+
+                using var framebuffer = _bitmap.Lock();
+                var sourceRowBytes = checked(pending.Width * 4);
+                for (var row = 0; row < pending.Height; row++)
+                {
+                    Marshal.Copy(
+                        pending.Pixels,
+                        row * sourceRowBytes,
+                        IntPtr.Add(framebuffer.Address, row * framebuffer.RowBytes),
+                        sourceRowBytes);
+                }
+                frameChanged(_bitmap);
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(pending.Pixels);
+            }
+        }
+
+        lock (_gate)
+        {
+            if (_disposed || _pendingFrame is null)
+            {
+                _renderScheduled = false;
+                return;
+            }
+        }
+        Dispatcher.UIThread.Post(RenderLatestFrame, DispatcherPriority.Render);
     }
 
     private ValueTask PublishUnlessUpdatingAsync(CancellationToken cancellationToken)
@@ -160,4 +224,6 @@ public sealed class AvaloniaRfbFrameSink(Action<WriteableBitmap?> frameChanged) 
 
         return PublishAsync(cancellationToken);
     }
+
+    private sealed record PendingFrame(byte[] Pixels, ushort Width, ushort Height);
 }
