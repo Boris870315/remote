@@ -27,4 +27,26 @@ public sealed class LocalErrorLogTests
             if (Directory.Exists(root)) Directory.Delete(root, true);
         }
     }
+
+    [Fact]
+    public async Task WriteDiagnosticAsync_WritesInfoEvent()
+    {
+        var root = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"remote-log-{Guid.NewGuid():N}");
+        var path = System.IO.Path.Combine(root, "rdp-diagnostics.jsonl");
+        try
+        {
+            var log = new LocalErrorLog(path);
+
+            await log.WriteDiagnosticAsync("RDP", "connect-stage", "stage=set-display; host=4A61D1B2");
+
+            using var document = JsonDocument.Parse((await File.ReadAllLinesAsync(path)).Single());
+            Assert.Equal("Info", document.RootElement.GetProperty("severity").GetString());
+            Assert.Equal("connect-stage", document.RootElement.GetProperty("code").GetString());
+            Assert.False(document.RootElement.TryGetProperty("password", out _));
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
 }

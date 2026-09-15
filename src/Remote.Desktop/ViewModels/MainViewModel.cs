@@ -19,6 +19,7 @@ using Remote.Infrastructure.Import;
 using Remote.Infrastructure.Diagnostics;
 using Remote.Application.Vaults;
 using Remote.Application.Credentials;
+using Remote.Desktop.Protocols.Rdp;
 using Remote.Desktop.Protocols.Vnc;
 using Remote.Protocols;
 
@@ -50,6 +51,7 @@ public sealed partial class MainViewModel : ViewModelBase
     private readonly string _workspacePath;
     private readonly string _recoveryPath;
     private readonly LocalErrorLog _errorLog;
+    private readonly LocalErrorLog _rdpDiagnosticLog;
     private readonly string _backupDirectory;
     private readonly List<ConnectionFolder> _folders = [];
     private readonly List<ConnectionFolder> _pendingImportedFolders = [];
@@ -116,6 +118,9 @@ public sealed partial class MainViewModel : ViewModelBase
             "workspace.rmtw");
         _recoveryPath = $"{_workspacePath}.recovery";
         _errorLog = new LocalErrorLog(Path.Combine(Path.GetDirectoryName(_workspacePath)!, "Logs", "errors.jsonl"));
+        _rdpDiagnosticLog = new LocalErrorLog(
+            Path.Combine(Path.GetDirectoryName(_workspacePath)!, "Logs", "rdp-diagnostics.jsonl"),
+            maximumBytes: 8 * 1024 * 1024);
         _backupDirectory = Path.Combine(Path.GetDirectoryName(_workspacePath)!, "Backups");
         var productionFolder = new ConnectionFolder { Id = FolderId.New(), Name = "Production" };
         var labFolder = new ConnectionFolder { Id = FolderId.New(), Name = "Lab" };
@@ -3464,6 +3469,21 @@ public sealed partial class MainViewModel : ViewModelBase
             ErrorDialogMessage = message;
             IsErrorDialogOpen = true;
         });
+    }
+
+    public async Task ReportEmbeddedRdpDiagnosticAsync(SessionId sessionId, RdpHostDiagnostic diagnostic)
+    {
+        try
+        {
+            await _rdpDiagnosticLog.WriteDiagnosticAsync(
+                "RDP",
+                diagnostic.Code,
+                $"session={sessionId.Value:N}; {diagnostic.Message}");
+        }
+        catch
+        {
+            // Diagnostics must never affect the remote session lifecycle.
+        }
     }
 
     public async Task HandleEmbeddedRdpFailureAsync(SessionId sessionId, string reason)

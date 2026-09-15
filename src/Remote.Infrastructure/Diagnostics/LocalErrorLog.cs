@@ -17,6 +17,28 @@ public sealed class LocalErrorLog(string path, long maximumBytes = 2 * 1024 * 10
         string? exceptionType = null,
         CancellationToken cancellationToken = default)
     {
+        await WriteCoreAsync("Error", category, code, safeMessage, exceptionType, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public async Task WriteDiagnosticAsync(
+        string category,
+        string code,
+        string safeMessage,
+        CancellationToken cancellationToken = default)
+    {
+        await WriteCoreAsync("Info", category, code, safeMessage, null, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private async Task WriteCoreAsync(
+        string severity,
+        string category,
+        string code,
+        string safeMessage,
+        string? exceptionType,
+        CancellationToken cancellationToken)
+    {
         ArgumentException.ThrowIfNullOrWhiteSpace(category);
         ArgumentException.ThrowIfNullOrWhiteSpace(code);
         ArgumentException.ThrowIfNullOrWhiteSpace(safeMessage);
@@ -27,7 +49,7 @@ public sealed class LocalErrorLog(string path, long maximumBytes = 2 * 1024 * 10
             RotateIfNeeded();
             var line = JsonSerializer.Serialize(new ErrorEvent(
                 DateTimeOffset.UtcNow,
-                "Error",
+                severity,
                 category,
                 code,
                 safeMessage,

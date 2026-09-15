@@ -95,6 +95,7 @@ dotnet run --project src/Remote.Desktop/Remote.Desktop.csproj
 6. 實測鍵鼠、雙向剪貼簿、裝置重新導向及 View Only 切換。
 
 Windows 錯誤紀錄：`%LOCALAPPDATA%\Remote\Logs\errors.jsonl`。
+Windows RDP 詳細診斷：`%LOCALAPPDATA%\Remote\Logs\rdp-diagnostics.jsonl`；包含 ActiveX 類別與介面探測、連線階段、狀態碼、HRESULT、顯示尺寸及環境版本。端點主機只記錄雜湊，且不記錄帳號、密碼或 Gateway 名稱。
 
 ## 文件狀態
 
