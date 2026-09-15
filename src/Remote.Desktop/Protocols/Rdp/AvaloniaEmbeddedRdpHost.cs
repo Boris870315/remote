@@ -61,7 +61,7 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
     {
         _displayScaleMode = scaleMode;
         if (!OperatingSystem.IsWindows() || _rdpClient is null) return;
-        var advanced = GetComProperty(_rdpClient, "AdvancedSettings");
+        var advanced = ((IMsTscAxDispatch)_rdpClient).AdvancedSettings;
         TrySetComProperty(advanced, "SmartSizing", UsesSmartSizing(scaleMode));
         ResizeNativeSurface();
         EmitDiagnostic("scale-mode", $"mode={scaleMode}; smartSizing={UsesSmartSizing(scaleMode)}");
@@ -129,28 +129,26 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
             DescribeNativeSurface());
         try
         {
-            // Invoke the scriptable IMsTscAx surface through IDispatch instead of
-            // casting the RCW to a hand-written COM interface. Some Windows RDP
-            // control revisions expose the correct automation members but .NET
-            // cannot cast their canonical RCW to that private interface.
-            _ = GetComProperty(clientObject, "Connected");
+            // Native host creation rejects registered controls that do not expose
+            // this interface, so the RCW cast is safe for the selected fallback.
+            var client = (IMsTscAxDispatch)clientObject;
             _disconnectRequested = false;
             _hasConnected = false;
             _connectingTicks = 0;
             _connectionReady = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             TryDisconnect(clientObject);
             MoveToStage("set-endpoint");
-            SetComProperty(clientObject, "Server", request.Endpoint.Host);
-            SetComProperty(clientObject, "UserName", request.Username ?? string.Empty);
+            client.Server = request.Endpoint.Host;
+            client.UserName = request.Username ?? string.Empty;
             // Explicitly clear the ActiveX domain when the operator did not
             // provide one. Leaving it untouched lets some Windows revisions
             // infer the destination computer name and display HOST\\username.
-            SetComProperty(clientObject, "Domain", request.Domain ?? string.Empty);
+            client.Domain = request.Domain ?? string.Empty;
             MoveToStage("set-display");
             _displayScaleMode = request.Display.ScaleMode;
             var initialPixelSize = GetNativeClientPixelSize();
-            SetComProperty(clientObject, "DesktopWidth", Math.Max(640, initialPixelSize.Width));
-            SetComProperty(clientObject, "DesktopHeight", Math.Max(480, initialPixelSize.Height));
+            client.DesktopWidth = Math.Max(640, initialPixelSize.Width);
+            client.DesktopHeight = Math.Max(480, initialPixelSize.Height);
             var selectedMonitorIndex = Math.Max(0, request.Display.MonitorIndex ?? 0);
             _useMultimon = request.Display.MonitorSelection is Remote.Application.Connections.MonitorSelection.All ||
                 selectedMonitorIndex > 0;
@@ -164,7 +162,7 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
                 RdpActiveXNativeSettings.SetUseMultimon(clientObject, true);
             }
             MoveToStage("open-advanced-settings");
-            var advanced = GetComProperty(clientObject, "AdvancedSettings");
+            var advanced = client.AdvancedSettings;
             var permissions = RdpSessionPermissionPolicy.Resolve(request.AccessMode, request.Settings);
             MoveToStage("set-security-and-redirection");
             SetComProperty(advanced, "RDPPort", request.Endpoint.IsDefaultPort ? 3389 : request.Endpoint.Port);
@@ -212,7 +210,7 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
                 }
             }
             MoveToStage("connect");
-            InvokeComMethod(clientObject, "Connect");
+            client.Connect();
             StartConnectionMonitor();
             EnableWindow(_window, permissions.AcceptsInput);
             MoveToStage("wait-for-connected-state");
@@ -265,9 +263,7 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
             if (_disconnectRequested || _rdpClient is null) return;
             try
             {
-                var connected = Convert.ToInt16(
-                    GetComProperty(_rdpClient, "Connected"),
-                    CultureInfo.InvariantCulture);
+                var connected = ((IMsTscAxDispatch)_rdpClient).Connected;
                 var disconnectReason = connected == 1 ? 0 : TryGetExtendedDisconnectReason(_rdpClient);
                 if (connected != _lastConnectedState || disconnectReason != _lastDisconnectReason)
                 {
@@ -406,8 +402,12 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
 
         nint unknown = nint.Zero;
         var result = unchecked((int)0x80004005);
+        var scriptableInterfaceResult = unchecked((int)0x80004002);
+        var nonScriptableInterfaceResult = unchecked((int)0x80004002);
         foreach (var classId in RdpClientClassIds)
         {
+            scriptableInterfaceResult = unchecked((int)0x80004002);
+            nonScriptableInterfaceResult = unchecked((int)0x80004002);
             _window = CreateWindowExW(
                 0,
                 "AtlAxWin",
@@ -427,10 +427,17 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
                 continue;
             }
             result = AtlAxGetControl(_window, out unknown);
+            if (result >= 0 && unknown != nint.Zero)
+            {
+                scriptableInterfaceResult = QueryInterfaceResult(unknown, MsTscAxInterfaceId);
+                nonScriptableInterfaceResult = QueryInterfaceResult(unknown, MsTscNonScriptableInterfaceId);
+            }
             EmitDiagnostic(
                 "activex-create-attempt",
-                $"classId={classId}; hwnd=0x{_window:X}; atlHresult=0x{result:X8}; controlPointerPresent={unknown != nint.Zero}");
-            if (result >= 0 && unknown != nint.Zero)
+                $"classId={classId}; hwnd=0x{_window:X}; atlHresult=0x{result:X8}; controlPointerPresent={unknown != nint.Zero}; " +
+                $"iMsTscAx=0x{scriptableInterfaceResult:X8}; iMsTscNonScriptable=0x{nonScriptableInterfaceResult:X8}");
+            if (result >= 0 && unknown != nint.Zero &&
+                scriptableInterfaceResult >= 0 && nonScriptableInterfaceResult >= 0)
             {
                 _selectedClassId = classId;
                 break;
@@ -446,9 +453,13 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
 
         if (_window == nint.Zero || unknown == nint.Zero)
         {
-            EmitDiagnostic("native-host-failed", $"lastHresult=0x{result:X8}; lastWin32Error={Marshal.GetLastWin32Error()}");
+            EmitDiagnostic(
+                "native-host-failed",
+                $"lastHresult=0x{result:X8}; iMsTscAx=0x{scriptableInterfaceResult:X8}; " +
+                $"iMsTscNonScriptable=0x{nonScriptableInterfaceResult:X8}; lastWin32Error={Marshal.GetLastWin32Error()}");
             throw new InvalidOperationException(
-                $"Windows could not create a supported embedded RDP host (HRESULT=0x{result:X8}).");
+                $"Windows could not create an embedded RDP host with the required COM interfaces " +
+                $"(HRESULT=0x{result:X8}, interface HRESULT=0x{scriptableInterfaceResult:X8}).");
         }
 
         try
@@ -554,7 +565,7 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
     {
         try
         {
-            InvokeComMethod(client, "Disconnect");
+            ((IMsTscAxDispatch)client).Disconnect();
         }
         catch (Exception exception) when (IsComInvocationException(exception))
         {
@@ -674,6 +685,19 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
         }
     }
 
+    private static int QueryInterfaceResult(nint unknown, Guid interfaceId)
+    {
+        nint interfacePointer = nint.Zero;
+        try
+        {
+            return Marshal.QueryInterface(unknown, in interfaceId, out interfacePointer);
+        }
+        finally
+        {
+            if (interfacePointer != nint.Zero) Marshal.Release(interfacePointer);
+        }
+    }
+
     private static Exception GetRootException(Exception exception)
     {
         while (exception is TargetInvocationException { InnerException: { } inner })
@@ -686,6 +710,27 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
     private static bool IsComInvocationException(Exception exception) =>
         exception is COMException or InvalidCastException or MissingMethodException or TargetException or TargetParameterCountException or ArgumentException ||
         exception is TargetInvocationException { InnerException: { } inner } && IsComInvocationException(inner);
+
+    [ComImport]
+    [Guid("8C11EFAE-92C3-11D1-BC1E-00C04FA31489")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIDispatch)]
+    private interface IMsTscAxDispatch
+    {
+        [DispId(1)] string Server { get; set; }
+        [DispId(2)] string Domain { get; set; }
+        [DispId(3)] string UserName { get; set; }
+        [DispId(6)] short Connected { get; }
+        [DispId(12)] int DesktopWidth { get; set; }
+        [DispId(13)] int DesktopHeight { get; set; }
+        [DispId(98)]
+        object AdvancedSettings
+        {
+            [return: MarshalAs(UnmanagedType.IDispatch)]
+            get;
+        }
+        [DispId(30)] void Connect();
+        [DispId(31)] void Disconnect();
+    }
 
     [ComImport]
     [Guid("C1E6743A-41C1-4A74-832A-0DD06C1C7A0E")]
