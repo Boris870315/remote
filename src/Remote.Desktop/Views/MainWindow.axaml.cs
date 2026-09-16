@@ -283,6 +283,7 @@ public partial class MainWindow : Window
         if (e.PropertyName == nameof(MainViewModel.IsEditingConnection))
         {
             ApplyAdaptiveLayout();
+            ShowSelectedRdpHost();
         }
         else if (e.PropertyName == nameof(MainViewModel.SelectedSessionTab))
         {
@@ -325,9 +326,14 @@ public partial class MainWindow : Window
     private void ShowSelectedRdpHost()
     {
         var selected = _viewModel?.SelectedSessionTab?.SessionId;
+        var editorIsOpen = _viewModel?.IsEditingConnection is true;
         foreach (var pair in _rdpHosts)
         {
-            pair.Value.SetSessionVisible(pair.Key == selected);
+            // The Windows RDP ActiveX surface owns a native child HWND. Native
+            // children render above Avalonia controls regardless of ZIndex, so
+            // hide it while the connection editor is open and restore it when
+            // editing ends.
+            pair.Value.SetSessionVisible(!editorIsOpen && pair.Key == selected);
         }
         if (selected is { } sessionId && _macRdpSessions.TryGetValue(sessionId, out var runtime))
             _viewModel?.SetEmbeddedRdpFrame(sessionId, runtime.FrameSink.Frame);
