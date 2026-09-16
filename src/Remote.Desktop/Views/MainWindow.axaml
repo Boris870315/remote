@@ -129,11 +129,11 @@
             <ToggleSwitch IsChecked="{Binding IsViewOnly}" Content="View Only"/>
             <StackPanel Spacing="6" IsVisible="{Binding IsRdpSelected}">
               <TextBlock Text="裝置重新導向" FontSize="10" Foreground="#7F8DA5"/>
-              <CheckBox x:Name="InspectorRedirectClipboard" IsChecked="{Binding SelectedRedirectsClipboard, Mode=OneWay}" Content="剪貼簿" Tapped="UpdateInspectorRdpSettings"/>
-              <CheckBox x:Name="InspectorRedirectPrinters" IsChecked="{Binding SelectedRedirectsPrinters, Mode=OneWay}" Content="印表機" Tapped="UpdateInspectorRdpSettings"/>
-              <CheckBox x:Name="InspectorRedirectDrives" IsChecked="{Binding SelectedRedirectsDrives, Mode=OneWay}" Content="磁碟機" Tapped="UpdateInspectorRdpSettings"/>
-              <CheckBox x:Name="InspectorRedirectMicrophone" IsChecked="{Binding SelectedRedirectsMicrophone, Mode=OneWay}" Content="麥克風" Tapped="UpdateInspectorRdpSettings"/>
-              <CheckBox x:Name="InspectorRedirectCamera" IsChecked="{Binding SelectedRedirectsCamera, Mode=OneWay}" Content="相機與其他視訊擷取裝置" Tapped="UpdateInspectorRdpSettings"/>
+              <CheckBox x:Name="InspectorRedirectClipboard" IsChecked="{Binding SelectedRedirectsClipboard, Mode=OneWay}" Content="剪貼簿" Click="UpdateInspectorRdpSettings"/>
+              <CheckBox x:Name="InspectorRedirectPrinters" IsChecked="{Binding SelectedRedirectsPrinters, Mode=OneWay}" Content="印表機" Click="UpdateInspectorRdpSettings"/>
+              <CheckBox x:Name="InspectorRedirectDrives" IsChecked="{Binding SelectedRedirectsDrives, Mode=OneWay}" Content="磁碟機" Click="UpdateInspectorRdpSettings"/>
+              <CheckBox x:Name="InspectorRedirectMicrophone" IsChecked="{Binding SelectedRedirectsMicrophone, Mode=OneWay}" Content="麥克風" Click="UpdateInspectorRdpSettings"/>
+              <CheckBox x:Name="InspectorRedirectCamera" IsChecked="{Binding SelectedRedirectsCamera, Mode=OneWay}" Content="相機與其他視訊擷取裝置" Click="UpdateInspectorRdpSettings"/>
             </StackPanel>
             <TextBlock Text="{Binding StatusDetail}" FontSize="10" Foreground="#A9B8CE" TextWrapping="Wrap"/>
           </StackPanel>

@@ -1887,7 +1887,6 @@ public sealed partial class MainViewModel : ViewModelBase
     {
         if (SelectedSessionTab?.SessionId != sessionId) return;
         RemoteFrame = frame;
-        OnPropertyChanged(nameof(RemoteFrame));
     }
 
     public string RuntimeStatus => _sessionService.GetStatus().State;
@@ -2593,6 +2592,8 @@ public sealed partial class MainViewModel : ViewModelBase
         }
 
         SelectedSessionTab = tab;
+        foreach (var pair in _vncSessions)
+            pair.Value.FrameSink.SetForeground(pair.Key == tab.SessionId);
         IsViewOnly = tab.Connection.DefaultAccessMode is SessionAccessMode.ViewOnly;
         RemoteFrame = null;
         IsTerminalActive = false;
@@ -3348,6 +3349,7 @@ public sealed partial class MainViewModel : ViewModelBase
             }
         };
         runtime = new VncSessionRuntime(client, frameSink, cancellation);
+        frameSink.SetForeground(SelectedSessionTab?.SessionId == sessionId);
         _vncSessions.Add(sessionId, runtime);
         _vncClient = client;
         _vncFrameSink = frameSink;

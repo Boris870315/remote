@@ -335,6 +335,8 @@ public partial class MainWindow : Window
             // editing ends.
             pair.Value.SetSessionVisible(!editorIsOpen && pair.Key == selected);
         }
+        foreach (var pair in _macRdpSessions)
+            pair.Value.FrameSink.SetForeground(!editorIsOpen && pair.Key == selected);
         if (selected is { } sessionId && _macRdpSessions.TryGetValue(sessionId, out var runtime))
             _viewModel?.SetEmbeddedRdpFrame(sessionId, runtime.FrameSink.Frame);
     }
@@ -354,6 +356,7 @@ public partial class MainWindow : Window
                 RemoteSurface.InvalidateVisual();
         });
         var runtime = new MacOsRdpRuntime(session, sink);
+        sink.SetForeground(_viewModel?.SelectedSessionTab?.SessionId == sessionId);
         session.FrameReceived += sink.Publish;
         session.StateChanged += (state, errorCode, message) =>
         {

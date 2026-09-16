@@ -25,3 +25,9 @@ This is the short implementation contract distilled from the product grilling. `
 ## Acceptance boundary
 
 A visible control is not considered complete until its backing operation succeeds or fails safely, records a secret-free diagnostic, and preserves every unrelated Session. Protocol capabilities that cannot be enforced must be shown as unavailable; they must not silently downgrade.
+
+## Progress accounting
+
+Generation-1 product behavior and its functional acceptance determine the **1.0 feature progress**.
+
+Packaging, Windows code signing, macOS application/DMG creation, Apple Developer ID signing and notarization, bundled native dependencies, third-party notices, and clean-machine installation checks determine the separate **1.0 release progress**. They gate publication of 1.0, but are not included in the 1.0 feature-progress percentage.

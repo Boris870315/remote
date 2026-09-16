@@ -77,7 +77,15 @@ public sealed class AvaloniaEmbeddedRdpHost : NativeControlHost
     public void SetSessionVisible(bool visible)
     {
         IsVisible = visible;
-        if (!OperatingSystem.IsWindows() || _window == nint.Zero) return;
+        if (!OperatingSystem.IsWindows()) return;
+        if (_rdpClient is not null)
+        {
+            // Ask the native RDP control to stop requesting display updates while
+            // its tab is in the background. The session and redirected channels
+            // remain connected, and output resumes when the tab becomes visible.
+            TrySetComProperty(_rdpClient, "SuppressOutput", !visible);
+        }
+        if (_window == nint.Zero) return;
         _ = ShowWindow(_window, visible ? SwShow : SwHide);
         EmitDiagnostic("surface-visibility", $"visible={visible}; {DescribeNativeSurface()}");
         if (visible)

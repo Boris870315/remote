@@ -13,7 +13,10 @@ internal sealed class AvaloniaFreeRdpFrameSink(Action<WriteableBitmap?> frameCha
     private WriteableBitmap? _bitmap;
     private List<PendingFrame> _pending = [];
     private bool _renderScheduled;
+    private bool _isForeground = true;
     private bool _disposed;
+
+    private static readonly TimeSpan BackgroundFrameInterval = TimeSpan.FromMilliseconds(250);
 
     public WriteableBitmap? Frame => _bitmap;
 
@@ -31,7 +34,38 @@ internal sealed class AvaloniaFreeRdpFrameSink(Action<WriteableBitmap?> frameCha
             _renderScheduled = true;
         }
 
-        Dispatcher.UIThread.Post(RenderLatestFrame, DispatcherPriority.Render);
+        ScheduleRender();
+    }
+
+    public void SetForeground(bool isForeground)
+    {
+        var renderImmediately = false;
+        lock (_gate)
+        {
+            if (_disposed || _isForeground == isForeground) return;
+            _isForeground = isForeground;
+            renderImmediately = isForeground && _pending.Count > 0;
+        }
+
+        if (renderImmediately)
+            Dispatcher.UIThread.Post(RenderLatestFrame, DispatcherPriority.Render);
+    }
+
+    private void ScheduleRender()
+    {
+        bool isForeground;
+        lock (_gate) isForeground = _isForeground;
+        if (isForeground)
+        {
+            Dispatcher.UIThread.Post(RenderLatestFrame, DispatcherPriority.Render);
+            return;
+        }
+
+        _ = Task.Delay(BackgroundFrameInterval).ContinueWith(
+            _ => Dispatcher.UIThread.Post(RenderLatestFrame, DispatcherPriority.Background),
+            CancellationToken.None,
+            TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
     }
 
     private void RenderLatestFrame()
@@ -48,6 +82,15 @@ internal sealed class AvaloniaFreeRdpFrameSink(Action<WriteableBitmap?> frameCha
             }
             pending = _pending;
             _pending = [];
+        }
+
+        if (pending.Count == 0)
+        {
+            lock (_gate)
+            {
+                if (_pending.Count == 0) _renderScheduled = false;
+            }
+            return;
         }
 
         try
@@ -103,8 +146,7 @@ internal sealed class AvaloniaFreeRdpFrameSink(Action<WriteableBitmap?> frameCha
                 return;
             }
         }
-        Dispatcher.UIThread.Post(() =>
-            RenderLatestFrame(), DispatcherPriority.Render);
+        ScheduleRender();
     }
 
     public void Dispose()

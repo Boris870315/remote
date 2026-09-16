@@ -18,7 +18,11 @@ public sealed class AvaloniaRfbFrameSink(Action<WriteableBitmap?> frameChanged) 
     private bool _framebufferUpdateInProgress;
     private PendingFrame? _pendingFrame;
     private bool _renderScheduled;
+    private bool _isForeground = true;
+    private long _lastBackgroundPublishAt;
     private bool _disposed;
+
+    private const long BackgroundFrameIntervalMilliseconds = 250;
 
     public ValueTask FramebufferUpdateStartedAsync(CancellationToken cancellationToken)
     {
@@ -106,6 +110,19 @@ public sealed class AvaloniaRfbFrameSink(Action<WriteableBitmap?> frameChanged) 
         return PublishAsync(cancellationToken);
     }
 
+    public void SetForeground(bool isForeground)
+    {
+        var publishLatest = false;
+        lock (_gate)
+        {
+            if (_disposed || _isForeground == isForeground) return;
+            _isForeground = isForeground;
+            publishLatest = isForeground && _pixels.Length > 0;
+        }
+
+        if (publishLatest) _ = PublishAsync(CancellationToken.None);
+    }
+
     public void Dispose()
     {
         lock (_gate)
@@ -130,6 +147,17 @@ public sealed class AvaloniaRfbFrameSink(Action<WriteableBitmap?> frameChanged) 
             if (_disposed || _pixels.Length == 0)
             {
                 return ValueTask.CompletedTask;
+            }
+
+
+            if (!_isForeground)
+            {
+                var now = Environment.TickCount64;
+                if (now - _lastBackgroundPublishAt < BackgroundFrameIntervalMilliseconds)
+                {
+                    return ValueTask.CompletedTask;
+                }
+                _lastBackgroundPublishAt = now;
             }
 
             var snapshot = ArrayPool<byte>.Shared.Rent(_pixels.Length);
