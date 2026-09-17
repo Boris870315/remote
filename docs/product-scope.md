@@ -6,7 +6,7 @@ This is the short implementation contract distilled from the product grilling. `
 
 - Personal, local-first workspace with one primary encrypted Vault and no cloud dependency.
 - Folder and Connection tree, Favorites, Tags, editing, deletion, search, and one-time mRemoteNG connection import.
-- Protocol order: RDP, VNC, Vault plus Connection tree plus SSH2, HTTP/HTTPS, then local Terminal.
+- First-release protocols: embedded RDP and VNC. Vault and Connection management are part of the same release scope.
 - Reusable, protocol-scoped Identity Cards assigned directly to Connections or inherited from Folders. Session-only credentials remain available.
 - Multiple concurrent Sessions as tabs in one main window. Double-clicking a Connection always creates a new tab.
 - Shared View Only policy, local error log, and modal notification for actionable failures such as rejected credentials and connection timeout.
@@ -17,6 +17,7 @@ This is the short implementation contract distilled from the product grilling. `
 
 ## Generation 2
 
+- SSH2, embedded HTTP/HTTPS, and local Terminal Sessions.
 - Windows Hello and Touch ID quick unlock, with Master Password fallback.
 - Multiple Vaults.
 - A separately controllable tab or native window for every remote monitor.

@@ -16,4 +16,4 @@ Remote 將 mRemoteNG 檔案視為「連線資料來源」，不是 ID Card 檔�
 
 ## 第一版範圍
 
-第一版支援 mRXML／`confCons.xml`，以及 RDP、VNC、SSH2、HTTP、HTTPS、Telnet 對應。無法辨識的協定會略過並回報警告。mRCSV 與尚未映射的進階協定欄位列為後續相容性工作，不應被 UI 誤標為已支援。
+第一版支援 mRXML／`confCons.xml`，並可立即使用匯入的 RDP 與 VNC 連線。SSH2、HTTP、HTTPS 與 Telnet 的欄位對應可保留供下一版啟用，但第一版不得將它們顯示為可開啟的 Session。無法辨識的協定會略過並回報警告。mRCSV 與尚未映射的進階協定欄位列為後續相容性工作，不應被 UI 誤標為已支援。
